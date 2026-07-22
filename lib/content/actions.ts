@@ -31,6 +31,27 @@ async function assertCanWrite() {
   return ctx;
 }
 
+async function assertCanScheduleInstagram(params: {
+  organizationId: string;
+  itemId: string;
+}) {
+  const supabase = await createClient();
+  const { data: item } = await supabase
+    .from("content_items")
+    .select("platform, media_urls")
+    .eq("id", params.itemId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+  if (!item) throw new Error("Content item not found");
+  if (item.platform !== "instagram") return;
+  const media = (item.media_urls as string[] | null) ?? [];
+  if (!media.length) {
+    throw new Error(
+      "Instagram posts require at least one uploaded image before scheduling. Add media on the content item, then try again.",
+    );
+  }
+}
+
 async function getPrimaryBrandId(organizationId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -370,6 +391,20 @@ export async function updateContentItem(
           .filter(Boolean)
       : undefined;
 
+    const willSchedule = Boolean(parsed.data.scheduledAt);
+    if (willSchedule) {
+      try {
+        await assertCanScheduleInstagram({
+          organizationId: active.organization_id,
+          itemId: parsed.data.itemId,
+        });
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : "Cannot schedule",
+        };
+      }
+    }
+
     const { error } = await supabase
       .from("content_items")
       .update({
@@ -423,12 +458,18 @@ export async function approveContentItem(formData: FormData) {
   const supabase = await createClient();
   const { data: item } = await supabase
     .from("content_items")
-    .select("scheduled_at, status")
+    .select("scheduled_at, status, platform, media_urls")
     .eq("id", parsed.data.itemId)
     .eq("organization_id", active.organization_id)
     .single();
 
   const nextStatus = item?.scheduled_at ? "scheduled" : "approved";
+  if (nextStatus === "scheduled") {
+    await assertCanScheduleInstagram({
+      organizationId: active.organization_id,
+      itemId: parsed.data.itemId,
+    });
+  }
   const { error } = await supabase
     .from("content_items")
     .update({
@@ -542,6 +583,10 @@ export async function rescheduleContentItem(formData: FormData) {
   if (!parsed.success) throw new Error("Invalid reschedule");
 
   const { active } = await assertCanWrite();
+  await assertCanScheduleInstagram({
+    organizationId: active.organization_id,
+    itemId: parsed.data.itemId,
+  });
   const supabase = await createClient();
   const scheduledAt = new Date(parsed.data.scheduledAt).toISOString();
   const { error } = await supabase
@@ -604,4 +649,75 @@ export async function regenerateRejectedItem(formData: FormData) {
   });
 
   redirect(`/content/queue?run=${run.id}`);
+}
+
+export async function uploadContentItemMedia(
+  _prev: ContentActionResult,
+  formData: FormData,
+): Promise<ContentActionResult> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const file = formData.get("file");
+  if (!itemId || !(file instanceof File) || file.size === 0) {
+    return { error: "Choose an image file to upload" };
+  }
+
+  try {
+    const { active } = await assertCanWrite();
+    const supabase = await createClient();
+    const { data: item } = await supabase
+      .from("content_items")
+      .select("id, brand_id, media_urls")
+      .eq("id", itemId)
+      .eq("organization_id", active.organization_id)
+      .single();
+    if (!item) return { error: "Item not found" };
+
+    const { uploadContentMediaFile } = await import("@/lib/content/media");
+    const uploaded = await uploadContentMediaFile({
+      organizationId: active.organization_id,
+      brandId: item.brand_id,
+      contentItemId: item.id,
+      file,
+    });
+
+    const existing = (item.media_urls as string[] | null) ?? [];
+    const { error } = await supabase
+      .from("content_items")
+      .update({ media_urls: [...existing, uploaded.publicUrl] })
+      .eq("id", itemId)
+      .eq("organization_id", active.organization_id);
+    if (error) return { error: error.message };
+
+    revalidatePath(`/content/${itemId}`);
+    return { success: "Image uploaded" };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Upload failed",
+    };
+  }
+}
+
+export async function removeContentItemMedia(formData: FormData) {
+  const itemId = String(formData.get("itemId") ?? "");
+  const url = String(formData.get("url") ?? "");
+  if (!itemId || !url) throw new Error("Missing media");
+
+  const { active } = await assertCanWrite();
+  const supabase = await createClient();
+  const { data: item } = await supabase
+    .from("content_items")
+    .select("media_urls")
+    .eq("id", itemId)
+    .eq("organization_id", active.organization_id)
+    .single();
+  if (!item) throw new Error("Item not found");
+
+  const next = ((item.media_urls as string[]) ?? []).filter((u) => u !== url);
+  const { error } = await supabase
+    .from("content_items")
+    .update({ media_urls: next })
+    .eq("id", itemId)
+    .eq("organization_id", active.organization_id);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/content/${itemId}`);
 }

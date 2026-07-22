@@ -2,6 +2,7 @@ import {
   ensureFreshAccessToken,
   getActiveConnection,
 } from "@/lib/social/connections";
+import { isMetaTokenError } from "@/lib/social/meta";
 import { getSocialProvider } from "@/lib/social/providers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ContentItem } from "@/lib/types/content";
@@ -10,11 +11,11 @@ const MAX_ATTEMPTS = 5;
 
 function humanizePublishError(error: unknown, platform: string) {
   const message = error instanceof Error ? error.message : String(error);
-  if (/token|oauth|expired|unauthorized|401/i.test(message)) {
-    return `${platform}: authentication failed — reconnect the account in Settings → Connections. (${message})`;
+  if (/token|oauth|expired|unauthorized|401|190/i.test(message)) {
+    return `${platform}: authentication failed — reconnect the account in Social. (${message})`;
   }
   if (/media|image|video|url/i.test(message)) {
-    return `${platform}: media upload/publish failed — check that media URLs are public HTTPS. (${message})`;
+    return `${platform}: media upload/publish failed — Instagram needs a public HTTPS image URL. (${message})`;
   }
   if (/rate|429|throttle/i.test(message)) {
     return `${platform}: rate limited — will retry automatically. (${message})`;
@@ -24,6 +25,29 @@ function humanizePublishError(error: unknown, platform: string) {
 
 function backoffMs(attempt: number) {
   return Math.min(60_000, 2 ** attempt * 1000);
+}
+
+async function notifyPublishFailure(params: {
+  organizationId: string;
+  contentItemId: string;
+  platform: string;
+  message: string;
+  tokenError: boolean;
+}) {
+  try {
+    const { notifyOrgAdmins } = await import("@/lib/notifications/notify");
+    await notifyOrgAdmins({
+      organizationId: params.organizationId,
+      title: params.tokenError
+        ? `${params.platform} reconnect needed`
+        : `${params.platform} publish failed`,
+      body: params.message,
+      link: `/content/${params.contentItemId}`,
+      category: "blockers",
+    });
+  } catch {
+    // non-blocking
+  }
 }
 
 export async function publishContentItem(itemId: string) {
@@ -48,6 +72,26 @@ export async function publishContentItem(itemId: string) {
     return { skipped: true as const, reason: "not_due" };
   }
 
+  if (
+    typed.platform === "instagram" &&
+    (!(typed.media_urls ?? []).length)
+  ) {
+    const message =
+      "Instagram publishing requires at least one publicly reachable image URL. Upload media on the content item.";
+    await supabase
+      .from("content_items")
+      .update({ publish_error: message, status: "publish_failed" })
+      .eq("id", itemId);
+    await notifyPublishFailure({
+      organizationId: typed.organization_id,
+      contentItemId: itemId,
+      platform: typed.platform,
+      message,
+      tokenError: false,
+    });
+    throw new Error(message);
+  }
+
   const attempts = (typed.publish_attempts ?? 0) + 1;
   await supabase
     .from("content_items")
@@ -66,11 +110,12 @@ export async function publishContentItem(itemId: string) {
 
     if (!connection) {
       throw new Error(
-        `No active ${typed.platform} connection for this brand. Connect it in Settings → Connections.`,
+        `No active ${typed.platform} connection for this brand. Connect it in Social.`,
       );
     }
 
-    const { accessToken, connection: fresh } = await ensureFreshAccessToken(connection);
+    const { accessToken, connection: fresh } =
+      await ensureFreshAccessToken(connection);
     const provider = getSocialProvider(typed.platform);
     const result = await provider.publishPost({
       accessToken,
@@ -112,7 +157,21 @@ export async function publishContentItem(itemId: string) {
     return { ok: true as const, platformPostId: result.platformPostId };
   } catch (error) {
     const message = humanizePublishError(error, typed.platform);
-    const terminal = attempts >= MAX_ATTEMPTS;
+    const tokenError = isMetaTokenError(message);
+    const terminal = attempts >= MAX_ATTEMPTS || tokenError;
+
+    if (tokenError) {
+      await supabase
+        .from("social_connections")
+        .update({
+          status: "expired",
+          last_error: message,
+        })
+        .eq("organization_id", typed.organization_id)
+        .eq("brand_id", typed.brand_id)
+        .eq("platform", typed.platform)
+        .eq("status", "active");
+    }
 
     await supabase
       .from("content_items")
@@ -123,13 +182,22 @@ export async function publishContentItem(itemId: string) {
       .eq("id", itemId);
 
     if (!terminal) {
-      // Soft signal for scheduler — next cron will retry; include backoff hint in error.
       await supabase
         .from("content_items")
         .update({
           publish_error: `${message} Retry after ~${Math.round(backoffMs(attempts) / 1000)}s.`,
         })
         .eq("id", itemId);
+    }
+
+    if (terminal || tokenError) {
+      await notifyPublishFailure({
+        organizationId: typed.organization_id,
+        contentItemId: itemId,
+        platform: typed.platform,
+        message,
+        tokenError,
+      });
     }
 
     throw new Error(message);

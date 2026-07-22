@@ -454,6 +454,41 @@ export type Database = {
         },
         Partial<import("@/lib/social/types").SocialConnection>
       >;
+      social_oauth_sessions: TableDef<
+        {
+          id: string;
+          organization_id: string;
+          brand_id: string;
+          platform: "facebook" | "instagram";
+          user_access_token_encrypted: string;
+          token_expires_at: string | null;
+          pages: unknown;
+          scopes: string[];
+          created_by: string | null;
+          expires_at: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          organization_id: string;
+          brand_id: string;
+          platform: "facebook" | "instagram";
+          user_access_token_encrypted: string;
+          token_expires_at?: string | null;
+          pages?: unknown;
+          scopes?: string[];
+          created_by?: string | null;
+          expires_at?: string;
+          created_at?: string;
+        },
+        Partial<{
+          user_access_token_encrypted: string;
+          token_expires_at: string | null;
+          pages: unknown;
+          scopes: string[];
+          expires_at: string;
+        }>
+      >;
       content_metrics: TableDef<
         import("@/lib/social/types").ContentMetric,
         {

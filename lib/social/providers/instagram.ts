@@ -1,7 +1,10 @@
 import type { SocialProvider } from "@/lib/social/types";
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
-/** Instagram Business publishing via Meta Graph API (requires FB Page linked IG). */
+/**
+ * Instagram Business via Meta Graph.
+ * Connect + page/IG selection is handled by the Meta page picker flow.
+ */
 export const instagramProvider: SocialProvider = {
   id: "instagram",
   displayName: "Instagram Business",
@@ -15,6 +18,7 @@ export const instagramProvider: SocialProvider = {
       "instagram_manage_insights",
       "pages_show_list",
       "pages_read_engagement",
+      "pages_manage_metadata",
       "business_management",
     ].join(",");
     const url = new URL("https://www.facebook.com/v21.0/dialog/oauth");
@@ -22,53 +26,14 @@ export const instagramProvider: SocialProvider = {
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("state", state);
     url.searchParams.set("scope", scopes);
+    url.searchParams.set("response_type", "code");
     return url.toString();
   },
 
-  async exchangeCode({ code, redirectUri }) {
-    const clientId = requireEnv("META_APP_ID");
-    const clientSecret = requireEnv("META_APP_SECRET");
-    const tokenUrl = new URL("https://graph.facebook.com/v21.0/oauth/access_token");
-    tokenUrl.searchParams.set("client_id", clientId);
-    tokenUrl.searchParams.set("client_secret", clientSecret);
-    tokenUrl.searchParams.set("redirect_uri", redirectUri);
-    tokenUrl.searchParams.set("code", code);
-    const token = (await readJson(await fetch(tokenUrl))) as {
-      access_token: string;
-      expires_in?: number;
-    };
-
-    const pages = (await readJson(
-      await fetch(
-        `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&access_token=${token.access_token}`,
-      ),
-    )) as {
-      data?: Array<{
-        id: string;
-        name: string;
-        access_token: string;
-        instagram_business_account?: { id: string; username?: string };
-      }>;
-    };
-
-    const page = pages.data?.find((p) => p.instagram_business_account?.id);
-    if (!page?.instagram_business_account) {
-      throw new Error("No Instagram Business account linked to a Facebook Page");
-    }
-
-    return {
-      accessToken: page.access_token,
-      refreshToken: null,
-      expiresAt: token.expires_in
-        ? new Date(Date.now() + token.expires_in * 1000)
-        : null,
-      scopes: ["instagram_content_publish", "instagram_manage_insights"],
-      accountId: page.instagram_business_account.id,
-      accountName:
-        page.instagram_business_account.username ||
-        `${page.name} Instagram`,
-      metadata: { page_id: page.id },
-    };
+  async exchangeCode() {
+    throw new Error(
+      "Instagram connect uses the Meta page picker flow — do not call exchangeCode directly",
+    );
   },
 
   async refreshToken() {
@@ -81,7 +46,9 @@ export const instagramProvider: SocialProvider = {
       .join("\n\n");
 
     if (!input.mediaUrls[0]) {
-      throw new Error("Instagram publishing requires at least one public media URL");
+      throw new Error(
+        "Instagram publishing requires at least one publicly reachable image URL",
+      );
     }
 
     const createBody = new URLSearchParams({
@@ -101,17 +68,22 @@ export const instagramProvider: SocialProvider = {
       access_token: input.accessToken,
     });
     const published = (await readJson(
-      await fetch(`https://graph.facebook.com/v21.0/${input.accountId}/media_publish`, {
-        method: "POST",
-        body: publishBody,
-      }),
+      await fetch(
+        `https://graph.facebook.com/v21.0/${input.accountId}/media_publish`,
+        {
+          method: "POST",
+          body: publishBody,
+        },
+      ),
     )) as { id: string };
 
     return { platformPostId: published.id };
   },
 
   async getPostMetrics({ accessToken, platformPostId }) {
-    const url = new URL(`https://graph.facebook.com/v21.0/${platformPostId}/insights`);
+    const url = new URL(
+      `https://graph.facebook.com/v21.0/${platformPostId}/insights`,
+    );
     url.searchParams.set(
       "metric",
       "impressions,reach,likes,comments,shares,saved",

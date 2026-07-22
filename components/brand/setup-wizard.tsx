@@ -115,6 +115,8 @@ export function CreateBrandForm() {
 
 function BasicsForm({ brand }: { brand: Brand }) {
   const [state, action, pending] = useActionState(saveBrandBasics, initial);
+  // Remount fields when server brand updates after save (avoids Base UI defaultValue warning)
+  const fieldKey = brand.updated_at;
   return (
     <form action={action} className="space-y-4 rounded-xl border p-4">
       <input type="hidden" name="brandId" value={brand.id} />
@@ -124,40 +126,46 @@ function BasicsForm({ brand }: { brand: Brand }) {
           <AlertDescription>{state.error ?? state.success}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="space-y-2">
-        <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" defaultValue={brand.name} required />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="website">Website</Label>
-        <Input
-          id="website"
-          name="website"
-          type="url"
-          defaultValue={brand.website ?? ""}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="tagline">Tagline</Label>
-        <Input id="tagline" name="tagline" defaultValue={brand.tagline ?? ""} />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="positioning">Positioning</Label>
-        <Textarea
-          id="positioning"
-          name="positioning"
-          rows={3}
-          defaultValue={brand.positioning ?? ""}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="target_audience">Target audience summary</Label>
-        <Textarea
-          id="target_audience"
-          name="target_audience"
-          rows={3}
-          defaultValue={brand.target_audience ?? ""}
-        />
+      <div key={fieldKey} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="name">Name</Label>
+          <Input id="name" name="name" defaultValue={brand.name} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="website">Website</Label>
+          <Input
+            id="website"
+            name="website"
+            type="url"
+            defaultValue={brand.website ?? ""}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="tagline">Tagline</Label>
+          <Input
+            id="tagline"
+            name="tagline"
+            defaultValue={brand.tagline ?? ""}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="positioning">Positioning</Label>
+          <Textarea
+            id="positioning"
+            name="positioning"
+            rows={3}
+            defaultValue={brand.positioning ?? ""}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="target_audience">Target audience summary</Label>
+          <Textarea
+            id="target_audience"
+            name="target_audience"
+            rows={3}
+            defaultValue={brand.target_audience ?? ""}
+          />
+        </div>
       </div>
       <Button type="submit" disabled={pending}>
         {pending ? "Saving…" : "Save basics"}
@@ -168,6 +176,7 @@ function BasicsForm({ brand }: { brand: Brand }) {
 
 function VisualForm({ brand }: { brand: Brand }) {
   const [state, action, pending] = useActionState(saveBrandVisual, initial);
+  const fieldKey = brand.updated_at;
   return (
     <form action={action} className="space-y-4 rounded-xl border p-4">
       <input type="hidden" name="brandId" value={brand.id} />
@@ -177,61 +186,63 @@ function VisualForm({ brand }: { brand: Brand }) {
           <AlertDescription>{state.error ?? state.success}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="space-y-2">
-        <Label htmlFor="logo_url">Logo URL</Label>
-        <Input
-          id="logo_url"
-          name="logo_url"
-          type="url"
-          defaultValue={brand.logo_url ?? ""}
-        />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        {(
-          [
-            ["primary_color", "Primary", brand.primary_color],
-            ["secondary_color", "Secondary", brand.secondary_color],
-            ["accent_color", "Accent", brand.accent_color],
-          ] as const
-        ).map(([name, label, value]) => (
-          <div key={name} className="space-y-2">
-            <Label htmlFor={name}>{label}</Label>
-            <div className="flex gap-2">
-              <Input
-                id={name}
-                name={name}
-                defaultValue={value ?? ""}
-                placeholder="#0F172A"
-              />
-              {value ? (
-                <span
-                  className="h-9 w-9 shrink-0 rounded-md border"
-                  style={{ backgroundColor: value }}
-                  aria-hidden
-                />
-              ) : null}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div key={fieldKey} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="font_heading">Heading font</Label>
+          <Label htmlFor="logo_url">Logo URL</Label>
           <Input
-            id="font_heading"
-            name="font_heading"
-            defaultValue={brand.font_heading ?? ""}
-            placeholder="e.g. Fraunces"
+            id="logo_url"
+            name="logo_url"
+            type="url"
+            defaultValue={brand.logo_url ?? ""}
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="font_body">Body font</Label>
-          <Input
-            id="font_body"
-            name="font_body"
-            defaultValue={brand.font_body ?? ""}
-            placeholder="e.g. Source Sans 3"
-          />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {(
+            [
+              ["primary_color", "Primary", brand.primary_color],
+              ["secondary_color", "Secondary", brand.secondary_color],
+              ["accent_color", "Accent", brand.accent_color],
+            ] as const
+          ).map(([name, label, value]) => (
+            <div key={name} className="space-y-2">
+              <Label htmlFor={name}>{label}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id={name}
+                  name={name}
+                  defaultValue={value ?? ""}
+                  placeholder="#0F172A"
+                />
+                {value ? (
+                  <span
+                    className="h-9 w-9 shrink-0 rounded-md border"
+                    style={{ backgroundColor: value }}
+                    aria-hidden
+                  />
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="font_heading">Heading font</Label>
+            <Input
+              id="font_heading"
+              name="font_heading"
+              defaultValue={brand.font_heading ?? ""}
+              placeholder="e.g. Fraunces"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="font_body">Body font</Label>
+            <Input
+              id="font_body"
+              name="font_body"
+              defaultValue={brand.font_body ?? ""}
+              placeholder="e.g. Source Sans 3"
+            />
+          </div>
         </div>
       </div>
       <Button type="submit" disabled={pending}>
@@ -249,6 +260,7 @@ function VoiceForm({
   guidelines: Record<string, unknown>;
 }) {
   const [state, action, pending] = useActionState(saveBrandVoice, initial);
+  const fieldKey = brand.updated_at;
   return (
     <form action={action} className="space-y-4 rounded-xl border p-4">
       <input type="hidden" name="brandId" value={brand.id} />
@@ -258,40 +270,42 @@ function VoiceForm({
           <AlertDescription>{state.error ?? state.success}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="space-y-2">
-        <Label htmlFor="brand_voice">Voice description</Label>
-        <Textarea
-          id="brand_voice"
-          name="brand_voice"
-          rows={4}
-          defaultValue={brand.brand_voice ?? ""}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="tone">Tone</Label>
-        <Input
-          id="tone"
-          name="tone"
-          defaultValue={String(guidelines.tone ?? "")}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="do_say">Do say (one per line)</Label>
-        <Textarea
-          id="do_say"
-          name="do_say"
-          rows={3}
-          defaultValue={asStringArray(guidelines.do_say).join("\n")}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="dont_say">Don&apos;t say (one per line)</Label>
-        <Textarea
-          id="dont_say"
-          name="dont_say"
-          rows={3}
-          defaultValue={asStringArray(guidelines.dont_say).join("\n")}
-        />
+      <div key={fieldKey} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="brand_voice">Voice description</Label>
+          <Textarea
+            id="brand_voice"
+            name="brand_voice"
+            rows={4}
+            defaultValue={brand.brand_voice ?? ""}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="tone">Tone</Label>
+          <Input
+            id="tone"
+            name="tone"
+            defaultValue={String(guidelines.tone ?? "")}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="do_say">Do say (one per line)</Label>
+          <Textarea
+            id="do_say"
+            name="do_say"
+            rows={3}
+            defaultValue={asStringArray(guidelines.do_say).join("\n")}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="dont_say">Don&apos;t say (one per line)</Label>
+          <Textarea
+            id="dont_say"
+            name="dont_say"
+            rows={3}
+            defaultValue={asStringArray(guidelines.dont_say).join("\n")}
+          />
+        </div>
       </div>
       <Button type="submit" disabled={pending}>
         {pending ? "Saving…" : "Save voice"}
@@ -462,7 +476,7 @@ function ExtractPanel({ brand }: { brand: Brand }) {
           <AlertDescription>{state.error ?? state.success}</AlertDescription>
         </Alert>
       ) : null}
-      <div className="space-y-2">
+      <div key={brand.updated_at} className="space-y-2">
         <Label htmlFor="websiteUrl">Website URL</Label>
         <Input
           id="websiteUrl"

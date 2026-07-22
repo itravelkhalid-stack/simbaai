@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOAuthState } from "@/lib/crypto";
 import { upsertSocialConnection } from "@/lib/social/connections";
+import { createMetaOAuthSession } from "@/lib/social/meta-connect";
 import { CONNECTABLE_PLATFORMS, getSocialProvider } from "@/lib/social/providers";
 import type { ContentPlatform } from "@/lib/types/content";
 
@@ -45,6 +46,21 @@ export async function GET(
     }
 
     const redirectUri = `${siteUrl()}/api/social/oauth/${platform}/callback`;
+
+    if (platform === "facebook" || platform === "instagram") {
+      const session = await createMetaOAuthSession({
+        organizationId: payload.org,
+        brandId: payload.brand,
+        platform,
+        code,
+        redirectUri,
+        createdBy: payload.user || null,
+      });
+      return NextResponse.redirect(
+        `${siteUrl()}/social/meta/select?session=${session.id}&platform=${platform}`,
+      );
+    }
+
     const provider = getSocialProvider(platform);
 
     if (platform === "x" && payload.pkce_verifier) {
@@ -62,7 +78,8 @@ export async function GET(
 
     return NextResponse.redirect(socialRedirect(`connected=${platform}`));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "OAuth callback failed";
+    const message =
+      error instanceof Error ? error.message : "OAuth callback failed";
     return NextResponse.redirect(
       socialRedirect(`error=${encodeURIComponent(message)}`),
     );

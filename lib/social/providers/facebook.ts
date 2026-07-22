@@ -3,7 +3,8 @@ import { readJson, requireEnv } from "@/lib/social/providers/http";
 
 /**
  * Meta Graph API — Facebook Pages.
- * Instagram Business publishing uses the same app; see `instagramProvider`.
+ * OAuth code exchange + page selection is handled in the Meta connect flow
+ * (`lib/social/meta.ts` + `/social/meta/select`). This provider only publishes/metrics.
  */
 export const facebookProvider: SocialProvider = {
   id: "facebook",
@@ -16,7 +17,11 @@ export const facebookProvider: SocialProvider = {
       "pages_show_list",
       "pages_manage_posts",
       "pages_read_engagement",
+      "pages_manage_metadata",
       "business_management",
+      "instagram_basic",
+      "instagram_content_publish",
+      "instagram_manage_insights",
     ].join(",");
     const url = new URL("https://www.facebook.com/v21.0/dialog/oauth");
     url.searchParams.set("client_id", clientId);
@@ -27,50 +32,10 @@ export const facebookProvider: SocialProvider = {
     return url.toString();
   },
 
-  async exchangeCode({ code, redirectUri }) {
-    const clientId = requireEnv("META_APP_ID");
-    const clientSecret = requireEnv("META_APP_SECRET");
-    const tokenUrl = new URL("https://graph.facebook.com/v21.0/oauth/access_token");
-    tokenUrl.searchParams.set("client_id", clientId);
-    tokenUrl.searchParams.set("client_secret", clientSecret);
-    tokenUrl.searchParams.set("redirect_uri", redirectUri);
-    tokenUrl.searchParams.set("code", code);
-
-    const short = (await readJson(await fetch(tokenUrl))) as {
-      access_token: string;
-      expires_in?: number;
-    };
-
-    const longUrl = new URL("https://graph.facebook.com/v21.0/oauth/access_token");
-    longUrl.searchParams.set("grant_type", "fb_exchange_token");
-    longUrl.searchParams.set("client_id", clientId);
-    longUrl.searchParams.set("client_secret", clientSecret);
-    longUrl.searchParams.set("fb_exchange_token", short.access_token);
-    const longLived = (await readJson(await fetch(longUrl))) as {
-      access_token: string;
-      expires_in?: number;
-    };
-
-    const pages = (await readJson(
-      await fetch(
-        `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token&access_token=${longLived.access_token}`,
-      ),
-    )) as { data?: Array<{ id: string; name: string; access_token: string }> };
-
-    const page = pages.data?.[0];
-    if (!page) throw new Error("No Facebook Pages found for this user");
-
-    return {
-      accessToken: page.access_token,
-      refreshToken: null,
-      expiresAt: longLived.expires_in
-        ? new Date(Date.now() + longLived.expires_in * 1000)
-        : null,
-      scopes: ["pages_manage_posts", "pages_read_engagement"],
-      accountId: page.id,
-      accountName: page.name,
-      metadata: { user_access_token: longLived.access_token },
-    } satisfies TokenSet;
+  async exchangeCode() {
+    throw new Error(
+      "Facebook connect uses the Meta page picker flow — do not call exchangeCode directly",
+    );
   },
 
   async refreshToken() {
@@ -120,10 +85,15 @@ export const facebookProvider: SocialProvider = {
     );
     url.searchParams.set("access_token", accessToken);
     const json = (await readJson(await fetch(url))) as {
-      insights?: { data?: Array<{ name: string; values?: Array<{ value: number }> }> };
+      insights?: {
+        data?: Array<{ name: string; values?: Array<{ value: number }> }>;
+      };
     };
     const map = new Map(
-      (json.insights?.data ?? []).map((row) => [row.name, row.values?.[0]?.value ?? 0]),
+      (json.insights?.data ?? []).map((row) => [
+        row.name,
+        row.values?.[0]?.value ?? 0,
+      ]),
     );
     return {
       impressions: map.get("post_impressions") ?? 0,
@@ -137,3 +107,6 @@ export const facebookProvider: SocialProvider = {
     };
   },
 };
+
+/** @deprecated Token assembly happens in meta select flow */
+export type FacebookTokenSet = TokenSet;

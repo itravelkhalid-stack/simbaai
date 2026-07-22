@@ -8,7 +8,9 @@ import {
   queueRepurpose,
   regenerateRejectedItem,
   rejectContentItem,
+  removeContentItemMedia,
   updateContentItem,
+  uploadContentItemMedia,
   type ContentActionResult,
 } from "@/lib/content/actions";
 import { retryPublishContentItem } from "@/lib/social/actions";
@@ -23,6 +25,90 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const initial: ContentActionResult = {};
+
+function ContentMediaPanel({
+  item,
+  canWrite,
+}: {
+  item: ContentItem;
+  canWrite: boolean;
+}) {
+  const [uploadState, uploadAction, uploadPending] = useActionState(
+    uploadContentItemMedia,
+    initial,
+  );
+  const media = item.media_urls ?? [];
+
+  return (
+    <section className="space-y-3 rounded-xl border p-4">
+      <div>
+        <h2 className="font-medium">Media</h2>
+        <p className="text-sm text-muted-foreground">
+          Instagram requires a publicly reachable image. Facebook text-only posts
+          are allowed.
+        </p>
+      </div>
+      {item.platform === "instagram" && media.length === 0 ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            Upload an image before scheduling this Instagram post.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {media.length > 0 ? (
+        <ul className="space-y-2">
+          {media.map((url) => (
+            <li
+              key={url}
+              className="flex flex-wrap items-center justify-between gap-2 text-sm"
+            >
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate underline"
+              >
+                {url}
+              </a>
+              {canWrite ? (
+                <form action={removeContentItemMedia}>
+                  <input type="hidden" name="itemId" value={item.id} />
+                  <input type="hidden" name="url" value={url} />
+                  <Button type="submit" size="sm" variant="outline">
+                    Remove
+                  </Button>
+                </form>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">No media yet.</p>
+      )}
+      {canWrite ? (
+        <form action={uploadAction} className="space-y-2">
+          <input type="hidden" name="itemId" value={item.id} />
+          <Input
+            type="file"
+            name="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            required
+          />
+          {uploadState.error || uploadState.success ? (
+            <Alert variant={uploadState.error ? "destructive" : "default"}>
+              <AlertDescription>
+                {uploadState.error ?? uploadState.success}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <Button type="submit" size="sm" disabled={uploadPending}>
+            {uploadPending ? "Uploading…" : "Upload image"}
+          </Button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
 
 export function ContentItemEditor({
   item,
@@ -79,6 +165,8 @@ export function ContentItemEditor({
         </div>
       ) : null}
 
+      <ContentMediaPanel item={item} canWrite={canWrite} />
+
       <form action={saveAction} className="space-y-4 rounded-xl border p-4">
         <input type="hidden" name="itemId" value={item.id} />
         <div className="space-y-2">
@@ -108,6 +196,11 @@ export function ContentItemEditor({
             }
             disabled={!canWrite}
           />
+          {item.platform === "instagram" ? (
+            <p className="text-xs text-muted-foreground">
+              Instagram schedules require an uploaded image above.
+            </p>
+          ) : null}
         </div>
         {saveState.error || saveState.success ? (
           <Alert variant={saveState.error ? "destructive" : "default"}>

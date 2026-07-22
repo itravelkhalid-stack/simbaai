@@ -24,6 +24,7 @@ export async function disconnectSocialConnection(formData: FormData) {
 
   if (error) throw new Error(error.message);
   revalidatePath("/settings/connections");
+  revalidatePath("/social");
   revalidatePath("/content/calendar");
 }
 
