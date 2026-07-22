@@ -160,6 +160,19 @@ export async function checkPlanLimit(
   });
 }
 
+/** Throws when the org would exceed the plan limit. */
+export async function assertPlanAllows(
+  organizationId: string,
+  key: PlanLimitKey,
+  options?: { increment?: number },
+) {
+  const result = await checkPlanLimit(organizationId, key, {
+    increment: options?.increment ?? 1,
+  });
+  if (!result.ok) throw new Error(result.message);
+  return result;
+}
+
 export async function getUsageSnapshot(organizationId: string) {
   const plan = await getOrgPlan(organizationId);
   const limits = PLAN_LIMITS[plan];

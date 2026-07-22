@@ -79,7 +79,7 @@ export async function GET(
   } catch (error) {
     const message = error instanceof Error ? error.message : "OAuth start failed";
     return NextResponse.redirect(
-      `${siteUrl()}/settings/connections?error=${encodeURIComponent(message)}`,
+      `${siteUrl()}/social?error=${encodeURIComponent(message)}`,
     );
   }
 }

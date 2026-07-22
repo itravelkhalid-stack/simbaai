@@ -5,6 +5,7 @@ import {
   persistResearchReport,
 } from "@/lib/agents/research/persist";
 import { inngest } from "@/lib/inngest/client";
+import { recordJobFailure } from "@/lib/inngest/functions/jobs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ResearchProjectType } from "@/lib/types/research";
 
@@ -138,6 +139,14 @@ export const runResearchProject = inngest.createFunction(
     } catch (error) {
       const message = error instanceof Error ? error.message : "Research run failed";
       await markResearchFailed({ projectId, runId: agentRunId, error: message });
+      await recordJobFailure({
+        provider: "inngest",
+        jobName: "research/run-project",
+        eventName: "research/run.requested",
+        error: message,
+        agentRunId,
+        payload: { projectId },
+      });
       throw error;
     }
   },

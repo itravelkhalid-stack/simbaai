@@ -1,20 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { ensureDefaultPipeline, recordCrmOrder } from "@/lib/crm/contacts";
-
-function authOk(req: Request) {
-  const secret = process.env.CRM_WEBHOOK_SECRET;
-  if (!secret) return process.env.NODE_ENV !== "production";
-  const header =
-    req.headers.get("x-crm-secret") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  return header === secret;
-}
+import { verifyCrmWebhook } from "@/lib/crm/webhook-auth";
 
 function poundsToPence(amount: unknown) {
   const n = Number(amount);
   if (!Number.isFinite(n)) return 0;
-  // Shopify often sends cents already as integer string; Woo may send major units
   return Math.round(n < 1000 && String(amount).includes(".") ? n * 100 : n);
 }
 
@@ -22,27 +13,34 @@ export async function POST(
   req: Request,
   ctx: { params: Promise<{ provider: string }> },
 ) {
-  if (!authOk(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { provider } = await ctx.params;
   if (provider !== "shopify" && provider !== "woocommerce") {
     return NextResponse.json({ error: "Unknown provider" }, { status: 400 });
   }
 
-  try {
-    const url = new URL(req.url);
-    const organizationId = url.searchParams.get("organization_id");
-    const brandId = url.searchParams.get("brand_id");
-    if (!organizationId || !brandId) {
-      return NextResponse.json(
-        { error: "organization_id and brand_id query params required" },
-        { status: 400 },
-      );
-    }
+  const url = new URL(req.url);
+  const organizationId = url.searchParams.get("organization_id");
+  const brandId = url.searchParams.get("brand_id");
+  if (!organizationId || !brandId) {
+    return NextResponse.json(
+      { error: "organization_id and brand_id query params required" },
+      { status: 400 },
+    );
+  }
 
-    const payload = (await req.json()) as Record<string, unknown>;
+  const rawBody = await req.text();
+  const auth = await verifyCrmWebhook({
+    req,
+    provider,
+    organizationId,
+    rawBody,
+  });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: 401 });
+  }
+
+  try {
+    const payload = JSON.parse(rawBody) as Record<string, unknown>;
     await ensureDefaultPipeline(organizationId, brandId);
 
     let email = "";
@@ -60,12 +58,9 @@ export async function POST(
         String(payload.name ?? "") ||
         null;
       externalId = String(payload.id ?? payload.order_number ?? "");
-      // Shopify total_price is major units as string
       totalPence = Math.round(Number(payload.total_price ?? 0) * 100);
       currency = String(payload.currency ?? "GBP");
-      orderedAt = payload.created_at
-        ? String(payload.created_at)
-        : undefined;
+      orderedAt = payload.created_at ? String(payload.created_at) : undefined;
     } else {
       const billing = (payload.billing ?? {}) as Record<string, unknown>;
       email = String(

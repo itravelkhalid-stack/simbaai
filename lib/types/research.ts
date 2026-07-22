@@ -23,7 +23,30 @@ export type Brand = {
   target_audience: string | null;
   guidelines: Record<string, unknown>;
   social_handles: Record<string, unknown>;
+  logo_url: string | null;
+  primary_color: string | null;
+  secondary_color: string | null;
+  accent_color: string | null;
+  font_heading: string | null;
+  font_body: string | null;
+  tagline: string | null;
+  products_summary: string | null;
   is_primary: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BrandProduct = {
+  id: string;
+  organization_id: string;
+  brand_id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  price_pence: number | null;
+  currency: string;
+  url: string | null;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 };

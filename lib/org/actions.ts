@@ -10,6 +10,7 @@ import {
   setActiveOrganizationId,
 } from "@/lib/org/session";
 import { createClient } from "@/lib/supabase/server";
+import { assertPlanAllows } from "@/lib/billing/plans";
 import {
   createOrganizationSchema,
   inviteMemberSchema,
@@ -124,6 +125,12 @@ export async function inviteMember(
   const { active } = await resolveActiveOrganization(user.id);
   if (!active || !canManageTeam(active.role)) {
     return { error: "Only owners and admins can invite members" };
+  }
+
+  try {
+    await assertPlanAllows(active.organization_id, "team_members");
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Plan limit reached" };
   }
 
   const email = parsed.data.email.toLowerCase();

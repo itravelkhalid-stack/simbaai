@@ -9,6 +9,10 @@ function siteUrl() {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 }
 
+function socialRedirect(query: string) {
+  return `${siteUrl()}/social?${query}`;
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ provider: string }> },
@@ -21,21 +25,17 @@ export async function GET(
   const oauthError = searchParams.get("error");
 
   if (!CONNECTABLE_PLATFORMS.includes(platform)) {
-    return NextResponse.redirect(
-      `${siteUrl()}/settings/connections?error=unknown_provider`,
-    );
+    return NextResponse.redirect(socialRedirect("error=unknown_provider"));
   }
 
   if (oauthError) {
     return NextResponse.redirect(
-      `${siteUrl()}/settings/connections?error=${encodeURIComponent(oauthError)}`,
+      socialRedirect(`error=${encodeURIComponent(oauthError)}`),
     );
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(
-      `${siteUrl()}/settings/connections?error=missing_code`,
-    );
+    return NextResponse.redirect(socialRedirect("error=missing_code"));
   }
 
   try {
@@ -60,13 +60,11 @@ export async function GET(
       tokens,
     });
 
-    return NextResponse.redirect(
-      `${siteUrl()}/settings/connections?connected=${platform}`,
-    );
+    return NextResponse.redirect(socialRedirect(`connected=${platform}`));
   } catch (error) {
     const message = error instanceof Error ? error.message : "OAuth callback failed";
     return NextResponse.redirect(
-      `${siteUrl()}/settings/connections?error=${encodeURIComponent(message)}`,
+      socialRedirect(`error=${encodeURIComponent(message)}`),
     );
   }
 }

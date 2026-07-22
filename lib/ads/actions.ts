@@ -14,6 +14,7 @@ import { parseAdsSettings } from "@/lib/ads/settings";
 import { applyRecommendation } from "@/lib/ads/recommendations";
 import { getBrandContext } from "@/lib/brand/context";
 import { signOAuthState } from "@/lib/crypto";
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -165,6 +166,7 @@ export async function createMediaPlanWithAi(
 ): Promise<AdsActionResult> {
   try {
     const { user, active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const brief = String(formData.get("goalBrief") ?? "").trim();
     if (brief.length < 10) return { error: "Describe the goal in more detail" };
     const monthlyBudget = Math.round(
@@ -356,6 +358,7 @@ export async function updateMediaPlanJson(
 
 export async function generateCreativesForCampaign(formData: FormData) {
   const { user, active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   const campaignId = String(formData.get("campaignId") ?? "");
   const supabase = await createClient();
   const { data: campaign } = await supabase

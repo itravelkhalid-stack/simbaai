@@ -7,15 +7,7 @@ import {
   logCrmActivity,
   upsertCrmContact,
 } from "@/lib/crm/contacts";
-
-function authOk(req: Request) {
-  const secret = process.env.CRM_WEBHOOK_SECRET;
-  if (!secret) return process.env.NODE_ENV !== "production";
-  const header =
-    req.headers.get("x-crm-secret") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  return header === secret;
-}
+import { verifyCrmWebhook } from "@/lib/crm/webhook-auth";
 
 const formSchema = z.object({
   organization_id: z.string().uuid(),
@@ -30,12 +22,33 @@ const formSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  if (!authOk(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const rawBody = await req.text();
+  let organizationId: string | undefined;
+  try {
+    organizationId = (JSON.parse(rawBody) as { organization_id?: string })
+      .organization_id;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: "organization_id required" },
+      { status: 400 },
+    );
+  }
+
+  const auth = await verifyCrmWebhook({
+    req,
+    provider: "forms",
+    organizationId,
+    rawBody,
+  });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: 401 });
   }
 
   try {
-    const body = formSchema.parse(await req.json());
+    const body = formSchema.parse(JSON.parse(rawBody));
     await ensureDefaultPipeline(body.organization_id, body.brand_id);
 
     const contact = await upsertCrmContact({

@@ -8,6 +8,7 @@ export function CrmNav({ current }: { current: string }) {
     { href: "/crm", label: "Dashboard" },
     { href: "/crm/contacts", label: "Contacts" },
     { href: "/crm/deals", label: "Deals" },
+    { href: "/crm/webhooks", label: "Webhooks" },
   ];
   return (
     <div className="flex flex-wrap gap-2">

@@ -5,6 +5,7 @@ import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { inngest } from "@/lib/inngest/client";
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import { createAndQueueMeeting } from "@/lib/meetings/run";
@@ -79,6 +80,7 @@ export async function runMeetingNow(
 ): Promise<MeetingsActionResult> {
   try {
     const { active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const type = scheduleTypeSchema.parse(String(formData.get("type") ?? "adhoc"));
     const brandId = String(formData.get("brandId") ?? "");
     if (!brandId) return { error: "Select a brand" };

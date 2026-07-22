@@ -1,7 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildBrandContextMarkdown } from "@/lib/brand/markdown";
-import type { Brand, BrandAudience, Competitor } from "@/lib/types/research";
+import type {
+  Brand,
+  BrandAudience,
+  BrandProduct,
+  Competitor,
+} from "@/lib/types/research";
 import type { ContentPillar } from "@/lib/types/content";
 
 export type BrandContext = {
@@ -9,6 +14,7 @@ export type BrandContext = {
   organizationName: string;
   brand: Brand;
   audiences: BrandAudience[];
+  products: BrandProduct[];
   competitors: Competitor[];
   pillars: ContentPillar[];
   markdown: string;
@@ -56,13 +62,19 @@ export async function getBrandContext(
     resolvedBrand = fallback;
   }
 
-  const [{ data: audiences }, { data: competitors }, { data: pillars }] =
+  const [{ data: audiences }, { data: products }, { data: competitors }, { data: pillars }] =
     await Promise.all([
       supabase
         .from("brand_audiences")
         .select("*")
         .eq("organization_id", organizationId)
         .eq("brand_id", resolvedBrand.id),
+      supabase
+        .from("brand_products")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("brand_id", resolvedBrand.id)
+        .order("sort_order"),
       supabase
         .from("competitors")
         .select("*")
@@ -79,8 +91,9 @@ export async function getBrandContext(
   const base = {
     organizationId,
     organizationName: org.name,
-    brand: resolvedBrand,
+    brand: resolvedBrand as Brand,
     audiences: (audiences ?? []) as BrandAudience[],
+    products: (products ?? []) as BrandProduct[],
     competitors: (competitors ?? []) as Competitor[],
     pillars: (pillars ?? []) as ContentPillar[],
   };

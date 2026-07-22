@@ -9,6 +9,7 @@ import {
 import { appendAgentRunLog } from "@/lib/agents/research/persist";
 import { runEntityComplianceCheck } from "@/lib/compliance/check";
 import { inngest } from "@/lib/inngest/client";
+import { recordJobFailure } from "@/lib/inngest/functions/jobs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   ContentFormat,
@@ -241,6 +242,13 @@ export const runContentSingleGenerate = inngest.createFunction(
         .from("agent_runs")
         .update({ status: "failed", error: message, progress: 100 })
         .eq("id", agentRunId);
+      await recordJobFailure({
+        organizationId,
+        provider: "inngest",
+        jobName: "content",
+        error: message,
+        agentRunId,
+      });
       throw error;
     }
   },
@@ -349,6 +357,13 @@ export const runContentBatchPropose = inngest.createFunction(
         .from("content_plans")
         .update({ status: "cancelled" })
         .eq("id", planId);
+      await recordJobFailure({
+        organizationId,
+        provider: "inngest",
+        jobName: "content/batch-propose",
+        error: message,
+        agentRunId,
+      });
       throw error;
     }
   },
@@ -517,6 +532,13 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
         .from("agent_runs")
         .update({ status: "failed", error: message, progress: 100 })
         .eq("id", agentRunId);
+      await recordJobFailure({
+        organizationId,
+        provider: "inngest",
+        jobName: "content/batch-generate",
+        error: message,
+        agentRunId,
+      });
       throw error;
     }
   },
@@ -643,6 +665,13 @@ export const runContentRepurpose = inngest.createFunction(
         .from("agent_runs")
         .update({ status: "failed", error: message, progress: 100 })
         .eq("id", agentRunId);
+      await recordJobFailure({
+        organizationId,
+        provider: "inngest",
+        jobName: "content/repurpose",
+        error: message,
+        agentRunId,
+      });
       throw error;
     }
   },

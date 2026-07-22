@@ -19,6 +19,7 @@ import {
 } from "@/lib/email/domains";
 import { buildComplianceFooter } from "@/lib/email/footer";
 import { inngest } from "@/lib/inngest/client";
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { EmailBlock, SegmentRuleGroup } from "@/lib/types/email";
@@ -191,6 +192,7 @@ export async function generateCampaignWithAi(
 ): Promise<EmailActionResult> {
   try {
     const { user, active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const brief = String(formData.get("brief") ?? "").trim();
     if (brief.length < 10) return { error: "Brief is required" };
     const brandId = await primaryBrandId(active.organization_id);
@@ -314,6 +316,7 @@ export async function proposeWelcomeFlow(
 ): Promise<EmailActionResult> {
   try {
     const { user, active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const brief = String(formData.get("brief") ?? "").trim();
     if (brief.length < 10) return { error: "Brief is required" };
     const brandId = await primaryBrandId(active.organization_id);

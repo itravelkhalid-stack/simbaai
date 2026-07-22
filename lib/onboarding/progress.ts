@@ -123,6 +123,11 @@ async function detectOnboardingSteps(
           Object.keys(b.guidelines as object).length > 0)),
   );
 
+  const extractedBrand = (brandRows ?? []).some((b) => {
+    const g = b.guidelines as Record<string, unknown> | null;
+    return Boolean(g && (g.last_extraction_at || g.last_extraction_url));
+  });
+
   const reportScheduled = (reportSettings ?? []).some(
     (r) =>
       Boolean(
@@ -134,7 +139,7 @@ async function detectOnboardingSteps(
 
   return {
     setup_brand: setupBrand || (brands ?? 0) > 0,
-    ai_brand_extraction: (brandAudits ?? 0) > 0,
+    ai_brand_extraction: extractedBrand || (brandAudits ?? 0) > 0,
     connect_social: (social ?? 0) > 0,
     first_research: (researchDone ?? 0) > 0,
     approve_content: (contentApproved ?? 0) > 0,

@@ -1,6 +1,7 @@
 import type {
   Brand,
   BrandAudience,
+  BrandProduct,
   Competitor,
   ResearchDocument,
   ResearchProject,
@@ -201,6 +202,14 @@ export type Database = {
           target_audience?: string | null;
           guidelines?: Record<string, unknown>;
           social_handles?: Record<string, unknown>;
+          logo_url?: string | null;
+          primary_color?: string | null;
+          secondary_color?: string | null;
+          accent_color?: string | null;
+          font_heading?: string | null;
+          font_body?: string | null;
+          tagline?: string | null;
+          products_summary?: string | null;
           is_primary?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -224,6 +233,46 @@ export type Database = {
           updated_at?: string;
         },
         Partial<BrandAudience>
+      >;
+      brand_products: TableDef<
+        BrandProduct,
+        {
+          id?: string;
+          organization_id: string;
+          brand_id: string;
+          name: string;
+          description?: string | null;
+          category?: string | null;
+          price_pence?: number | null;
+          currency?: string;
+          url?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<BrandProduct>
+      >;
+      org_webhook_secrets: TableDef<
+        {
+          id: string;
+          organization_id: string;
+          provider: "shopify" | "woocommerce" | "forms" | "generic";
+          secret: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          organization_id: string;
+          provider: "shopify" | "woocommerce" | "forms" | "generic";
+          secret: string;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<{
+          secret: string;
+          updated_at: string;
+        }>
       >;
       research_projects: TableDef<
         ResearchProject,

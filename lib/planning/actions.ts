@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { generateMarketingPlan } from "@/lib/agents/planning/generate";
 import { getBrandContext } from "@/lib/brand/context";
 import { inngest } from "@/lib/inngest/client";
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
 import { materializePlan } from "@/lib/planning/materialize";
 import { createClient } from "@/lib/supabase/server";
@@ -68,6 +69,7 @@ export async function createPlanWithAi(
 ): Promise<PlanningActionResult> {
   try {
     const { user, active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const goalBrief = String(formData.get("goalBrief") ?? "").trim();
     if (goalBrief.length < 15) return { error: "Describe the business goal in more detail" };
 
@@ -304,7 +306,8 @@ export async function updateTaskStatus(formData: FormData) {
 
 export async function runAiTaskNow(formData: FormData) {
   const taskId = String(formData.get("taskId") ?? "");
-  await assertCanWrite();
+  const { active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   await inngest.send({
     name: "planning/task.execute",
     data: { taskId },

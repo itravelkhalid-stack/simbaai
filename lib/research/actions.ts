@@ -64,11 +64,8 @@ async function enqueueResearchRun(params: {
   createdBy: string;
   refreshedFromId?: string;
 }) {
-  const { checkPlanLimit } = await import("@/lib/billing/plans");
-  const limit = await checkPlanLimit(params.organizationId, "ai_runs_month", {
-    increment: 1,
-  });
-  if (!limit.ok) throw new Error(limit.message);
+  const { assertPlanAllows } = await import("@/lib/billing/plans");
+  await assertPlanAllows(params.organizationId, "ai_runs_month");
 
   const supabase = await createClient();
 

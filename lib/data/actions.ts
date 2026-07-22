@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -113,6 +114,7 @@ export async function askAnalytics(
 ): Promise<DataActionResult> {
   try {
     const { user, active } = await requireActiveOrg();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const brandId = String(formData.get("brandId") ?? "");
     const question = String(formData.get("question") ?? "").trim();
     if (!brandId || !question) return { error: "Ask a question" };

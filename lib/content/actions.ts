@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { inngest } from "@/lib/inngest/client";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
@@ -101,6 +102,7 @@ export async function queueSingleGenerate(
 
   try {
     const { user, active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const brandId = await getPrimaryBrandId(active.organization_id);
     const supabase = await createClient();
 
@@ -171,6 +173,7 @@ export async function queueBatchPropose(
 
   try {
     const { user, active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const brandId = await getPrimaryBrandId(active.organization_id);
     const supabase = await createClient();
 
@@ -253,6 +256,7 @@ export async function generateApprovedSlots(formData: FormData) {
   if (!planId) throw new Error("Missing plan");
 
   const { user, active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   const brandId = await getPrimaryBrandId(active.organization_id);
   const supabase = await createClient();
 
@@ -300,6 +304,7 @@ export async function queueRepurpose(formData: FormData) {
   if (!itemId) throw new Error("Missing item");
 
   const { user, active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   const brandId = await getPrimaryBrandId(active.organization_id);
   const supabase = await createClient();
 
@@ -556,6 +561,7 @@ export async function regenerateRejectedItem(formData: FormData) {
   if (!itemId) throw new Error("Missing item");
 
   const { user, active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   const brandId = await getPrimaryBrandId(active.organization_id);
   const supabase = await createClient();
   const { data: item, error } = await supabase

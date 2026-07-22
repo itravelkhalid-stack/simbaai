@@ -303,9 +303,8 @@ export async function assertPlanAllows(
   organizationId: string,
   key: Parameters<typeof checkPlanLimit>[1],
 ) {
-  const result = await checkPlanLimit(organizationId, key, { increment: 1 });
-  if (!result.ok) throw new Error(result.message);
-  return result;
+  const { assertPlanAllows: assert } = await import("@/lib/billing/plans");
+  return assert(organizationId, key);
 }
 
 export { planFromPriceId };

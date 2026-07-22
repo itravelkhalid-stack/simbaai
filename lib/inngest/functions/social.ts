@@ -1,4 +1,5 @@
 import { inngest } from "@/lib/inngest/client";
+import { recordJobFailure } from "@/lib/inngest/functions/jobs";
 import { ingestMetricsForPublishedItems } from "@/lib/social/metrics";
 import { listDueContentItems, publishContentItem } from "@/lib/social/publish";
 
@@ -19,10 +20,18 @@ export const publishDueSocialPosts = inngest.createFunction(
           await publishContentItem(item.id);
           return { id: item.id, ok: true as const };
         } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "publish failed";
+          await recordJobFailure({
+            provider: "inngest",
+            jobName: "social/publish-due-posts",
+            error: message,
+            payload: { contentItemId: item.id },
+          });
           return {
             id: item.id,
             ok: false as const,
-            error: error instanceof Error ? error.message : "publish failed",
+            error: message,
           };
         }
       });

@@ -119,14 +119,14 @@ export const ONBOARDING_STEPS: Array<{
   {
     id: "ai_brand_extraction",
     title: "Run AI brand extraction",
-    description: "Launch a brand audit research project.",
-    href: "/research/new?type=brand_audit",
+    description: "Extract brand kit from your website URL.",
+    href: "/brand/setup",
   },
   {
     id: "connect_social",
     title: "Connect first social account",
     description: "Link Instagram, LinkedIn, or another channel.",
-    href: "/settings/connections",
+    href: "/social",
   },
   {
     id: "first_research",

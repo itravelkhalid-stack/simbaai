@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { inngest } from "@/lib/inngest/client";
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import { createAndQueueReport } from "@/lib/reviews/run";
@@ -30,6 +31,7 @@ export async function generateReportNow(
 ): Promise<ReviewsActionResult> {
   try {
     const { active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const type = reportTypeSchema.parse(String(formData.get("type") ?? "weekly"));
     const brandId = String(formData.get("brandId") ?? "");
     if (!brandId) return { error: "Select a brand" };

@@ -11,6 +11,7 @@ import {
 import { getBrandContext } from "@/lib/brand/context";
 import { signOAuthState } from "@/lib/crypto";
 import { inngest } from "@/lib/inngest/client";
+import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
 import { scoreArticleAgainstBrief } from "@/lib/seo/checklist";
 import {
@@ -119,7 +120,8 @@ export async function syncGscNow(formData: FormData) {
 
 export async function runAuditNow(formData: FormData) {
   const projectId = String(formData.get("projectId") ?? "");
-  await assertCanWrite();
+  const { active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   await inngest.send({
     name: "seo/audit.run",
     data: { projectId },
@@ -133,6 +135,7 @@ export async function generateKeywordStrategy(
 ): Promise<SeoActionResult> {
   try {
     const { active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
     const projectId = String(formData.get("projectId") ?? "");
     const supabase = await createClient();
     const { data: project } = await supabase
@@ -278,6 +281,7 @@ export async function saveKeywordMap(
 
 export async function createBriefForKeyword(formData: FormData) {
   const { user, active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   const keywordId = String(formData.get("keywordId") ?? "");
   const supabase = await createClient();
   const { data: keyword } = await supabase
@@ -363,6 +367,7 @@ export async function createBriefForKeyword(formData: FormData) {
 
 export async function draftArticleFromBrief(formData: FormData) {
   const { user, active } = await assertCanWrite();
+  await assertPlanAllows(active.organization_id, "ai_runs_month");
   const briefId = String(formData.get("briefId") ?? "");
   const supabase = await createClient();
   const { data: brief } = await supabase

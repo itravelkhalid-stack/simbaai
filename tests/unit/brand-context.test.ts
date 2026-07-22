@@ -14,6 +14,13 @@ describe("brand context builder", () => {
         target_audience: "Operators",
         social_handles: { x: "@acme" },
         guidelines: { tone: "direct" },
+        tagline: "Ship faster",
+        primary_color: "#0F172A",
+        secondary_color: null,
+        accent_color: null,
+        font_heading: "Fraunces",
+        font_body: "Source Sans 3",
+        logo_url: null,
       },
       audiences: [
         {
@@ -21,6 +28,15 @@ describe("brand context builder", () => {
           description: "Busy managers",
           messaging_angles: ["save time"],
           channel_behaviour: { linkedin: "high" },
+        },
+      ],
+      products: [
+        {
+          name: "Starter",
+          description: "Entry plan",
+          category: "saas",
+          price_pence: 2900,
+          currency: "GBP",
         },
       ],
       competitors: [
@@ -54,8 +70,16 @@ describe("brand context builder", () => {
         target_audience: null,
         social_handles: {},
         guidelines: {},
+        tagline: null,
+        primary_color: null,
+        secondary_color: null,
+        accent_color: null,
+        font_heading: null,
+        font_body: null,
+        logo_url: null,
       },
       audiences: [],
+      products: [],
       competitors: [],
       pillars: [],
     });
