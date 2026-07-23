@@ -38,17 +38,62 @@ async function assertCanScheduleInstagram(params: {
   const supabase = await createClient();
   const { data: item } = await supabase
     .from("content_items")
-    .select("platform, media_urls")
+    .select("platform, media_urls, brand_id")
     .eq("id", params.itemId)
     .eq("organization_id", params.organizationId)
     .maybeSingle();
   if (!item) throw new Error("Content item not found");
   if (item.platform !== "instagram") return;
+
   const media = (item.media_urls as string[] | null) ?? [];
   if (!media.length) {
     throw new Error(
       "Instagram posts require at least one uploaded image before scheduling. Add media on the content item, then try again.",
     );
+  }
+
+  const { data: igConnection } = await supabase
+    .from("social_connections")
+    .select("scopes, metadata, status, platform")
+    .eq("organization_id", params.organizationId)
+    .eq("brand_id", item.brand_id)
+    .eq("platform", "instagram")
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: fbConnection } = await supabase
+    .from("social_connections")
+    .select("scopes, metadata, status, platform")
+    .eq("organization_id", params.organizationId)
+    .eq("brand_id", item.brand_id)
+    .eq("platform", "facebook")
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const {
+    connectionCanPublishInstagram,
+    INSTAGRAM_SCOPE_REQUIRED_MESSAGE,
+  } = await import("@/lib/social/meta-capabilities");
+
+  const candidate = igConnection ?? fbConnection;
+  if (!candidate) {
+    throw new Error(
+      "No Meta connection can publish to Instagram. Connect Meta in Social (with Instagram scopes) and select a Page that has a linked Instagram Business account.",
+    );
+  }
+
+  if (
+    !connectionCanPublishInstagram({
+      scopes: candidate.scopes as string[] | null,
+      metadata: (candidate.metadata as Record<string, unknown>) ?? null,
+      platform: candidate.platform as string,
+    })
+  ) {
+    throw new Error(INSTAGRAM_SCOPE_REQUIRED_MESSAGE);
   }
 }
 

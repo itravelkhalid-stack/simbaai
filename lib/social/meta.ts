@@ -1,57 +1,42 @@
 import "server-only";
 
 import { readJson, requireEnv } from "@/lib/social/providers/http";
+import {
+  getMetaOAuthScopeParam as buildMetaOAuthScopeParam,
+  getMetaOAuthScopesList as buildMetaOAuthScopesList,
+  type MetaPageOption,
+} from "@/lib/social/meta-scopes";
 
-/** Facebook Page scopes always requested during Meta OAuth. */
-export const META_PAGE_SCOPES = [
-  "pages_show_list",
-  "pages_manage_posts",
-  "pages_read_engagement",
-  "pages_manage_metadata",
-  "business_management",
-] as const;
-
-/** Instagram scopes — only when META_REQUEST_IG_SCOPES=true. */
-export const META_IG_SCOPES = [
-  "instagram_basic",
-  "instagram_content_publish",
-  "instagram_manage_insights",
-] as const;
+export type { MetaPageOption } from "@/lib/social/meta-scopes";
+export { META_PAGE_SCOPES, META_IG_SCOPES } from "@/lib/social/meta-scopes";
 
 export function metaRequestIgScopesEnabled() {
   return process.env.META_REQUEST_IG_SCOPES === "true";
 }
 
-/** OAuth `scope` query value for Facebook / Instagram connect. */
+/** Server helper — reads META_REQUEST_IG_SCOPES from the environment. */
 export function getMetaOAuthScopeParam() {
-  const scopes: string[] = [...META_PAGE_SCOPES];
-  if (metaRequestIgScopesEnabled()) {
-    scopes.push(...META_IG_SCOPES);
-  }
-  return scopes.join(",");
+  return buildMetaOAuthScopeParam(metaRequestIgScopesEnabled());
 }
 
 export function getMetaOAuthScopesList() {
-  return getMetaOAuthScopeParam().split(",").filter(Boolean);
+  return buildMetaOAuthScopesList(metaRequestIgScopesEnabled());
 }
-
-export type MetaPageOption = {
-  page_id: string;
-  page_name: string;
-  /** Page access token (may be short; we re-fetch with user token on select). */
-  page_access_token?: string;
-  ig_user_id: string | null;
-  ig_username: string | null;
-};
 
 export async function exchangeMetaCodeForLongLivedUserToken(params: {
   code: string;
   redirectUri: string;
-}): Promise<{ accessToken: string; expiresAt: Date | null; expiresIn: number | null }> {
+}): Promise<{
+  accessToken: string;
+  expiresAt: Date | null;
+  expiresIn: number | null;
+}> {
   const clientId = requireEnv("META_APP_ID");
   const clientSecret = requireEnv("META_APP_SECRET");
 
-  const shortUrl = new URL("https://graph.facebook.com/v21.0/oauth/access_token");
+  const shortUrl = new URL(
+    "https://graph.facebook.com/v21.0/oauth/access_token",
+  );
   shortUrl.searchParams.set("client_id", clientId);
   shortUrl.searchParams.set("client_secret", clientSecret);
   shortUrl.searchParams.set("redirect_uri", params.redirectUri);
@@ -62,7 +47,9 @@ export async function exchangeMetaCodeForLongLivedUserToken(params: {
     expires_in?: number;
   };
 
-  const longUrl = new URL("https://graph.facebook.com/v21.0/oauth/access_token");
+  const longUrl = new URL(
+    "https://graph.facebook.com/v21.0/oauth/access_token",
+  );
   longUrl.searchParams.set("grant_type", "fb_exchange_token");
   longUrl.searchParams.set("client_id", clientId);
   longUrl.searchParams.set("client_secret", clientSecret);

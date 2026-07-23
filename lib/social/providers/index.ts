@@ -20,7 +20,16 @@ export const socialProviders: Record<ContentPlatform, SocialProvider> = {
 
 export const CONNECTABLE_PLATFORMS: ContentPlatform[] = [
   "facebook",
-  "instagram",
+  "x",
+  "linkedin",
+  "tiktok",
+  "pinterest",
+  "youtube",
+];
+
+/** Platforms shown as separate rows (Meta covers facebook + instagram in one card). */
+export const CONNECTION_PANEL_PLATFORMS: ContentPlatform[] = [
+  "facebook",
   "x",
   "linkedin",
   "tiktok",

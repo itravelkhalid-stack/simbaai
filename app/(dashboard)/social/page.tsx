@@ -6,7 +6,14 @@ import { createClient } from "@/lib/supabase/server";
 import type { SocialConnection } from "@/lib/social/types";
 import type { ContentPlatform } from "@/lib/types/content";
 import { PLATFORM_LABELS } from "@/lib/types/content";
-import { CONNECTABLE_PLATFORMS } from "@/lib/social/providers";
+import {
+  CONNECTION_PANEL_PLATFORMS,
+  CONNECTABLE_PLATFORMS,
+} from "@/lib/social/providers";
+import {
+  connectionCanPublishInstagram,
+  metaInstagramUiStatus,
+} from "@/lib/social/meta-capabilities";
 import { Badge } from "@/components/ui/badge";
 
 export default async function SocialPage({
@@ -28,9 +35,28 @@ export default async function SocialPage({
   if (error) throw new Error(error.message);
 
   const typed = (connections ?? []) as SocialConnection[];
+  const facebook = typed.find((c) => c.platform === "facebook");
+  const instagram = typed.find((c) => c.platform === "instagram");
+
+  const canPublishIg = Boolean(
+    (instagram &&
+      connectionCanPublishInstagram({
+        scopes: instagram.scopes,
+        metadata: instagram.metadata,
+        platform: "instagram",
+      })) ||
+      (facebook &&
+        connectionCanPublishInstagram({
+          scopes: facebook.scopes,
+          metadata: facebook.metadata,
+          platform: "facebook",
+        })),
+  );
+
   const connectedPlatforms = new Set(
     typed.filter((c) => c.status === "active").map((c) => c.platform),
   );
+  if (canPublishIg) connectedPlatforms.add("instagram");
 
   const { data: scheduled } = await supabase
     .from("content_items")
@@ -42,12 +68,41 @@ export default async function SocialPage({
     new Set(
       (scheduled ?? [])
         .map((row) => row.platform as ContentPlatform)
-        .filter((platform) => !connectedPlatforms.has(platform)),
+        .filter((platform) => {
+          if (platform === "instagram") return !canPublishIg;
+          return !connectedPlatforms.has(platform);
+        }),
     ),
   );
 
   const canManage = active.role === "org_owner" || active.role === "org_admin";
-  const activeCount = typed.filter((c) => c.status === "active").length;
+  const otherConnected = typed.filter(
+    (c) =>
+      c.status === "active" &&
+      c.platform !== "facebook" &&
+      c.platform !== "instagram",
+  ).length;
+  const metaConnected = facebook?.status === "active" ? 1 : 0;
+  const panelTotal = CONNECTION_PANEL_PLATFORMS.length;
+  const activeCount = otherConnected + metaConnected;
+
+  const igUi = metaInstagramUiStatus({
+    facebook: facebook
+      ? {
+          status: facebook.status,
+          scopes: facebook.scopes,
+          metadata: facebook.metadata,
+          token_expires_at: facebook.token_expires_at,
+        }
+      : null,
+    instagram: instagram
+      ? {
+          status: instagram.status,
+          scopes: instagram.scopes,
+          token_expires_at: instagram.token_expires_at,
+        }
+      : null,
+  });
 
   return (
     <div className="space-y-6">
@@ -63,20 +118,32 @@ export default async function SocialPage({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {CONNECTABLE_PLATFORMS.map((platform) => {
-          const connection = typed.find((c) => c.platform === platform);
-          const status = connection?.status ?? "disconnected";
-          return (
-            <Badge
-              key={platform}
-              variant={status === "active" ? "default" : "outline"}
-            >
-              {PLATFORM_LABELS[platform]}: {status}
-            </Badge>
-          );
-        })}
+        <Badge
+          variant={facebook?.status === "active" ? "default" : "outline"}
+        >
+          Meta · FB: {facebook?.status === "active" ? "connected" : "off"} · IG:{" "}
+          {igUi === "connected"
+            ? "connected"
+            : igUi === "needs_reconnect"
+              ? "needs reconnect"
+              : "off"}
+        </Badge>
+        {CONNECTABLE_PLATFORMS.filter((p) => p !== "facebook").map(
+          (platform) => {
+            const connection = typed.find((c) => c.platform === platform);
+            const status = connection?.status ?? "disconnected";
+            return (
+              <Badge
+                key={platform}
+                variant={status === "active" ? "default" : "outline"}
+              >
+                {PLATFORM_LABELS[platform]}: {status}
+              </Badge>
+            );
+          },
+        )}
         <Badge variant="secondary">
-          {activeCount}/{CONNECTABLE_PLATFORMS.length} connected
+          {activeCount}/{panelTotal} connected
         </Badge>
       </div>
 

@@ -1,10 +1,118 @@
 import type { SocialProvider } from "@/lib/social/types";
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
-/** LinkedIn organisation page posting (UGC / restli). */
+function linkedInOrgEnabled() {
+  return process.env.LINKEDIN_ORG_ENABLED === "true";
+}
+
+/** Member scopes — available without Community Management API approval. */
+const MEMBER_SCOPES = ["openid", "profile", "w_member_social"] as const;
+
+/**
+ * Org / Page scopes — require LinkedIn Community Management API access.
+ * Only requested when LINKEDIN_ORG_ENABLED=true.
+ */
+const ORG_SCOPES = [
+  "rw_organization_admin",
+  "w_organization_social",
+  "r_organization_social",
+] as const;
+
+function linkedInOAuthScopeParam() {
+  const scopes: string[] = [...MEMBER_SCOPES];
+  if (linkedInOrgEnabled()) {
+    scopes.push(...ORG_SCOPES);
+  }
+  return scopes.join(" ");
+}
+
+async function fetchMemberIdentity(accessToken: string): Promise<{
+  personUrn: string;
+  name: string;
+}> {
+  // OpenID userinfo (works with openid + profile)
+  try {
+    const userinfo = (await readJson(
+      await fetch("https://api.linkedin.com/v2/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }),
+    )) as { sub?: string; name?: string; given_name?: string; family_name?: string };
+    if (userinfo.sub) {
+      const personId = userinfo.sub.includes(":")
+        ? userinfo.sub.split(":").pop()!
+        : userinfo.sub;
+      const name =
+        userinfo.name ||
+        [userinfo.given_name, userinfo.family_name].filter(Boolean).join(" ") ||
+        `LinkedIn member ${personId}`;
+      return {
+        personUrn: userinfo.sub.startsWith("urn:")
+          ? userinfo.sub
+          : `urn:li:person:${personId}`,
+        name,
+      };
+    }
+  } catch {
+    // fall through to /v2/me
+  }
+
+  const me = (await readJson(
+    await fetch("https://api.linkedin.com/v2/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }),
+  )) as {
+    id: string;
+    localizedFirstName?: string;
+    localizedLastName?: string;
+  };
+  const name =
+    [me.localizedFirstName, me.localizedLastName].filter(Boolean).join(" ") ||
+    `LinkedIn member ${me.id}`;
+  return { personUrn: `urn:li:person:${me.id}`, name };
+}
+
+async function fetchOrganizationTarget(accessToken: string): Promise<{
+  orgUrn: string;
+  orgId: string;
+  name: string;
+}> {
+  const orgs = (await readJson(
+    await fetch(
+      "https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    ),
+  )) as {
+    elements?: Array<{ organizationalTarget?: string }>;
+  };
+
+  const orgUrn = orgs.elements?.[0]?.organizationalTarget;
+  if (!orgUrn) {
+    throw new Error("No LinkedIn organization pages found for this member");
+  }
+  const orgId = orgUrn.split(":").pop()!;
+  const org = (await readJson(
+    await fetch(`https://api.linkedin.com/v2/organizations/${orgId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }),
+  )) as { localizedName?: string };
+
+  return {
+    orgUrn,
+    orgId,
+    name: org.localizedName || `LinkedIn org ${orgId}`,
+  };
+}
+
+/**
+ * LinkedIn posting.
+ * Default: member profile (`w_member_social`) — no Community Management API needed.
+ * Org Page posting: set LINKEDIN_ORG_ENABLED=true once approved.
+ */
 export const linkedinProvider: SocialProvider = {
   id: "linkedin",
-  displayName: "LinkedIn Page",
+  displayName: linkedInOrgEnabled()
+    ? "LinkedIn Page"
+    : "LinkedIn (member)",
 
   getAuthorizationUrl({ state, redirectUri }) {
     const clientId = requireEnv("LINKEDIN_CLIENT_ID");
@@ -13,10 +121,7 @@ export const linkedinProvider: SocialProvider = {
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("state", state);
-    url.searchParams.set(
-      "scope",
-      "openid profile w_member_social rw_organization_admin w_organization_social r_organization_social",
-    );
+    url.searchParams.set("scope", linkedInOAuthScopeParam());
     return url.toString();
   },
 
@@ -43,36 +148,43 @@ export const linkedinProvider: SocialProvider = {
       scope?: string;
     };
 
-    const orgs = (await readJson(
-      await fetch(
-        "https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
-        { headers: { Authorization: `Bearer ${token.access_token}` } },
-      ),
-    )) as {
-      elements?: Array<{ organizationalTarget?: string }>;
-    };
+    const scopes = token.scope?.split(" ").filter(Boolean) ?? [
+      ...MEMBER_SCOPES,
+    ];
 
-    const orgUrn = orgs.elements?.[0]?.organizationalTarget;
-    if (!orgUrn) {
-      throw new Error("No LinkedIn organization pages found for this member");
+    if (linkedInOrgEnabled()) {
+      const org = await fetchOrganizationTarget(token.access_token);
+      return {
+        accessToken: token.access_token,
+        refreshToken: token.refresh_token ?? null,
+        expiresAt: token.expires_in
+          ? new Date(Date.now() + token.expires_in * 1000)
+          : null,
+        scopes,
+        accountId: org.orgUrn,
+        accountName: org.name,
+        metadata: {
+          organization_id: org.orgId,
+          author_kind: "organization",
+          linkedin_mode: "organization",
+        },
+      };
     }
-    const orgId = orgUrn.split(":").pop()!;
-    const org = (await readJson(
-      await fetch(`https://api.linkedin.com/v2/organizations/${orgId}`, {
-        headers: { Authorization: `Bearer ${token.access_token}` },
-      }),
-    )) as { localizedName?: string };
 
+    const member = await fetchMemberIdentity(token.access_token);
     return {
       accessToken: token.access_token,
       refreshToken: token.refresh_token ?? null,
       expiresAt: token.expires_in
         ? new Date(Date.now() + token.expires_in * 1000)
         : null,
-      scopes: token.scope?.split(" ") ?? [],
-      accountId: orgUrn,
-      accountName: org.localizedName || `LinkedIn org ${orgId}`,
-      metadata: { organization_id: orgId },
+      scopes,
+      accountId: member.personUrn,
+      accountName: member.name,
+      metadata: {
+        author_kind: "member",
+        linkedin_mode: "member",
+      },
     };
   },
 
@@ -113,6 +225,18 @@ export const linkedinProvider: SocialProvider = {
     const commentary = [input.copy, input.hashtags.map((h) => `#${h}`).join(" ")]
       .filter(Boolean)
       .join("\n\n");
+
+    const authorKind =
+      (typeof input.metadata.author_kind === "string"
+        ? input.metadata.author_kind
+        : null) ||
+      (input.accountId.includes("organization") ? "organization" : "member");
+
+    if (authorKind === "organization" && !linkedInOrgEnabled()) {
+      throw new Error(
+        "LinkedIn organization posting is disabled. Set LINKEDIN_ORG_ENABLED=true after Community Management API access is approved, or reconnect LinkedIn to publish as your member profile.",
+      );
+    }
 
     const payload = {
       author: input.accountId,

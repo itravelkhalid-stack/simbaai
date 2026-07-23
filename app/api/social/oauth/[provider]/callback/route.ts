@@ -47,17 +47,16 @@ export async function GET(
 
     const redirectUri = `${siteUrl()}/api/social/oauth/${platform}/callback`;
 
-    if (platform === "facebook" || platform === "instagram") {
+    if (platform === "facebook") {
       const session = await createMetaOAuthSession({
         organizationId: payload.org,
         brandId: payload.brand,
-        platform,
         code,
         redirectUri,
         createdBy: payload.user || null,
       });
       return NextResponse.redirect(
-        `${siteUrl()}/social/meta/select?session=${session.id}&platform=${platform}`,
+        `${siteUrl()}/social/meta/select?session=${session.id}`,
       );
     }
 

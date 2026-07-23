@@ -16,6 +16,15 @@ export async function disconnectSocialConnection(formData: FormData) {
   }
 
   const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("social_connections")
+    .select("id, platform, brand_id")
+    .eq("id", connectionId)
+    .eq("organization_id", active.organization_id)
+    .maybeSingle();
+
+  if (!existing) throw new Error("Connection not found");
+
   const { error } = await supabase
     .from("social_connections")
     .update({ status: "revoked" })
@@ -23,6 +32,18 @@ export async function disconnectSocialConnection(formData: FormData) {
     .eq("organization_id", active.organization_id);
 
   if (error) throw new Error(error.message);
+
+  // Meta disconnect removes both Facebook and Instagram for the brand
+  if (existing.platform === "facebook") {
+    await supabase
+      .from("social_connections")
+      .update({ status: "revoked" })
+      .eq("organization_id", active.organization_id)
+      .eq("brand_id", existing.brand_id)
+      .eq("platform", "instagram")
+      .neq("status", "revoked");
+  }
+
   revalidatePath("/settings/connections");
   revalidatePath("/social");
   revalidatePath("/content/calendar");

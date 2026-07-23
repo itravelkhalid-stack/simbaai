@@ -6,12 +6,14 @@ import {
   fetchPageAccessToken,
   getMetaOAuthScopesList,
   listMetaPages,
-  metaRequestIgScopesEnabled,
   type MetaPageOption,
 } from "@/lib/social/meta";
+import {
+  connectionCanPublishInstagram,
+  getMetaPublishCapabilities,
+} from "@/lib/social/meta-capabilities";
 import { upsertSocialConnection } from "@/lib/social/connections";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ContentPlatform } from "@/lib/types/content";
 import type { TokenSet } from "@/lib/social/types";
 
 export type MetaOAuthSession = {
@@ -27,7 +29,8 @@ export type MetaOAuthSession = {
 export async function createMetaOAuthSession(params: {
   organizationId: string;
   brandId: string;
-  platform: "facebook" | "instagram";
+  /** Always stored as facebook — Instagram is derived from the same Meta token. */
+  platform?: "facebook" | "instagram";
   code: string;
   redirectUri: string;
   createdBy?: string | null;
@@ -42,29 +45,22 @@ export async function createMetaOAuthSession(params: {
     throw new Error("No Facebook Pages found for this Meta account");
   }
 
-  if (params.platform === "instagram") {
-    const withIg = pages.filter((p) => p.ig_user_id);
-    if (!withIg.length) {
-      throw new Error(
-        "No Instagram Business accounts linked to your Facebook Pages",
-      );
-    }
-  }
-
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("social_oauth_sessions")
     .insert({
       organization_id: params.organizationId,
       brand_id: params.brandId,
-      platform: params.platform,
+      platform: "facebook",
       user_access_token_encrypted: encryptSecret(longLived.accessToken),
       token_expires_at: longLived.expiresAt?.toISOString() ?? null,
       pages,
-      scopes: [],
+      scopes: getMetaOAuthScopesList(),
       created_by: params.createdBy ?? null,
     })
-    .select("id, organization_id, brand_id, platform, pages, token_expires_at, expires_at")
+    .select(
+      "id, organization_id, brand_id, platform, pages, token_expires_at, expires_at",
+    )
     .single();
 
   if (error || !data) {
@@ -75,7 +71,7 @@ export async function createMetaOAuthSession(params: {
     id: data.id,
     organization_id: data.organization_id,
     brand_id: data.brand_id,
-    platform: data.platform as "facebook" | "instagram",
+    platform: "facebook",
     pages: (data.pages as MetaPageOption[]) ?? pages,
     token_expires_at: data.token_expires_at,
     expires_at: data.expires_at,
@@ -121,66 +117,100 @@ export async function completeMetaPageSelection(params: {
   const page = (session.pages ?? []).find((p) => p.page_id === params.pageId);
   if (!page) throw new Error("Selected Page is not in this session");
 
-  if (session.platform === "instagram" && !metaRequestIgScopesEnabled()) {
-    throw new Error(
-      "Instagram connect requires META_REQUEST_IG_SCOPES=true once those permissions are approved on the Meta app",
-    );
-  }
-
-  if (session.platform === "instagram" && !page.ig_user_id) {
-    throw new Error("That Page has no linked Instagram Business account");
-  }
-
   const userToken = decryptSecret(session.user_access_token_encrypted);
   const pageToken = await fetchPageAccessToken({
     userAccessToken: userToken,
     pageId: page.page_id,
   });
 
-  const tokens: TokenSet = {
+  const scopes = getMetaOAuthScopesList();
+  const caps = getMetaPublishCapabilities({ scopes });
+  const sharedMeta: Record<string, unknown> = {
+    page_id: page.page_id,
+    page_name: page.page_name,
+    ig_user_id: page.ig_user_id,
+    ig_username: page.ig_username,
+    user_access_token_encrypted: encryptSecret(userToken),
+    meta_token_kind: "page",
+    capabilities: caps,
+  };
+
+  const facebookTokens: TokenSet = {
     accessToken: pageToken.accessToken,
     refreshToken: null,
-    // Page tokens from long-lived user tokens are durable; track user-token window for reconnect UX
     expiresAt: session.token_expires_at
       ? new Date(session.token_expires_at)
       : null,
-    scopes: getMetaOAuthScopesList(),
-    accountId:
-      session.platform === "instagram"
-        ? (page.ig_user_id as string)
-        : page.page_id,
-    accountName:
-      session.platform === "instagram"
-        ? page.ig_username || `${page.page_name} Instagram`
-        : pageToken.pageName || page.page_name,
-    metadata: {
-      page_id: page.page_id,
-      page_name: page.page_name,
-      ig_user_id: page.ig_user_id,
-      ig_username: page.ig_username,
-      user_access_token_encrypted: encryptSecret(userToken),
-      meta_token_kind: "page",
-    },
+    scopes,
+    accountId: page.page_id,
+    accountName: pageToken.pageName || page.page_name,
+    metadata: sharedMeta,
   };
 
   const supabase = createAdminClient();
-  // Revoke prior active connections for this org/brand/platform (page switch)
+
   await supabase
     .from("social_connections")
     .update({ status: "revoked" })
     .eq("organization_id", session.organization_id)
     .eq("brand_id", session.brand_id)
-    .eq("platform", session.platform)
+    .eq("platform", "facebook")
     .eq("status", "active");
 
-  const connection = await upsertSocialConnection({
+  const facebook = await upsertSocialConnection({
     organizationId: session.organization_id,
     brandId: session.brand_id,
-    platform: session.platform as ContentPlatform,
-    tokens,
+    platform: "facebook",
+    tokens: facebookTokens,
   });
+
+  const canIg = connectionCanPublishInstagram({
+    scopes,
+    metadata: sharedMeta,
+    platform: "facebook",
+  });
+
+  if (canIg && page.ig_user_id) {
+    await supabase
+      .from("social_connections")
+      .update({ status: "revoked" })
+      .eq("organization_id", session.organization_id)
+      .eq("brand_id", session.brand_id)
+      .eq("platform", "instagram")
+      .eq("status", "active");
+
+    await upsertSocialConnection({
+      organizationId: session.organization_id,
+      brandId: session.brand_id,
+      platform: "instagram",
+      tokens: {
+        accessToken: pageToken.accessToken,
+        refreshToken: null,
+        expiresAt: session.token_expires_at
+          ? new Date(session.token_expires_at)
+          : null,
+        scopes,
+        accountId: page.ig_user_id,
+        accountName: page.ig_username || `${page.page_name} Instagram`,
+        metadata: sharedMeta,
+      },
+    });
+  } else {
+    // No IG publish capability — clear any prior Instagram connection for this brand
+    await supabase
+      .from("social_connections")
+      .update({
+        status: "revoked",
+        last_error:
+          "Instagram publishing unavailable on this Meta token (missing IG scopes or no linked IG account).",
+      })
+      .eq("organization_id", session.organization_id)
+      .eq("brand_id", session.brand_id)
+      .eq("platform", "instagram")
+      .neq("status", "revoked");
+  }
 
   await supabase.from("social_oauth_sessions").delete().eq("id", session.id);
 
-  return connection;
+  return facebook;
 }

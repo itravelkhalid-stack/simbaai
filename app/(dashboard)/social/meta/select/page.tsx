@@ -4,12 +4,12 @@ import { notFound, redirect } from "next/navigation";
 import { MetaPagePicker } from "@/components/social/meta-page-picker";
 import { getMetaOAuthSession } from "@/lib/social/meta-connect";
 import { requireActiveOrg } from "@/lib/org/require";
-import type { MetaPageOption } from "@/lib/social/meta";
+import type { MetaPageOption } from "@/lib/social/meta-scopes";
 
 export default async function MetaPageSelectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ session?: string; platform?: string }>;
+  searchParams: Promise<{ session?: string }>;
 }) {
   const params = await searchParams;
   const { active } = await requireActiveOrg();
@@ -39,17 +39,13 @@ export default async function MetaPageSelectPage({
           Choose a Facebook Page
         </h1>
         <p className="mt-2 text-muted-foreground">
-          {session.platform === "instagram"
-            ? "Pick the Page whose linked Instagram Business account you want to publish to."
-            : "Pick which Page GrowthOS should publish to. You can change this later via Reconnect."}
+          Pick which Page GrowthOS should publish to. If the Page has a linked
+          Instagram Business account and Instagram scopes were granted, Instagram
+          publishing is enabled automatically.
         </p>
       </div>
 
-      <MetaPagePicker
-        sessionId={session.id}
-        platform={session.platform}
-        pages={pages}
-      />
+      <MetaPagePicker sessionId={session.id} pages={pages} />
     </div>
   );
 }

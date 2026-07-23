@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ConnectionsPanel } from "@/components/social/connections-panel";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
+import { connectionCanPublishInstagram } from "@/lib/social/meta-capabilities";
 import type { SocialConnection } from "@/lib/social/types";
 import type { ContentPlatform } from "@/lib/types/content";
 
@@ -25,9 +26,27 @@ export default async function ConnectionsSettingsPage({
   if (error) throw new Error(error.message);
 
   const typed = (connections ?? []) as SocialConnection[];
+  const facebook = typed.find((c) => c.platform === "facebook");
+  const instagram = typed.find((c) => c.platform === "instagram");
+  const canPublishIg = Boolean(
+    (instagram &&
+      connectionCanPublishInstagram({
+        scopes: instagram.scopes,
+        metadata: instagram.metadata,
+        platform: "instagram",
+      })) ||
+      (facebook &&
+        connectionCanPublishInstagram({
+          scopes: facebook.scopes,
+          metadata: facebook.metadata,
+          platform: "facebook",
+        })),
+  );
+
   const connectedPlatforms = new Set(
     typed.filter((c) => c.status === "active").map((c) => c.platform),
   );
+  if (canPublishIg) connectedPlatforms.add("instagram");
 
   const { data: scheduled } = await supabase
     .from("content_items")
@@ -39,7 +58,10 @@ export default async function ConnectionsSettingsPage({
     new Set(
       (scheduled ?? [])
         .map((row) => row.platform as ContentPlatform)
-        .filter((platform) => !connectedPlatforms.has(platform)),
+        .filter((platform) => {
+          if (platform === "instagram") return !canPublishIg;
+          return !connectedPlatforms.has(platform);
+        }),
     ),
   );
 

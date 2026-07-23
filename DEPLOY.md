@@ -48,6 +48,7 @@ Only variables actually read by app/scripts/tests (or by the Inngest SDK used by
 | `X_CLIENT_SECRET` | No | X OAuth token exchange |
 | `LINKEDIN_CLIENT_ID` | No | LinkedIn social |
 | `LINKEDIN_CLIENT_SECRET` | No | LinkedIn social |
+| `LINKEDIN_ORG_ENABLED` | No | Set `true` for org Page scopes/posting (Community Management API) |
 | `TIKTOK_CLIENT_KEY` | No | TikTok social |
 | `TIKTOK_CLIENT_SECRET` | No | TikTok social |
 | `PINTEREST_APP_ID` | No | Pinterest social |

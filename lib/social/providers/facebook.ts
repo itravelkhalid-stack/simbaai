@@ -1,5 +1,5 @@
 import type { SocialProvider, TokenSet } from "@/lib/social/types";
-import { getMetaOAuthScopeParam } from "@/lib/social/meta";
+import { getMetaOAuthScopeParam } from "@/lib/social/meta-scopes";
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
 /**
@@ -18,7 +18,10 @@ export const facebookProvider: SocialProvider = {
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("state", state);
-    url.searchParams.set("scope", getMetaOAuthScopeParam());
+    url.searchParams.set(
+      "scope",
+      getMetaOAuthScopeParam(process.env.META_REQUEST_IG_SCOPES === "true"),
+    );
     url.searchParams.set("response_type", "code");
     return url.toString();
   },

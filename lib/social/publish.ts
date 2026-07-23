@@ -2,6 +2,11 @@ import {
   ensureFreshAccessToken,
   getActiveConnection,
 } from "@/lib/social/connections";
+import {
+  connectionCanPublishInstagram,
+  getMetaPublishCapabilities,
+  INSTAGRAM_SCOPE_REQUIRED_MESSAGE,
+} from "@/lib/social/meta-capabilities";
 import { isMetaTokenError } from "@/lib/social/meta";
 import { getSocialProvider } from "@/lib/social/providers";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -114,13 +119,32 @@ export async function publishContentItem(itemId: string) {
       );
     }
 
+    const capabilities = getMetaPublishCapabilities({
+      scopes: connection.scopes,
+    });
+
+    if (typed.platform === "instagram") {
+      if (
+        !connectionCanPublishInstagram({
+          scopes: connection.scopes,
+          metadata: connection.metadata,
+          platform: connection.platform,
+        })
+      ) {
+        throw new Error(INSTAGRAM_SCOPE_REQUIRED_MESSAGE);
+      }
+    }
+
     const { accessToken, connection: fresh } =
       await ensureFreshAccessToken(connection);
     const provider = getSocialProvider(typed.platform);
     const result = await provider.publishPost({
       accessToken,
       accountId: fresh.account_id,
-      metadata: fresh.metadata ?? {},
+      metadata: {
+        ...(fresh.metadata ?? {}),
+        capabilities,
+      },
       copy: typed.copy,
       hashtags: typed.hashtags ?? [],
       mediaUrls: typed.media_urls ?? [],

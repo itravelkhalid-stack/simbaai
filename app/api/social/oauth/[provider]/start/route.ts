@@ -3,7 +3,6 @@ import { createHash, randomBytes } from "crypto";
 
 import { signOAuthState } from "@/lib/crypto";
 import { requireActiveOrg } from "@/lib/org/require";
-import { metaRequestIgScopesEnabled } from "@/lib/social/meta";
 import { CONNECTABLE_PLATFORMS, getSocialProvider } from "@/lib/social/providers";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentPlatform } from "@/lib/types/content";
@@ -13,22 +12,21 @@ function siteUrl() {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ provider: string }> },
 ) {
   const { provider: providerParam } = await context.params;
   const platform = providerParam as ContentPlatform;
 
-  if (!CONNECTABLE_PLATFORMS.includes(platform)) {
-    return NextResponse.json({ error: "Unknown provider" }, { status: 404 });
+  // Instagram no longer has a separate OAuth flow — use Meta (Facebook) connect
+  if (platform === "instagram") {
+    const url = new URL(request.url);
+    url.pathname = "/api/social/oauth/facebook/start";
+    return NextResponse.redirect(url.toString());
   }
 
-  if (platform === "instagram" && !metaRequestIgScopesEnabled()) {
-    return NextResponse.redirect(
-      `${siteUrl()}/social?error=${encodeURIComponent(
-        "Instagram connect is disabled until META_REQUEST_IG_SCOPES=true",
-      )}`,
-    );
+  if (!CONNECTABLE_PLATFORMS.includes(platform)) {
+    return NextResponse.json({ error: "Unknown provider" }, { status: 404 });
   }
 
   try {

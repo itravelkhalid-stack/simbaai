@@ -22,7 +22,7 @@ Local example:
 
 ```text
 http://localhost:3000/api/social/oauth/facebook/callback
-http://localhost:3000/api/social/oauth/instagram/callback
+# Instagram uses the same Meta OAuth + Page picker (no separate Instagram OAuth)
 http://localhost:3000/api/social/oauth/x/callback
 http://localhost:3000/api/social/oauth/linkedin/callback
 http://localhost:3000/api/social/oauth/tiktok/callback
@@ -84,7 +84,8 @@ openssl rand -base64 32
 
 1. Create an app at [LinkedIn Developer Portal](https://www.linkedin.com/developers/).
 2. Request products: **Share on LinkedIn**, **Marketing Developer Platform** / Community Management (as available in your region).
-3. Scopes used: `openid profile w_member_social rw_organization_admin w_organization_social r_organization_social`.
+3. Default scopes (member): `openid profile w_member_social` — posts as the member.
+   Org Page scopes (`rw_organization_admin w_organization_social r_organization_social`) only when `LINKEDIN_ORG_ENABLED=true`.
 4. The connecting user must be an admin of the Company Page.
 5. Add the OAuth 2.0 redirect URL in Auth settings.
 

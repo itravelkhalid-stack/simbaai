@@ -1,5 +1,5 @@
 import type { SocialProvider } from "@/lib/social/types";
-import { getMetaOAuthScopeParam } from "@/lib/social/meta";
+import { getMetaOAuthScopeParam } from "@/lib/social/meta-scopes";
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
 /**
@@ -17,7 +17,10 @@ export const instagramProvider: SocialProvider = {
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("state", state);
-    url.searchParams.set("scope", getMetaOAuthScopeParam());
+    url.searchParams.set(
+      "scope",
+      getMetaOAuthScopeParam(process.env.META_REQUEST_IG_SCOPES === "true"),
+    );
     url.searchParams.set("response_type", "code");
     return url.toString();
   },
@@ -33,6 +36,18 @@ export const instagramProvider: SocialProvider = {
   },
 
   async publishPost(input) {
+    const caps = input.metadata?.capabilities as
+      | { canPublishInstagram?: boolean }
+      | undefined;
+    if (
+      caps &&
+      caps.canPublishInstagram === false
+    ) {
+      throw new Error(
+        "This Meta connection cannot publish to Instagram (missing Instagram permissions). Reconnect Meta with Instagram scopes enabled.",
+      );
+    }
+
     const caption = [input.copy, input.hashtags.map((h) => `#${h}`).join(" ")]
       .filter(Boolean)
       .join("\n\n");
