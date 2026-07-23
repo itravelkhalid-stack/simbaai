@@ -60,6 +60,15 @@ export async function clearImpersonateOrganizationId() {
 }
 
 export async function isPlatformAdminUser(userId: string) {
+  // Avoid crashing the whole dashboard when the service-role key is missing
+  // in a misconfigured deploy; platform admin features simply stay off.
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY
+  ) {
+    return false;
+  }
+
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("platform_admins")
@@ -155,9 +164,10 @@ export async function resolveActiveOrganization(userId: string): Promise<{
     memberships.find((m) => m.organization_id === cookieOrgId) ??
     memberships[0];
 
-  if (active.organization_id !== cookieOrgId) {
-    await setActiveOrganizationId(active.organization_id);
-  }
+  // Do not write cookies here — this runs inside Server Components during
+  // render (e.g. dashboard layout after login). Next.js throws if cookies
+  // are modified outside a Server Action or Route Handler. Persist the
+  // active org via switch/create org server actions instead.
 
   return { memberships, active, isPlatformAdmin: isAdmin };
 }
