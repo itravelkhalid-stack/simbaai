@@ -2,6 +2,39 @@ import "server-only";
 
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
+/** Facebook Page scopes always requested during Meta OAuth. */
+export const META_PAGE_SCOPES = [
+  "pages_show_list",
+  "pages_manage_posts",
+  "pages_read_engagement",
+  "pages_manage_metadata",
+  "business_management",
+] as const;
+
+/** Instagram scopes — only when META_REQUEST_IG_SCOPES=true. */
+export const META_IG_SCOPES = [
+  "instagram_basic",
+  "instagram_content_publish",
+  "instagram_manage_insights",
+] as const;
+
+export function metaRequestIgScopesEnabled() {
+  return process.env.META_REQUEST_IG_SCOPES === "true";
+}
+
+/** OAuth `scope` query value for Facebook / Instagram connect. */
+export function getMetaOAuthScopeParam() {
+  const scopes: string[] = [...META_PAGE_SCOPES];
+  if (metaRequestIgScopesEnabled()) {
+    scopes.push(...META_IG_SCOPES);
+  }
+  return scopes.join(",");
+}
+
+export function getMetaOAuthScopesList() {
+  return getMetaOAuthScopeParam().split(",").filter(Boolean);
+}
+
 export type MetaPageOption = {
   page_id: string;
   page_name: string;

@@ -22,6 +22,7 @@ function isPublicPath(pathname: string) {
     pathname.startsWith("/api/stripe/webhook") ||
     pathname.startsWith("/api/crm/webhooks") ||
     pathname.startsWith("/api/crm/forms") ||
+    pathname.startsWith("/api/social/webhooks") ||
     pathname.startsWith("/api/automations/webhook") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon")
@@ -47,6 +48,7 @@ function applyRateLimit(request: NextRequest): NextResponse | null {
     pathname.startsWith("/api/stripe/webhook") ||
     pathname.startsWith("/api/email/webhooks") ||
     pathname.startsWith("/api/crm/webhooks") ||
+    pathname.startsWith("/api/social/webhooks") ||
     pathname.startsWith("/api/automations/webhook") ||
     pathname.startsWith("/api/inngest")
   ) {

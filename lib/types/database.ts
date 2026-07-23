@@ -489,6 +489,27 @@ export type Database = {
           expires_at: string;
         }>
       >;
+      meta_webhook_events: TableDef<
+        {
+          id: string;
+          organization_id: string | null;
+          object_type: string | null;
+          payload: Record<string, unknown>;
+          created_at: string;
+        },
+        {
+          id?: string;
+          organization_id?: string | null;
+          object_type?: string | null;
+          payload: Record<string, unknown>;
+          created_at?: string;
+        },
+        Partial<{
+          organization_id: string | null;
+          object_type: string | null;
+          payload: Record<string, unknown>;
+        }>
+      >;
       content_metrics: TableDef<
         import("@/lib/social/types").ContentMetric,
         {

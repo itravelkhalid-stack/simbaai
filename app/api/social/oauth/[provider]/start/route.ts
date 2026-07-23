@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "crypto";
 
 import { signOAuthState } from "@/lib/crypto";
 import { requireActiveOrg } from "@/lib/org/require";
+import { metaRequestIgScopesEnabled } from "@/lib/social/meta";
 import { CONNECTABLE_PLATFORMS, getSocialProvider } from "@/lib/social/providers";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentPlatform } from "@/lib/types/content";
@@ -20,6 +21,14 @@ export async function GET(
 
   if (!CONNECTABLE_PLATFORMS.includes(platform)) {
     return NextResponse.json({ error: "Unknown provider" }, { status: 404 });
+  }
+
+  if (platform === "instagram" && !metaRequestIgScopesEnabled()) {
+    return NextResponse.redirect(
+      `${siteUrl()}/social?error=${encodeURIComponent(
+        "Instagram connect is disabled until META_REQUEST_IG_SCOPES=true",
+      )}`,
+    );
   }
 
   try {

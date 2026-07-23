@@ -4,7 +4,9 @@ import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import {
   exchangeMetaCodeForLongLivedUserToken,
   fetchPageAccessToken,
+  getMetaOAuthScopesList,
   listMetaPages,
+  metaRequestIgScopesEnabled,
   type MetaPageOption,
 } from "@/lib/social/meta";
 import { upsertSocialConnection } from "@/lib/social/connections";
@@ -119,6 +121,12 @@ export async function completeMetaPageSelection(params: {
   const page = (session.pages ?? []).find((p) => p.page_id === params.pageId);
   if (!page) throw new Error("Selected Page is not in this session");
 
+  if (session.platform === "instagram" && !metaRequestIgScopesEnabled()) {
+    throw new Error(
+      "Instagram connect requires META_REQUEST_IG_SCOPES=true once those permissions are approved on the Meta app",
+    );
+  }
+
   if (session.platform === "instagram" && !page.ig_user_id) {
     throw new Error("That Page has no linked Instagram Business account");
   }
@@ -136,10 +144,7 @@ export async function completeMetaPageSelection(params: {
     expiresAt: session.token_expires_at
       ? new Date(session.token_expires_at)
       : null,
-    scopes:
-      session.platform === "instagram"
-        ? ["instagram_content_publish", "instagram_manage_insights"]
-        : ["pages_manage_posts", "pages_read_engagement"],
+    scopes: getMetaOAuthScopesList(),
     accountId:
       session.platform === "instagram"
         ? (page.ig_user_id as string)

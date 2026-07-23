@@ -10,6 +10,7 @@ const CSRF_EXEMPT_PREFIXES = [
   "/api/email/webhooks",
   "/api/crm/webhooks",
   "/api/crm/forms",
+  "/api/social/webhooks",
   "/api/automations/webhook",
   "/api/email/unsubscribe",
   "/callback",

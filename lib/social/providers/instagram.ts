@@ -1,4 +1,5 @@
 import type { SocialProvider } from "@/lib/social/types";
+import { getMetaOAuthScopeParam } from "@/lib/social/meta";
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
 /**
@@ -12,20 +13,11 @@ export const instagramProvider: SocialProvider = {
 
   getAuthorizationUrl({ state, redirectUri }) {
     const clientId = requireEnv("META_APP_ID");
-    const scopes = [
-      "instagram_basic",
-      "instagram_content_publish",
-      "instagram_manage_insights",
-      "pages_show_list",
-      "pages_read_engagement",
-      "pages_manage_metadata",
-      "business_management",
-    ].join(",");
     const url = new URL("https://www.facebook.com/v21.0/dialog/oauth");
     url.searchParams.set("client_id", clientId);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("state", state);
-    url.searchParams.set("scope", scopes);
+    url.searchParams.set("scope", getMetaOAuthScopeParam());
     url.searchParams.set("response_type", "code");
     return url.toString();
   },

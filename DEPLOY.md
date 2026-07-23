@@ -18,7 +18,7 @@ Replace `MYDOMAIN.com` with your real domain everywhere below. Production app ho
 
 Only variables actually read by app/scripts/tests (or by the Inngest SDK used by `/api/inngest`). Framework vars (`NODE_ENV`, `CI`, `NEXT_RUNTIME`) are omitted.
 
-**In your `.env.local` today:** `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `DATABASE_URL`, `META_APP_ID`, `META_APP_SECRET`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `OAUTH_STATE_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SUPABASE_DB_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`, `TOKEN_ENCRYPTION_KEY`.
+**In your `.env.local` today:** `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `DATABASE_URL`, `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `OAUTH_STATE_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SUPABASE_DB_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`, `TOKEN_ENCRYPTION_KEY`.
 
 ### Required for core (app boots, auth, AI jobs, encryption)
 
@@ -41,7 +41,9 @@ Only variables actually read by app/scripts/tests (or by the Inngest SDK used by
 | `RESEND_API_KEY` | Yes | Transactional email (invites, notifications) |
 | `RESEND_FROM_EMAIL` | Yes | From address for Resend |
 | `META_APP_ID` | Yes | Facebook + Instagram social (+ Meta ads OAuth) |
-| `META_APP_SECRET` | Yes | Same |
+| `META_APP_SECRET` | Yes | Same (also signs Meta webhook POSTs) |
+| `META_WEBHOOK_VERIFY_TOKEN` | Yes | Meta webhook GET verification at `/api/social/webhooks/meta` |
+| `META_REQUEST_IG_SCOPES` | No | Set to `true` to request Instagram OAuth scopes (off by default) |
 | `X_CLIENT_ID` | No | X (Twitter) social + ads OAuth |
 | `X_CLIENT_SECRET` | No | X OAuth token exchange |
 | `LINKEDIN_CLIENT_ID` | No | LinkedIn social |
