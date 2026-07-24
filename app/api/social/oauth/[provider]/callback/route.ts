@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { verifyOAuthState } from "@/lib/crypto";
 import { upsertSocialConnection } from "@/lib/social/connections";
+import { createLinkedInOAuthSession } from "@/lib/social/linkedin-connect";
 import { createMetaOAuthSession } from "@/lib/social/meta-connect";
 import { CONNECTABLE_PLATFORMS, getSocialProvider } from "@/lib/social/providers";
 import type { ContentPlatform } from "@/lib/types/content";
@@ -57,6 +58,22 @@ export async function GET(
       });
       return NextResponse.redirect(
         `${siteUrl()}/social/meta/select?session=${session.id}`,
+      );
+    }
+
+    if (platform === "linkedin") {
+      const result = await createLinkedInOAuthSession({
+        organizationId: payload.org,
+        brandId: payload.brand,
+        code,
+        redirectUri,
+        createdBy: payload.user || null,
+      });
+      if (result.kind === "member") {
+        return NextResponse.redirect(socialRedirect("connected=linkedin"));
+      }
+      return NextResponse.redirect(
+        `${siteUrl()}/social/linkedin/select?session=${result.session.id}`,
       );
     }
 

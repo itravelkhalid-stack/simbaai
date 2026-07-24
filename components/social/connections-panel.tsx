@@ -276,7 +276,11 @@ export function ConnectionsPanel({
                         }),
                       )}
                     >
-                      {connection ? "Reconnect" : "Connect"}
+                      {connection
+                      ? platform === "linkedin"
+                        ? "Reconnect / change Page"
+                        : "Reconnect"
+                      : "Connect"}
                     </Link>
                   ) : null}
                   {canManage &&

@@ -459,7 +459,7 @@ export type Database = {
           id: string;
           organization_id: string;
           brand_id: string;
-          platform: "facebook" | "instagram";
+          platform: "facebook" | "instagram" | "linkedin";
           user_access_token_encrypted: string;
           token_expires_at: string | null;
           pages: unknown;
@@ -472,7 +472,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           brand_id: string;
-          platform: "facebook" | "instagram";
+          platform: "facebook" | "instagram" | "linkedin";
           user_access_token_encrypted: string;
           token_expires_at?: string | null;
           pages?: unknown;
