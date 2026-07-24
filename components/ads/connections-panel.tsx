@@ -5,16 +5,16 @@ import { useActionState } from "react";
 import {
   connectAdAccountManual,
   disconnectAdAccount,
-  startAdOAuth,
   type AdsActionResult,
 } from "@/lib/ads/actions";
 import { AD_PLATFORMS } from "@/lib/ads/providers";
 import type { AdConnection, AdPlatform } from "@/lib/types/ads";
 import { AD_PLATFORM_LABELS } from "@/lib/types/ads";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 const initial: AdsActionResult = {};
 
@@ -41,12 +41,12 @@ export function ConnectionsPanel({
                 Campaign writes require ADS_WRITES_ENABLED (see docs/ads-apis.md).
               </p>
               {canOAuth ? (
-                <form action={startAdOAuth} className="mt-3">
-                  <input type="hidden" name="platform" value={platform} />
-                  <Button type="submit" size="sm">
-                    Connect OAuth
-                  </Button>
-                </form>
+                <a
+                  href={`/api/ads/oauth/${platform}/start`}
+                  className={cn(buttonVariants({ size: "sm" }), "mt-3")}
+                >
+                  Connect OAuth
+                </a>
               ) : (
                 <p className="mt-2 text-xs text-muted-foreground">
                   OAuth not configured — use token form below.

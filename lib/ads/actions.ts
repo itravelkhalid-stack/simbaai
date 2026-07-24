@@ -13,7 +13,6 @@ import {
 import { parseAdsSettings } from "@/lib/ads/settings";
 import { applyRecommendation } from "@/lib/ads/recommendations";
 import { getBrandContext } from "@/lib/brand/context";
-import { signOAuthState } from "@/lib/crypto";
 import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
@@ -23,7 +22,6 @@ import type {
   MediaPlanPayload,
 } from "@/lib/types/ads";
 import { AD_PLATFORMS } from "@/lib/ads/providers";
-import { getAdsProvider } from "@/lib/ads/providers";
 
 export type AdsActionResult = { error?: string; success?: string };
 
@@ -113,21 +111,14 @@ export async function disconnectAdAccount(formData: FormData) {
 }
 
 export async function startAdOAuth(formData: FormData) {
-  const { active } = await assertCanWrite();
+  // Kept for compatibility; UI now uses GET /api/ads/oauth/[platform]/start
+  // because redirect() to an external URL from a fetch-based server action
+  // returns HTML and breaks the client with "Unexpected token '<' ... is not valid JSON".
   const platform = String(formData.get("platform") ?? "") as AdPlatform;
-  const provider = getAdsProvider(platform);
-  if (!provider.supportsOAuth || !provider.getAuthorizationUrl) {
-    throw new Error("OAuth not configured for this platform");
+  if (!AD_PLATFORMS.includes(platform)) {
+    throw new Error("Invalid platform");
   }
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const redirectUri = `${site}/api/ads/oauth/${platform}/callback`;
-  const state = signOAuthState({
-    organizationId: active.organization_id,
-    platform,
-    ts: String(Date.now()),
-  });
-  const url = provider.getAuthorizationUrl({ state, redirectUri });
-  redirect(url);
+  redirect(`/api/ads/oauth/${platform}/start`);
 }
 
 export async function saveAdsOrgSettings(
