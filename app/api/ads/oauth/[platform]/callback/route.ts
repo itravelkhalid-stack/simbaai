@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { completeAdOAuth } from "@/lib/ads/oauth";
-import type { AdPlatform } from "@/lib/types/ads";
+import {
+  adsConnectionsConnectedRedirect,
+  adsConnectionsErrorRedirect,
+} from "@/lib/ads/oauth-flash";
 import { AD_PLATFORMS } from "@/lib/ads/providers";
 import { reportServerError } from "@/lib/observability/report";
+import type { AdPlatform } from "@/lib/types/ads";
 
 export async function GET(
   request: Request,
@@ -27,9 +31,7 @@ export async function GET(
       platform,
       provider_error: error,
     });
-    return NextResponse.redirect(
-      `${site}/ads/connections?error=${encodeURIComponent(error)}`,
-    );
+    return adsConnectionsErrorRedirect(site, error);
   }
   if (!code || !state) {
     reportServerError(new Error("oauth_missing_code_or_state"), {
@@ -38,20 +40,18 @@ export async function GET(
       has_code: String(Boolean(code)),
       has_state: String(Boolean(state)),
     });
-    return NextResponse.redirect(`${site}/ads/connections?error=missing_code`);
+    return adsConnectionsErrorRedirect(site, "missing_code");
   }
 
   try {
     await completeAdOAuth({ platform, code, state });
-    return NextResponse.redirect(`${site}/ads/connections?connected=${platform}`);
+    return adsConnectionsConnectedRedirect(site, platform);
   } catch (err) {
     reportServerError(err, {
       scope: "ads_oauth_callback",
       platform,
     });
     const message = err instanceof Error ? err.message : "oauth_failed";
-    return NextResponse.redirect(
-      `${site}/ads/connections?error=${encodeURIComponent(message)}`,
-    );
+    return adsConnectionsErrorRedirect(site, message);
   }
 }

@@ -1,5 +1,6 @@
 import { AdsNav } from "@/components/ads/ads-nav";
 import { ConnectionsPanel } from "@/components/ads/connections-panel";
+import { consumeAdsOAuthFlashError } from "@/lib/ads/oauth-flash";
 import { AD_PLATFORMS, getAdsProvider } from "@/lib/ads/providers";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
@@ -23,6 +24,8 @@ export default async function AdsConnectionsPage({
     (p) => getAdsProvider(p).supportsOAuth,
   ) as AdPlatform[];
 
+  const flashError = await consumeAdsOAuthFlashError(q.error);
+
   return (
     <div className="space-y-6">
       <div>
@@ -33,8 +36,8 @@ export default async function AdsConnectionsPage({
         </p>
       </div>
       <AdsNav current="/ads/connections" />
-      {q.error ? (
-        <p className="text-sm text-destructive">{q.error}</p>
+      {flashError ? (
+        <p className="text-sm text-destructive">{flashError}</p>
       ) : null}
       {q.connected ? (
         <p className="text-sm text-muted-foreground">Connected {q.connected}.</p>

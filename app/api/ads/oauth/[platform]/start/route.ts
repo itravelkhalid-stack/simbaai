@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+import {
+  adsConnectionsErrorRedirect,
+} from "@/lib/ads/oauth-flash";
 import { getAdsProvider, AD_PLATFORMS } from "@/lib/ads/providers";
 import { signOAuthState } from "@/lib/crypto";
 import { reportServerError } from "@/lib/observability/report";
@@ -27,15 +30,17 @@ export async function GET(
   try {
     const { active } = await requireActiveOrg();
     if (active.role === "org_viewer") {
-      return NextResponse.redirect(
-        `${site}/ads/connections?error=${encodeURIComponent("Viewers cannot connect ad accounts")}`,
+      return adsConnectionsErrorRedirect(
+        site,
+        "Viewers cannot connect ad accounts",
       );
     }
 
     const provider = getAdsProvider(platform);
     if (!provider.supportsOAuth || !provider.getAuthorizationUrl) {
-      return NextResponse.redirect(
-        `${site}/ads/connections?error=${encodeURIComponent("OAuth not configured for this platform")}`,
+      return adsConnectionsErrorRedirect(
+        site,
+        "OAuth not configured for this platform",
       );
     }
 
@@ -53,8 +58,6 @@ export async function GET(
       platform,
     });
     const message = error instanceof Error ? error.message : "oauth_start_failed";
-    return NextResponse.redirect(
-      `${site}/ads/connections?error=${encodeURIComponent(message)}`,
-    );
+    return adsConnectionsErrorRedirect(site, message);
   }
 }
