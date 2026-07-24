@@ -1,16 +1,19 @@
 import type { SocialProvider } from "@/lib/social/types";
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
-function linkedInOrgEnabled() {
-  return process.env.LINKEDIN_ORG_ENABLED === "true";
+/**
+ * Default: company Page (organization) posting.
+ * Set LINKEDIN_MEMBER_MODE=true only if you need personal-profile posting instead.
+ */
+function linkedInMemberMode() {
+  return process.env.LINKEDIN_MEMBER_MODE === "true";
 }
 
-/** Member scopes — available without Community Management API approval. */
-const MEMBER_SCOPES = ["openid", "profile", "w_member_social"] as const;
+/** Base OpenID scopes (always). */
+const BASE_SCOPES = ["openid", "profile", "w_member_social"] as const;
 
 /**
- * Org / Page scopes — require LinkedIn Community Management API access.
- * Only requested when LINKEDIN_ORG_ENABLED=true.
+ * Org / company Page scopes — need Community Management API products on the LinkedIn app.
  */
 const ORG_SCOPES = [
   "rw_organization_admin",
@@ -19,24 +22,27 @@ const ORG_SCOPES = [
 ] as const;
 
 function linkedInOAuthScopeParam() {
-  const scopes: string[] = [...MEMBER_SCOPES];
-  if (linkedInOrgEnabled()) {
-    scopes.push(...ORG_SCOPES);
+  if (linkedInMemberMode()) {
+    return BASE_SCOPES.join(" ");
   }
-  return scopes.join(" ");
+  return [...BASE_SCOPES, ...ORG_SCOPES].join(" ");
 }
 
 async function fetchMemberIdentity(accessToken: string): Promise<{
   personUrn: string;
   name: string;
 }> {
-  // OpenID userinfo (works with openid + profile)
   try {
     const userinfo = (await readJson(
       await fetch("https://api.linkedin.com/v2/userinfo", {
         headers: { Authorization: `Bearer ${accessToken}` },
       }),
-    )) as { sub?: string; name?: string; given_name?: string; family_name?: string };
+    )) as {
+      sub?: string;
+      name?: string;
+      given_name?: string;
+      family_name?: string;
+    };
     if (userinfo.sub) {
       const personId = userinfo.sub.includes(":")
         ? userinfo.sub.split(":").pop()!
@@ -87,7 +93,9 @@ async function fetchOrganizationTarget(accessToken: string): Promise<{
 
   const orgUrn = orgs.elements?.[0]?.organizationalTarget;
   if (!orgUrn) {
-    throw new Error("No LinkedIn organization pages found for this member");
+    throw new Error(
+      "No LinkedIn company Pages found where you are an approved administrator. Make sure you admin a Page, and that Community Management / organization products are enabled on the LinkedIn app.",
+    );
   }
   const orgId = orgUrn.split(":").pop()!;
   const org = (await readJson(
@@ -103,16 +111,12 @@ async function fetchOrganizationTarget(accessToken: string): Promise<{
   };
 }
 
-/**
- * LinkedIn posting.
- * Default: member profile (`w_member_social`) — no Community Management API needed.
- * Org Page posting: set LINKEDIN_ORG_ENABLED=true once approved.
- */
+/** LinkedIn company Page posting (default). Member mode via LINKEDIN_MEMBER_MODE=true. */
 export const linkedinProvider: SocialProvider = {
   id: "linkedin",
-  displayName: linkedInOrgEnabled()
-    ? "LinkedIn Page"
-    : "LinkedIn (member)",
+  displayName: linkedInMemberMode()
+    ? "LinkedIn (member)"
+    : "LinkedIn Page",
 
   getAuthorizationUrl({ state, redirectUri }) {
     const clientId = requireEnv("LINKEDIN_CLIENT_ID");
@@ -149,11 +153,11 @@ export const linkedinProvider: SocialProvider = {
     };
 
     const scopes = token.scope?.split(" ").filter(Boolean) ?? [
-      ...MEMBER_SCOPES,
+      ...BASE_SCOPES,
     ];
 
-    if (linkedInOrgEnabled()) {
-      const org = await fetchOrganizationTarget(token.access_token);
+    if (linkedInMemberMode()) {
+      const member = await fetchMemberIdentity(token.access_token);
       return {
         accessToken: token.access_token,
         refreshToken: token.refresh_token ?? null,
@@ -161,17 +165,16 @@ export const linkedinProvider: SocialProvider = {
           ? new Date(Date.now() + token.expires_in * 1000)
           : null,
         scopes,
-        accountId: org.orgUrn,
-        accountName: org.name,
+        accountId: member.personUrn,
+        accountName: member.name,
         metadata: {
-          organization_id: org.orgId,
-          author_kind: "organization",
-          linkedin_mode: "organization",
+          author_kind: "member",
+          linkedin_mode: "member",
         },
       };
     }
 
-    const member = await fetchMemberIdentity(token.access_token);
+    const org = await fetchOrganizationTarget(token.access_token);
     return {
       accessToken: token.access_token,
       refreshToken: token.refresh_token ?? null,
@@ -179,11 +182,12 @@ export const linkedinProvider: SocialProvider = {
         ? new Date(Date.now() + token.expires_in * 1000)
         : null,
       scopes,
-      accountId: member.personUrn,
-      accountName: member.name,
+      accountId: org.orgUrn,
+      accountName: org.name,
       metadata: {
-        author_kind: "member",
-        linkedin_mode: "member",
+        organization_id: org.orgId,
+        author_kind: "organization",
+        linkedin_mode: "organization",
       },
     };
   },
@@ -232,9 +236,9 @@ export const linkedinProvider: SocialProvider = {
         : null) ||
       (input.accountId.includes("organization") ? "organization" : "member");
 
-    if (authorKind === "organization" && !linkedInOrgEnabled()) {
+    if (authorKind === "member" && !linkedInMemberMode()) {
       throw new Error(
-        "LinkedIn organization posting is disabled. Set LINKEDIN_ORG_ENABLED=true after Community Management API access is approved, or reconnect LinkedIn to publish as your member profile.",
+        "This LinkedIn connection is a personal profile. Reconnect LinkedIn to link a company Page (default), or set LINKEDIN_MEMBER_MODE=true for personal posting.",
       );
     }
 
