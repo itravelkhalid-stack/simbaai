@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getAdsProvider, AD_PLATFORMS } from "@/lib/ads/providers";
 import { signOAuthState } from "@/lib/crypto";
+import { reportServerError } from "@/lib/observability/report";
 import { requireActiveOrg } from "@/lib/org/require";
 import type { AdPlatform } from "@/lib/types/ads";
 
@@ -47,6 +48,10 @@ export async function GET(
     const authorizationUrl = provider.getAuthorizationUrl({ state, redirectUri });
     return NextResponse.redirect(authorizationUrl);
   } catch (error) {
+    reportServerError(error, {
+      scope: "ads_oauth_start",
+      platform,
+    });
     const message = error instanceof Error ? error.message : "oauth_start_failed";
     return NextResponse.redirect(
       `${site}/ads/connections?error=${encodeURIComponent(message)}`,
