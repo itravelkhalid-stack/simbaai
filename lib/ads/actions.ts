@@ -70,6 +70,9 @@ export async function connectAdAccountManual(
       return { error: "Account id, name, and access token are required" };
     }
     const brandId = await primaryBrandId(active.organization_id);
+    const loginCustomerId =
+      process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID?.replace(/-/g, "").trim() ||
+      undefined;
     await upsertAdConnection({
       organizationId: active.organization_id,
       brandId,
@@ -79,6 +82,12 @@ export async function connectAdAccountManual(
         accountId,
         accountName,
         refreshToken: String(formData.get("refreshToken") ?? "") || null,
+        metadata:
+          platform === "google" && loginCustomerId
+            ? { login_customer_id: loginCustomerId, google_ads_api: true }
+            : platform === "google"
+              ? { google_ads_api: true }
+              : undefined,
       },
     });
     revalidatePath("/ads/connections");

@@ -8,9 +8,12 @@ import type { AdsAccount, AdsProvider } from "@/lib/ads/providers/types";
 export const bingAdsProvider: AdsProvider = {
   id: "bing",
   displayName: "Microsoft Advertising",
-  supportsOAuth: Boolean(
-    process.env.MICROSOFT_ADS_CLIENT_ID && process.env.MICROSOFT_ADS_CLIENT_SECRET,
-  ),
+  get supportsOAuth() {
+    return Boolean(
+      process.env.MICROSOFT_ADS_CLIENT_ID &&
+        process.env.MICROSOFT_ADS_CLIENT_SECRET,
+    );
+  },
   getAuthorizationUrl({ state, redirectUri }) {
     const clientId = process.env.MICROSOFT_ADS_CLIENT_ID!;
     const url = new URL(

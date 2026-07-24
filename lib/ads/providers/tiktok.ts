@@ -15,9 +15,11 @@ import type {
 export const tiktokAdsProvider: AdsProvider = {
   id: "tiktok",
   displayName: "TikTok Ads",
-  supportsOAuth: Boolean(
-    process.env.TIKTOK_ADS_APP_ID && process.env.TIKTOK_ADS_SECRET,
-  ),
+  get supportsOAuth() {
+    return Boolean(
+      process.env.TIKTOK_ADS_APP_ID && process.env.TIKTOK_ADS_SECRET,
+    );
+  },
   getAuthorizationUrl({ state, redirectUri }) {
     const appId = process.env.TIKTOK_ADS_APP_ID!;
     const url = new URL("https://business-api.tiktok.com/portal/auth");

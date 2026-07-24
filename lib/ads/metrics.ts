@@ -1,6 +1,6 @@
 import { deriveMetrics } from "@/lib/ads/providers/http";
 import { getAdsProvider } from "@/lib/ads/providers";
-import { decryptAdConnection } from "@/lib/ads/connections";
+import { ensureFreshAdAccessToken } from "@/lib/ads/connections";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AdCampaign, AdConnection } from "@/lib/types/ads";
 
@@ -20,17 +20,24 @@ export async function syncCampaignMetrics(params: {
   }
 
   const provider = getAdsProvider(params.campaign.platform);
-  const tokens = decryptAdConnection(params.connection);
+  const { accessToken, connection } = await ensureFreshAdAccessToken(
+    params.connection,
+  );
   const until = new Date();
   const since = new Date();
   since.setDate(since.getDate() - (params.days ?? 14));
 
+  const meta = (connection.metadata ?? {}) as Record<string, unknown>;
   const rows = await provider.fetchDailyMetrics({
-    accessToken: tokens.accessToken,
-    accountId: params.connection.account_id,
+    accessToken,
+    accountId: connection.account_id,
     platformCampaignId: params.campaign.platform_campaign_id,
     since: isoDate(since),
     until: isoDate(until),
+    metadata: {
+      ...meta,
+      currency: params.campaign.currency,
+    },
   });
 
   const supabase = createAdminClient();

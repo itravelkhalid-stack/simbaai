@@ -41,7 +41,9 @@ function metaApp() {
 export const metaAdsProvider: AdsProvider = {
   id: "meta",
   displayName: "Meta Ads",
-  supportsOAuth: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET),
+  get supportsOAuth() {
+    return Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET);
+  },
   getAuthorizationUrl({ state, redirectUri }) {
     const { id } = metaApp();
     const scopes = [

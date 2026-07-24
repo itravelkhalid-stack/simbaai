@@ -1,6 +1,6 @@
 import { adsWritesEnabled } from "@/lib/ads/providers/types";
 import { getAdsProvider } from "@/lib/ads/providers";
-import { decryptAdConnection } from "@/lib/ads/connections";
+import { ensureFreshAdAccessToken } from "@/lib/ads/connections";
 import { parseAdsSettings } from "@/lib/ads/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
@@ -118,10 +118,11 @@ async function pauseCampaignFromPayload(params: {
     adsWritesEnabled(campaign.platform)
   ) {
     const provider = getAdsProvider(campaign.platform);
-    const tokens = decryptAdConnection(connection);
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
     await provider.pauseCampaign({
-      accessToken: tokens.accessToken,
-      accountId: connection.account_id,
+      accessToken,
+      accountId: fresh.account_id,
       platformCampaignId: campaign.platform_campaign_id,
     });
   } else if (campaign.platform_campaign_id && !adsWritesEnabled(campaign.platform)) {
@@ -172,10 +173,11 @@ async function shiftBudgetFromPayload(params: {
     adsWritesEnabled(campaign.platform)
   ) {
     const provider = getAdsProvider(campaign.platform);
-    const tokens = decryptAdConnection(connection);
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
     await provider.updateBudget({
-      accessToken: tokens.accessToken,
-      accountId: connection.account_id,
+      accessToken,
+      accountId: fresh.account_id,
       platformCampaignId: campaign.platform_campaign_id,
       dailyBudgetPence: nextBudget,
       currency: campaign.currency,

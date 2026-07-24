@@ -55,6 +55,8 @@ Only variables actually read by app/scripts/tests (or by the Inngest SDK used by
 | `PINTEREST_APP_SECRET` | No | Pinterest social |
 | `GOOGLE_CLIENT_ID` | No | YouTube social, GSC, GA4, Google Ads OAuth |
 | `GOOGLE_CLIENT_SECRET` | No | Same |
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | No | Required for Google Ads API (list accounts + metrics) |
+| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | No | Optional MCC id for `login-customer-id` header |
 | `TIKTOK_ADS_APP_ID` | No | TikTok Ads OAuth |
 | `TIKTOK_ADS_SECRET` | No | TikTok Ads OAuth |
 | `MICROSOFT_ADS_CLIENT_ID` | No | Microsoft Advertising OAuth gate |

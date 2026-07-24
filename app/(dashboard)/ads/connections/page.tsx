@@ -1,8 +1,9 @@
 import { AdsNav } from "@/components/ads/ads-nav";
 import { ConnectionsPanel } from "@/components/ads/connections-panel";
+import { AD_PLATFORMS, getAdsProvider } from "@/lib/ads/providers";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
-import type { AdConnection } from "@/lib/types/ads";
+import type { AdConnection, AdPlatform } from "@/lib/types/ads";
 
 export default async function AdsConnectionsPage({
   searchParams,
@@ -17,6 +18,10 @@ export default async function AdsConnectionsPage({
     .select("*")
     .eq("organization_id", active.organization_id)
     .order("created_at", { ascending: false });
+
+  const oauthEnabled = AD_PLATFORMS.filter(
+    (p) => getAdsProvider(p).supportsOAuth,
+  ) as AdPlatform[];
 
   return (
     <div className="space-y-6">
@@ -38,7 +43,10 @@ export default async function AdsConnectionsPage({
         Setup requirements for each network are documented in{" "}
         <code className="text-xs">docs/ads-apis.md</code>.
       </p>
-      <ConnectionsPanel connections={(data ?? []) as AdConnection[]} />
+      <ConnectionsPanel
+        connections={(data ?? []) as AdConnection[]}
+        oauthEnabled={oauthEnabled}
+      />
     </div>
   );
 }

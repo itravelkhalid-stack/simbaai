@@ -75,6 +75,8 @@ export type FetchMetricsInput = {
   platformCampaignId: string;
   since: string;
   until: string;
+  /** Connection metadata (e.g. login_customer_id, currency). */
+  metadata?: Record<string, unknown>;
 };
 
 export class AdsWriteDisabledError extends Error {
@@ -106,6 +108,15 @@ export interface AdsProvider {
     code: string;
     redirectUri: string;
   }): Promise<AdsTokenSet>;
+  /** Refresh OAuth access token when the provider supports offline access. */
+  refreshAccessToken?(input: {
+    refreshToken: string;
+  }): Promise<{
+    accessToken: string;
+    refreshToken?: string | null;
+    expiresAt?: Date | null;
+    scopes?: string[];
+  }>;
   listAccounts(input: { accessToken: string }): Promise<AdsAccount[]>;
   createCampaign(input: CreateCampaignInput): Promise<CreateCampaignResult>;
   updateBudget(input: UpdateBudgetInput): Promise<void>;

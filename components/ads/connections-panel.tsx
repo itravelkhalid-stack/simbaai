@@ -8,7 +8,7 @@ import {
   startAdOAuth,
   type AdsActionResult,
 } from "@/lib/ads/actions";
-import { AD_PLATFORMS, getAdsProvider } from "@/lib/ads/providers";
+import { AD_PLATFORMS } from "@/lib/ads/providers";
 import type { AdConnection, AdPlatform } from "@/lib/types/ads";
 import { AD_PLATFORM_LABELS } from "@/lib/types/ads";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,23 +20,27 @@ const initial: AdsActionResult = {};
 
 export function ConnectionsPanel({
   connections,
+  oauthEnabled,
 }: {
   connections: AdConnection[];
+  /** Platforms with OAuth credentials configured (evaluated on the server). */
+  oauthEnabled: AdPlatform[];
 }) {
   const [state, action, pending] = useActionState(connectAdAccountManual, initial);
+  const oauthSet = new Set(oauthEnabled);
 
   return (
     <div className="space-y-6">
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {AD_PLATFORMS.map((platform) => {
-          const provider = getAdsProvider(platform);
+          const canOAuth = oauthSet.has(platform);
           return (
             <div key={platform} className="rounded-xl border p-4">
               <p className="font-medium">{AD_PLATFORM_LABELS[platform]}</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Campaign writes require ADS_WRITES_ENABLED (see docs/ads-apis.md).
               </p>
-              {provider.supportsOAuth ? (
+              {canOAuth ? (
                 <form action={startAdOAuth} className="mt-3">
                   <input type="hidden" name="platform" value={platform} />
                   <Button type="submit" size="sm">

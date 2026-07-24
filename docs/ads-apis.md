@@ -50,15 +50,29 @@ OAuth callback: `{SITE_URL}/api/ads/oauth/{platform}/callback`
 
 **Writes:** stubbed. Requires TikTok Ads app approval + Marketing API write scopes.
 
-### Google Ads API — metrics stub
+### Google Ads API — OAuth + metrics (reads)
 
-**Env:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, plus:
+**Env:**
 
-- `GOOGLE_ADS_DEVELOPER_TOKEN`
-- `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (MCC)
-- Customer account ID binding per connection metadata
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (OAuth; offline access + refresh tokens)
+- `GOOGLE_ADS_DEVELOPER_TOKEN` (required for API calls)
+- `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (optional MCC / manager customer id; strip dashes)
 
-**Status:** OAuth URL available; token exchange and GAQL metrics left for developer-token approval. Connect via manual access token until then.
+**Implemented:**
+
+- OAuth with `access_type=offline` + `prompt=consent` (refresh token required)
+- Token refresh on metrics sync (`ensureFreshAdAccessToken`)
+- `customers:listAccessibleCustomers` → account list (non-managers preferred)
+- Daily campaign metrics via `googleAds:searchStream` (campaign, date, cost_micros, impressions, clicks, conversions, conversions_value)
+
+**Writes:** stubbed behind `ADS_WRITES_ENABLED`. Leave `false` until campaign mutate paths are implemented.
+
+**Test MCC smoke:**
+
+```bash
+# After connecting once (or with a refresh token from OAuth Playground / prior connect):
+GOOGLE_ADS_TEST_REFRESH_TOKEN=... npx tsx scripts/test-google-ads-mcc.ts
+```
 
 **Docs:** [Google Ads API](https://developers.google.com/google-ads/api/docs/start)
 

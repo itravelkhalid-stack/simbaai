@@ -12,6 +12,7 @@
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "audit:rls": "tsx scripts/audit-rls.ts",
+    "test:google-ads": "tsx scripts/test-google-ads-mcc.ts",
     "inngest:dev": "npx inngest-cli@latest dev"
   },
   "dependencies": {

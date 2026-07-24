@@ -1,4 +1,5 @@
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { getAdsProvider } from "@/lib/ads/providers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { AdConnection, AdPlatform } from "@/lib/types/ads";
@@ -44,6 +45,55 @@ export function decryptAdConnection(connection: AdConnection) {
     refreshToken: connection.refresh_token_encrypted
       ? decryptSecret(connection.refresh_token_encrypted)
       : null,
+  };
+}
+
+/** Refresh OAuth access token when expired (or within 60s of expiry). */
+export async function ensureFreshAdAccessToken(connection: AdConnection) {
+  const tokens = decryptAdConnection(connection);
+  const expiresMs = connection.token_expires_at
+    ? new Date(connection.token_expires_at).getTime()
+    : null;
+  const needsRefresh =
+    Boolean(tokens.refreshToken) &&
+    (expiresMs == null || expiresMs <= Date.now() + 60_000);
+
+  if (!needsRefresh || !tokens.refreshToken) {
+    return { accessToken: tokens.accessToken, connection };
+  }
+
+  const provider = getAdsProvider(connection.platform);
+  if (!provider.refreshAccessToken) {
+    return { accessToken: tokens.accessToken, connection };
+  }
+
+  const refreshed = await provider.refreshAccessToken({
+    refreshToken: tokens.refreshToken,
+  });
+
+  const supabase = createAdminClient();
+  const nextRefresh = refreshed.refreshToken ?? tokens.refreshToken;
+  const { data, error } = await supabase
+    .from("ad_connections")
+    .update({
+      access_token_encrypted: encryptSecret(refreshed.accessToken),
+      refresh_token_encrypted: nextRefresh
+        ? encryptSecret(nextRefresh)
+        : connection.refresh_token_encrypted,
+      token_expires_at: refreshed.expiresAt?.toISOString() ?? null,
+      last_error: null,
+    })
+    .eq("id", connection.id)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Failed to persist refreshed Ads token");
+  }
+
+  return {
+    accessToken: refreshed.accessToken,
+    connection: data as AdConnection,
   };
 }
 

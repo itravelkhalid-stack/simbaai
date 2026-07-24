@@ -48,6 +48,7 @@ Deploy: sync the Next.js app to Vercel, then register the app URL in the Inngest
 See `.env.example` and `docs/integrations.md`, `docs/ads-apis.md`. Notable:
 
 - `ADS_WRITES_ENABLED=false` until live ads write approval
+- `GOOGLE_ADS_DEVELOPER_TOKEN` + optional `GOOGLE_ADS_LOGIN_CUSTOMER_ID` for Google Ads reads
 - `CRM_WEBHOOK_SECRET` for public CRM form/webhooks
 - `PAGESPEED_API_KEY` for SEO audits
 

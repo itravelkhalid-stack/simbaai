@@ -8,7 +8,9 @@ import type { AdsAccount, AdsProvider } from "@/lib/ads/providers/types";
 export const xAdsProvider: AdsProvider = {
   id: "x",
   displayName: "X Ads",
-  supportsOAuth: Boolean(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET),
+  get supportsOAuth() {
+    return Boolean(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET);
+  },
   getAuthorizationUrl({ state, redirectUri }) {
     const clientId = process.env.X_CLIENT_ID!;
     const url = new URL("https://twitter.com/i/oauth2/authorize");
