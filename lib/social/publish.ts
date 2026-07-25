@@ -19,6 +19,14 @@ function humanizePublishError(error: unknown, platform: string) {
   if (/token|oauth|expired|unauthorized|401|190/i.test(message)) {
     return `${platform}: authentication failed — reconnect the account in Social. (${message})`;
   }
+  // Instagram provider errors are already specific — don't rewrite them
+  if (
+    /aspect ratio|caption|carousel|not yet supported|business\/creator|container|not reachable|publicly readable/i.test(
+      message,
+    )
+  ) {
+    return `${platform}: ${message}`;
+  }
   if (/media|image|video|url/i.test(message)) {
     return `${platform}: media upload/publish failed — Instagram needs a public HTTPS image URL. (${message})`;
   }

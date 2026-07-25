@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ConnectionsPanel } from "@/components/social/connections-panel";
+import { MetaHealthPanel } from "@/components/social/meta-health-panel";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { SocialConnection } from "@/lib/social/types";
@@ -63,6 +64,26 @@ export default async function SocialPage({
     .select("platform")
     .eq("organization_id", active.organization_id)
     .eq("status", "scheduled");
+
+  const { data: lastPublishedRows } = await supabase
+    .from("content_items")
+    .select("platform, published_at")
+    .eq("organization_id", active.organization_id)
+    .eq("status", "published")
+    .not("published_at", "is", null)
+    .in("platform", ["facebook", "instagram"])
+    .order("published_at", { ascending: false })
+    .limit(50);
+
+  const lastPublished: Record<string, string | null> = {
+    facebook: null,
+    instagram: null,
+  };
+  for (const row of lastPublishedRows ?? []) {
+    if (!lastPublished[row.platform]) {
+      lastPublished[row.platform] = row.published_at;
+    }
+  }
 
   const missingPlatforms = Array.from(
     new Set(
@@ -146,6 +167,12 @@ export default async function SocialPage({
           {activeCount}/{panelTotal} connected
         </Badge>
       </div>
+
+      <MetaHealthPanel
+        facebook={facebook ?? null}
+        instagram={instagram ?? null}
+        lastPublished={lastPublished}
+      />
 
       <ConnectionsPanel
         connections={typed}
