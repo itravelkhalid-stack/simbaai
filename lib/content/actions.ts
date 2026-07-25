@@ -46,9 +46,15 @@ async function assertCanScheduleInstagram(params: {
   if (item.platform !== "instagram") return;
 
   const media = (item.media_urls as string[] | null) ?? [];
-  if (!media.length) {
+  const { count: linkedCount } = await supabase
+    .from("content_item_media")
+    .select("id", { count: "exact", head: true })
+    .eq("content_item_id", params.itemId)
+    .eq("organization_id", params.organizationId);
+
+  if (!media.length && !(linkedCount && linkedCount > 0)) {
     throw new Error(
-      "Instagram posts require at least one uploaded image before scheduling. Add media on the content item, then try again.",
+      "Instagram posts require at least one image before scheduling. Attach media from the brand library or upload an image on the content item, then try again.",
     );
   }
 
@@ -707,7 +713,7 @@ export async function uploadContentItemMedia(
   }
 
   try {
-    const { active } = await assertCanWrite();
+    const { user, active } = await assertCanWrite();
     const supabase = await createClient();
     const { data: item } = await supabase
       .from("content_items")
@@ -717,12 +723,46 @@ export async function uploadContentItemMedia(
       .single();
     if (!item) return { error: "Item not found" };
 
-    const { uploadContentMediaFile } = await import("@/lib/content/media");
-    const uploaded = await uploadContentMediaFile({
+    // Prefer brand-media library so assets are reusable
+    const { uploadBrandMediaFile } = await import("@/lib/media/storage");
+    const uploaded = await uploadBrandMediaFile({
       organizationId: active.organization_id,
       brandId: item.brand_id,
-      contentItemId: item.id,
       file,
+      assetType: "image",
+    });
+
+    const { data: asset, error: assetError } = await supabase
+      .from("media_assets")
+      .insert({
+        organization_id: active.organization_id,
+        brand_id: item.brand_id,
+        type: "image",
+        storage_path: uploaded.path,
+        public_url: uploaded.publicUrl,
+        filename: file.name,
+        mime_type: uploaded.mimeType,
+        size_bytes: uploaded.sizeBytes,
+        tags: ["content"],
+        source: "upload",
+        created_by: user.id,
+      })
+      .select("id")
+      .single();
+    if (assetError || !asset) {
+      return { error: assetError?.message ?? "Failed to save media asset" };
+    }
+
+    const { count } = await supabase
+      .from("content_item_media")
+      .select("id", { count: "exact", head: true })
+      .eq("content_item_id", item.id);
+
+    await supabase.from("content_item_media").insert({
+      organization_id: active.organization_id,
+      content_item_id: item.id,
+      media_asset_id: asset.id,
+      sort_order: count ?? 0,
     });
 
     const existing = (item.media_urls as string[] | null) ?? [];
@@ -734,6 +774,9 @@ export async function uploadContentItemMedia(
     if (error) return { error: error.message };
 
     revalidatePath(`/content/${itemId}`);
+    revalidatePath("/content/queue");
+    revalidatePath("/content/calendar");
+    revalidatePath("/brand/media");
     return { success: "Image uploaded" };
   } catch (error) {
     return {
@@ -745,24 +788,72 @@ export async function uploadContentItemMedia(
 export async function removeContentItemMedia(formData: FormData) {
   const itemId = String(formData.get("itemId") ?? "");
   const url = String(formData.get("url") ?? "");
-  if (!itemId || !url) throw new Error("Missing media");
+  const assetId = String(formData.get("assetId") ?? "");
+  if (!itemId || (!url && !assetId)) throw new Error("Missing media");
 
   const { active } = await assertCanWrite();
   const supabase = await createClient();
-  const { data: item } = await supabase
-    .from("content_items")
-    .select("media_urls")
-    .eq("id", itemId)
-    .eq("organization_id", active.organization_id)
-    .single();
-  if (!item) throw new Error("Item not found");
 
-  const next = ((item.media_urls as string[]) ?? []).filter((u) => u !== url);
+  if (assetId) {
+    await supabase
+      .from("content_item_media")
+      .delete()
+      .eq("content_item_id", itemId)
+      .eq("media_asset_id", assetId)
+      .eq("organization_id", active.organization_id);
+  } else if (url) {
+    // Detach by public URL when only media_urls entry is known
+    const { data: asset } = await supabase
+      .from("media_assets")
+      .select("id")
+      .eq("organization_id", active.organization_id)
+      .eq("public_url", url)
+      .maybeSingle();
+    if (asset) {
+      await supabase
+        .from("content_item_media")
+        .delete()
+        .eq("content_item_id", itemId)
+        .eq("media_asset_id", asset.id)
+        .eq("organization_id", active.organization_id);
+    }
+  }
+
+  const { data: links } = await supabase
+    .from("content_item_media")
+    .select("media_asset_id, sort_order")
+    .eq("content_item_id", itemId)
+    .eq("organization_id", active.organization_id)
+    .order("sort_order");
+
+  const ids = (links ?? []).map((l) => l.media_asset_id);
+  let nextUrls: string[] = [];
+  if (ids.length) {
+    const { data: assets } = await supabase
+      .from("media_assets")
+      .select("id, public_url")
+      .in("id", ids);
+    const byId = new Map((assets ?? []).map((a) => [a.id, a.public_url]));
+    nextUrls = ids
+      .map((id) => byId.get(id))
+      .filter((u): u is string => Boolean(u));
+  } else if (url) {
+    const { data: item } = await supabase
+      .from("content_items")
+      .select("media_urls")
+      .eq("id", itemId)
+      .eq("organization_id", active.organization_id)
+      .single();
+    nextUrls = ((item?.media_urls as string[]) ?? []).filter((u) => u !== url);
+  }
+
   const { error } = await supabase
     .from("content_items")
-    .update({ media_urls: next })
+    .update({ media_urls: nextUrls })
     .eq("id", itemId)
     .eq("organization_id", active.organization_id);
   if (error) throw new Error(error.message);
   revalidatePath(`/content/${itemId}`);
+  revalidatePath("/content/queue");
+  revalidatePath("/content/calendar");
 }

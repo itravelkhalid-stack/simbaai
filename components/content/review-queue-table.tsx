@@ -23,8 +23,9 @@ export function ReviewQueueTable({ items }: { items: ContentItem[] }) {
   return (
     <div className="rounded-xl border">
       <Table>
-        <TableHeader>
+          <TableHeader>
           <TableRow>
+            <TableHead className="w-16">Media</TableHead>
             <TableHead>Item</TableHead>
             <TableHead>Platform</TableHead>
             <TableHead>Format</TableHead>
@@ -35,15 +36,28 @@ export function ReviewQueueTable({ items }: { items: ContentItem[] }) {
         <TableBody>
           {items.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="text-muted-foreground">
+              <TableCell colSpan={6} className="text-muted-foreground">
                 Queue is empty.
               </TableCell>
             </TableRow>
           ) : (
             items.map((item) => {
               const flags = (item.compliance_flags ?? []) as ComplianceFlag[];
+              const thumb = item.media_urls?.[0];
               return (
                 <TableRow key={item.id}>
+                  <TableCell>
+                    {thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={thumb}
+                        alt=""
+                        className="h-10 w-10 rounded object-cover"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Link
                       href={`/content/${item.id}`}
@@ -55,6 +69,9 @@ export function ReviewQueueTable({ items }: { items: ContentItem[] }) {
                       <p className="text-xs text-muted-foreground">
                         Variant group {item.variant_group_id.slice(0, 8)}
                       </p>
+                    ) : null}
+                    {item.platform === "instagram" && !thumb ? (
+                      <p className="text-xs text-destructive">Needs image</p>
                     ) : null}
                   </TableCell>
                   <TableCell>{PLATFORM_LABELS[item.platform]}</TableCell>

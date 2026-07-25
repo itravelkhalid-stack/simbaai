@@ -9,6 +9,7 @@ import type {
   Competitor,
 } from "@/lib/types/research";
 import type { ContentPillar } from "@/lib/types/content";
+import type { BrandAssetSlotUrls } from "@/lib/types/media";
 
 export type BrandContextInput = {
   organizationName: string;
@@ -39,9 +40,30 @@ export type BrandContextInput = {
     Pick<Competitor, "name" | "website" | "positioning" | "strengths">
   >;
   pillars: Array<Pick<ContentPillar, "name" | "target_pct" | "description">>;
+  assets?: Partial<BrandAssetSlotUrls>;
+  guidelinesDigest?: string;
+  colorPalette?: string[];
 };
 
 export function buildBrandContextMarkdown(ctx: BrandContextInput): string {
+  const logoPrimary =
+    ctx.assets?.logoPrimary ?? ctx.brand.logo_url ?? "n/a";
+  const palette =
+    (ctx.colorPalette?.length
+      ? ctx.colorPalette
+      : [
+          ctx.brand.primary_color,
+          ctx.brand.secondary_color,
+          ctx.brand.accent_color,
+        ].filter(Boolean)
+    ).join(", ") || "n/a";
+  const digest =
+    ctx.guidelinesDigest ??
+    (typeof (ctx.brand.guidelines as { summary?: string })?.summary === "string"
+      ? (ctx.brand.guidelines as { summary: string }).summary
+      : null) ??
+    "n/a";
+
   return `
 ## Brand context (authoritative — follow this)
 - Organization: ${ctx.organizationName}
@@ -51,7 +73,11 @@ export function buildBrandContextMarkdown(ctx: BrandContextInput): string {
 - Positioning: ${ctx.brand.positioning ?? "n/a"}
 - Brand voice: ${ctx.brand.brand_voice ?? "n/a"}
 - Target audience summary: ${ctx.brand.target_audience ?? "n/a"}
-- Visual: colors ${[ctx.brand.primary_color, ctx.brand.secondary_color, ctx.brand.accent_color].filter(Boolean).join(", ") || "n/a"}; fonts ${[ctx.brand.font_heading, ctx.brand.font_body].filter(Boolean).join(" / ") || "n/a"}; logo ${ctx.brand.logo_url ?? "n/a"}
+- Color palette: ${palette}
+- Fonts: ${[ctx.brand.font_heading, ctx.brand.font_body].filter(Boolean).join(" / ") || "n/a"}
+- Logo (primary): ${logoPrimary}
+- Logo variants: dark=${ctx.assets?.logoDark ?? "n/a"}; light=${ctx.assets?.logoLight ?? "n/a"}; secondary=${ctx.assets?.logoSecondary ?? "n/a"}
+- Guidelines digest: ${digest}
 - Social handles: ${JSON.stringify(ctx.brand.social_handles ?? {})}
 - Guidelines JSON: ${JSON.stringify(ctx.brand.guidelines ?? {})}
 

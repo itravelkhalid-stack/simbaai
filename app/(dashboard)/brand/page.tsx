@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BrandNav } from "@/components/brand/brand-nav";
 import { CreateBrandForm } from "@/components/brand/setup-wizard";
 import { setPrimaryBrand } from "@/lib/brand/actions";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -29,7 +30,7 @@ export default async function BrandPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Brand</h1>
           <p className="mt-2 text-muted-foreground">
-            Brand kit, voice, audiences, products, and AI extraction from your site.
+            Brand kit, voice, audiences, products, media, and AI extraction.
           </p>
         </div>
         {list[0] ? (
@@ -41,6 +42,12 @@ export default async function BrandPage() {
               Setup wizard
             </Link>
             <Link
+              href={`/brand/media?brandId=${list[0].id}`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Media
+            </Link>
+            <Link
               href={`/brand/guidelines?brandId=${list[0].id}`}
               className={cn(buttonVariants({ variant: "outline" }))}
             >
@@ -49,6 +56,8 @@ export default async function BrandPage() {
           </div>
         ) : null}
       </div>
+
+      <BrandNav current="/brand" />
 
       {list.length === 0 ? (
         canWrite ? (
@@ -78,6 +87,12 @@ export default async function BrandPage() {
                   className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
                 >
                   Edit
+                </Link>
+                <Link
+                  href={`/brand/media?brandId=${brand.id}`}
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                >
+                  Media
                 </Link>
                 <Link
                   href={`/brand/guidelines?brandId=${brand.id}`}

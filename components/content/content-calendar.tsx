@@ -187,12 +187,23 @@ export function ContentCalendar({
                       STATUS_COLORS[item.status],
                     )}
                   >
+                    {item.media_urls?.[0] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.media_urls[0]}
+                        alt=""
+                        className="mb-1 aspect-video w-full rounded object-cover"
+                      />
+                    ) : null}
                     <p className="font-medium">
                       {PLATFORM_LABELS[item.platform]} · {item.status}
                     </p>
                     <p className="line-clamp-2">
                       {item.title || item.copy.slice(0, 60)}
                     </p>
+                    {item.platform === "instagram" && !item.media_urls?.[0] ? (
+                      <p className="mt-1 text-[10px] text-destructive">Needs image</p>
+                    ) : null}
                     {item.publish_error ? (
                       <p className="mt-1 line-clamp-2 text-[10px] text-red-600">
                         {item.publish_error}

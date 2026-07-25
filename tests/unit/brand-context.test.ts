@@ -57,6 +57,46 @@ describe("brand context builder", () => {
     expect(md).toContain("Ops leads");
     expect(md).toContain("Rival");
     expect(md).toContain("How-to (40%)");
+    expect(md).toContain("Guidelines digest:");
+  });
+
+  it("includes logo URLs and color palette when provided", () => {
+    const md = buildBrandContextMarkdown({
+      organizationName: "Acme Co",
+      brand: {
+        name: "Acme",
+        website: null,
+        positioning: null,
+        brand_voice: null,
+        target_audience: null,
+        social_handles: {},
+        guidelines: { summary: "Be clear and warm" },
+        tagline: null,
+        primary_color: "#111111",
+        secondary_color: "#222222",
+        accent_color: null,
+        font_heading: null,
+        font_body: null,
+        logo_url: "https://cdn.test/legacy.png",
+      },
+      audiences: [],
+      competitors: [],
+      pillars: [],
+      assets: {
+        logoPrimary: "https://cdn.test/primary.png",
+        logoDark: "https://cdn.test/dark.png",
+        logoLight: null,
+        logoSecondary: null,
+        guidelinesDoc: "https://cdn.test/guide.pdf",
+      },
+      guidelinesDigest: "Be clear and warm",
+      colorPalette: ["#111111", "#222222"],
+    });
+
+    expect(md).toContain("https://cdn.test/primary.png");
+    expect(md).toContain("dark=https://cdn.test/dark.png");
+    expect(md).toContain("Color palette: #111111, #222222");
+    expect(md).toContain("Be clear and warm");
   });
 
   it("handles empty optional collections", () => {

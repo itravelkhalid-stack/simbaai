@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BrandNav } from "@/components/brand/brand-nav";
 import {
   BrandSetupWizard,
   type WizardStep,
@@ -70,10 +71,7 @@ export default async function BrandSetupPage({
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/brand" className="text-sm text-muted-foreground underline">
-          ← Brand
-        </Link>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+        <h1 className="text-3xl font-semibold tracking-tight">
           Setup — {brand.name}
         </h1>
         <p className="mt-2 text-muted-foreground">
@@ -81,6 +79,7 @@ export default async function BrandSetupPage({
           website URL anytime below.
         </p>
       </div>
+      <BrandNav current="/brand/setup" />
       <BrandSetupWizard
         brand={brand as Brand}
         audiences={(audiences ?? []) as BrandAudience[]}

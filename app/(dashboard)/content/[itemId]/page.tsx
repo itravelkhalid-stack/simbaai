@@ -33,19 +33,28 @@ export default async function ContentItemPage({
   if (error) throw new Error(error.message);
   if (!item) notFound();
 
-  const [{ data: comments }, complianceCheck] = await Promise.all([
-    supabase
-      .from("content_comments")
-      .select("*")
-      .eq("item_id", itemId)
-      .eq("organization_id", active.organization_id)
-      .order("created_at", { ascending: true }),
-    getLatestComplianceCheck({
-      organizationId: active.organization_id,
-      entityType: "content",
-      entityId: itemId,
-    }),
-  ]);
+  const [{ data: comments }, complianceCheck, { data: libraryAssets }] =
+    await Promise.all([
+      supabase
+        .from("content_comments")
+        .select("*")
+        .eq("item_id", itemId)
+        .eq("organization_id", active.organization_id)
+        .order("created_at", { ascending: true }),
+      getLatestComplianceCheck({
+        organizationId: active.organization_id,
+        entityType: "content",
+        entityId: itemId,
+      }),
+      supabase
+        .from("media_assets")
+        .select("*")
+        .eq("organization_id", active.organization_id)
+        .eq("brand_id", item.brand_id)
+        .in("type", ["image", "logo", "video"])
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
 
   const typed = item as ContentItem;
 
@@ -71,6 +80,7 @@ export default async function ContentItemPage({
         canOverride={
           active.role === "org_owner" || active.role === "org_admin"
         }
+        libraryAssets={(libraryAssets ?? []) as import("@/lib/types/media").MediaAsset[]}
       />
     </div>
   );

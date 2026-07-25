@@ -2,9 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BrandGuidelinesView } from "@/components/brand/guidelines-view";
+import { BrandNav } from "@/components/brand/brand-nav";
+import { GuidelinesProposalPanel } from "@/components/brand/guidelines-proposal-panel";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { Brand, BrandAudience, BrandProduct } from "@/lib/types/research";
+import type { BrandGuidelinesProposal } from "@/lib/types/media";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +19,7 @@ export default async function BrandGuidelinesPage({
   const params = await searchParams;
   const { active } = await requireActiveOrg();
   const supabase = await createClient();
+  const canWrite = active.role !== "org_viewer";
 
   let brandQuery = supabase
     .from("brands")
@@ -41,40 +45,58 @@ export default async function BrandGuidelinesPage({
   }
   if (!brand) notFound();
 
-  const [{ data: audiences }, { data: products }] = await Promise.all([
-    supabase
-      .from("brand_audiences")
-      .select("*")
-      .eq("brand_id", brand.id)
-      .order("name"),
-    supabase
-      .from("brand_products")
-      .select("*")
-      .eq("brand_id", brand.id)
-      .order("sort_order"),
-  ]);
+  const [{ data: audiences }, { data: products }, { data: proposals }] =
+    await Promise.all([
+      supabase
+        .from("brand_audiences")
+        .select("*")
+        .eq("brand_id", brand.id)
+        .order("name"),
+      supabase
+        .from("brand_products")
+        .select("*")
+        .eq("brand_id", brand.id)
+        .order("sort_order"),
+      supabase
+        .from("brand_guidelines_proposals")
+        .select("*")
+        .eq("brand_id", brand.id)
+        .eq("organization_id", active.organization_id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false }),
+    ]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Link href="/brand" className="text-sm text-muted-foreground underline">
-            ← Brand
-          </Link>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Guidelines — {brand.name}
           </h1>
           <p className="mt-2 text-muted-foreground">
             The brand kit agents and humans share when creating work.
           </p>
         </div>
-        <Link
-          href={`/brand/setup?brandId=${brand.id}`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Edit in wizard
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/brand/media?brandId=${brand.id}`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Media library
+          </Link>
+          <Link
+            href={`/brand/setup?brandId=${brand.id}`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Edit in wizard
+          </Link>
+        </div>
       </div>
+      <BrandNav current="/brand/guidelines" />
+      <GuidelinesProposalPanel
+        proposals={(proposals ?? []) as BrandGuidelinesProposal[]}
+        canWrite={canWrite}
+      />
       <BrandGuidelinesView
         brand={brand as Brand}
         audiences={(audiences ?? []) as BrandAudience[]}

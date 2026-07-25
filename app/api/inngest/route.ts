@@ -1,6 +1,7 @@
 import { serve } from "inngest/next";
 
 import { inngest } from "@/lib/inngest/client";
+import { brandFunctions } from "@/lib/inngest/functions/brand";
 import { contentFunctions } from "@/lib/inngest/functions/content";
 import { emailFunctions } from "@/lib/inngest/functions/email";
 import { researchFunctions } from "@/lib/inngest/functions/research";
@@ -22,6 +23,7 @@ export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
     ...researchFunctions,
+    ...brandFunctions,
     ...contentFunctions,
     ...socialFunctions,
     ...emailFunctions,

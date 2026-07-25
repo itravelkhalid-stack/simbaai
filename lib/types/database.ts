@@ -252,6 +252,60 @@ export type Database = {
         },
         Partial<BrandProduct>
       >;
+      media_assets: TableDef<
+        import("@/lib/types/media").MediaAsset,
+        {
+          id?: string;
+          organization_id: string;
+          brand_id: string;
+          type: import("@/lib/types/media").MediaAssetType;
+          storage_path: string;
+          public_url: string;
+          filename: string;
+          mime_type?: string | null;
+          width?: number | null;
+          height?: number | null;
+          size_bytes?: number;
+          tags?: string[];
+          source?: import("@/lib/types/media").MediaAssetSource;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<import("@/lib/types/media").MediaAsset>
+      >;
+      content_item_media: TableDef<
+        import("@/lib/types/media").ContentItemMedia,
+        {
+          id?: string;
+          organization_id: string;
+          content_item_id: string;
+          media_asset_id: string;
+          sort_order?: number;
+          created_at?: string;
+        },
+        Partial<import("@/lib/types/media").ContentItemMedia>
+      >;
+      brand_guidelines_proposals: TableDef<
+        import("@/lib/types/media").BrandGuidelinesProposal,
+        {
+          id?: string;
+          organization_id: string;
+          brand_id: string;
+          media_asset_id?: string | null;
+          agent_run_id?: string | null;
+          status?: import("@/lib/types/media").BrandGuidelinesProposalStatus;
+          proposed?: Record<string, unknown>;
+          current_snapshot?: Record<string, unknown>;
+          summary?: string | null;
+          created_by?: string | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<import("@/lib/types/media").BrandGuidelinesProposal>
+      >;
       org_webhook_secrets: TableDef<
         {
           id: string;
