@@ -49,6 +49,7 @@ See `.env.example` and `docs/integrations.md`, `docs/ads-apis.md`. Notable:
 
 - `ADS_WRITES_ENABLED=false` until live ads write approval
 - `GOOGLE_ADS_DEVELOPER_TOKEN` + optional `GOOGLE_ADS_LOGIN_CUSTOMER_ID` for Google Ads reads
+- `GOOGLE_ADS_API_VERSION` optional override for the pinned Google Ads API version (default `v25`)
 - `CRM_WEBHOOK_SECRET` for public CRM form/webhooks
 - `PAGESPEED_API_KEY` for SEO audits
 

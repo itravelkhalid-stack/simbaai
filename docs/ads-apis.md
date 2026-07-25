@@ -57,6 +57,12 @@ OAuth callback: `{SITE_URL}/api/ads/oauth/{platform}/callback`
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (OAuth; offline access + refresh tokens)
 - `GOOGLE_ADS_DEVELOPER_TOKEN` (required for API calls)
 - `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (optional MCC / manager customer id; strip dashes)
+- `GOOGLE_ADS_API_VERSION` (optional; defaults to `v25`)
+
+Google sunsets API versions roughly yearly and a sunset version answers with an
+HTML 404 page rather than JSON, which surfaces as `Unexpected token '<'` during
+connect. Check [sunset dates](https://developers.google.com/google-ads/api/docs/sunset-dates)
+and set `GOOGLE_ADS_API_VERSION` to bump without a code change.
 
 **Implemented:**
 

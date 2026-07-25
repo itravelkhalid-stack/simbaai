@@ -46,9 +46,12 @@ describe("google ads API helpers", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
-          resourceNames: ["customers/111", "customers/222-333-4444"],
-        }),
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        text: async () =>
+          JSON.stringify({
+            resourceNames: ["customers/111", "customers/222-333-4444"],
+          }),
       }),
     );
 
@@ -119,11 +122,14 @@ describe("google ads API helpers", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
-          access_token: "new-access",
-          expires_in: 3600,
-          scope: "https://www.googleapis.com/auth/adwords",
-        }),
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        text: async () =>
+          JSON.stringify({
+            access_token: "new-access",
+            expires_in: 3600,
+            scope: "https://www.googleapis.com/auth/adwords",
+          }),
       }),
     );
 
@@ -131,6 +137,23 @@ describe("google ads API helpers", () => {
     expect(refreshed.accessToken).toBe("new-access");
     expect(refreshed.refreshToken).toBeNull();
     expect(refreshed.expiresAt).toBeInstanceOf(Date);
+  });
+
+  it("throws a readable error when Google answers with HTML", async () => {
+    process.env.GOOGLE_ADS_DEVELOPER_TOKEN = "dev-token";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: new Headers({ "content-type": "text/html" }),
+        text: async () => "<!DOCTYPE html><html><body>Not Found</body></html>",
+      }),
+    );
+
+    await expect(listAccessibleCustomerIds("tok")).rejects.toThrow(
+      /non-JSON \(status 404/,
+    );
   });
 });
 

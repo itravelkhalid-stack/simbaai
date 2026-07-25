@@ -57,6 +57,7 @@ Only variables actually read by app/scripts/tests (or by the Inngest SDK used by
 | `GOOGLE_CLIENT_SECRET` | No | Same |
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | No | Required for Google Ads API (list accounts + metrics) |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | No | Optional MCC id for `login-customer-id` header |
+| `GOOGLE_ADS_API_VERSION` | No | Override pinned Google Ads API version (default `v25`) |
 | `TIKTOK_ADS_APP_ID` | No | TikTok Ads OAuth |
 | `TIKTOK_ADS_SECRET` | No | TikTok Ads OAuth |
 | `MICROSOFT_ADS_CLIENT_ID` | No | Microsoft Advertising OAuth gate |

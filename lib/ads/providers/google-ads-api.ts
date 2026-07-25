@@ -3,7 +3,28 @@
  * API version pinned for stable REST paths.
  */
 
-export const GOOGLE_ADS_API_VERSION = "v18";
+/**
+ * Pinned API version. Google sunsets versions roughly yearly and a sunset
+ * version answers with an HTML 404 page, so keep this current and allow an
+ * env override to react without a code change.
+ */
+export const GOOGLE_ADS_API_VERSION =
+  process.env.GOOGLE_ADS_API_VERSION?.trim() || "v25";
+
+/** Parse a Google response body defensively — sunset/blocked endpoints return HTML. */
+async function readGoogleJson<T>(res: Response, label: string): Promise<T> {
+  const text = await res.text();
+  try {
+    return (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    const contentType = res.headers.get("content-type") ?? "unknown";
+    throw new Error(
+      `${label} returned non-JSON (status ${res.status}, content-type ${contentType}). ` +
+        `Check GOOGLE_ADS_API_VERSION (${GOOGLE_ADS_API_VERSION}) is not sunset. ` +
+        `Body starts: ${text.slice(0, 160).replace(/\s+/g, " ")}`,
+    );
+  }
+}
 
 export function googleAdsDeveloperToken() {
   const token = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
@@ -77,7 +98,10 @@ export async function exchangeGoogleOAuthCode(params: {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  const json = (await res.json()) as GoogleTokenResponse;
+  const json = await readGoogleJson<GoogleTokenResponse>(
+    res,
+    "Google token exchange",
+  );
   if (!res.ok || !json.access_token) {
     throw new Error(
       json.error_description ||
@@ -120,7 +144,10 @@ export async function refreshGoogleAccessToken(refreshToken: string): Promise<{
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  const json = (await res.json()) as GoogleTokenResponse;
+  const json = await readGoogleJson<GoogleTokenResponse>(
+    res,
+    "Google token refresh",
+  );
   if (!res.ok || !json.access_token) {
     throw new Error(
       json.error_description ||
@@ -167,10 +194,10 @@ export async function listAccessibleCustomerIds(
       headers: googleAdsHeaders({ accessToken }),
     },
   );
-  const json = (await res.json()) as {
+  const json = await readGoogleJson<{
     resourceNames?: string[];
     error?: { message?: string; details?: unknown };
-  };
+  }>(res, "listAccessibleCustomers");
   if (!res.ok) {
     throw new Error(
       json.error?.message ||
@@ -227,7 +254,11 @@ export async function googleAdsSearchStream(params: {
   try {
     parsed = text ? JSON.parse(text) : [];
   } catch {
-    throw new Error(`Google Ads searchStream invalid JSON: ${text.slice(0, 200)}`);
+    throw new Error(
+      `Google Ads searchStream returned non-JSON (status ${res.status}). ` +
+        `Check GOOGLE_ADS_API_VERSION (${GOOGLE_ADS_API_VERSION}) is not sunset. ` +
+        `Body starts: ${text.slice(0, 160).replace(/\s+/g, " ")}`,
+    );
   }
 
   if (!res.ok) {
