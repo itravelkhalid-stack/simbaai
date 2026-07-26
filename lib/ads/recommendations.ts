@@ -2,6 +2,7 @@ import { adsWritesEnabled } from "@/lib/ads/providers/types";
 import { getAdsProvider } from "@/lib/ads/providers";
 import { ensureFreshAdAccessToken } from "@/lib/ads/connections";
 import { parseAdsSettings } from "@/lib/ads/settings";
+import { auditAdWrite, authorizeAdWrite } from "@/lib/ads/write-safety";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   AdCampaign,
@@ -34,19 +35,24 @@ export async function applyRecommendation(params: {
       await pauseCampaignFromPayload({
         organizationId: params.organizationId,
         campaignId: String(payload.campaign_id ?? recommendation.campaign_id ?? ""),
+        userId: params.userId,
+        fromAgent: params.fromAutoOptimise,
       });
     } else if (recommendation.recommendation_type === "shift_budget") {
       await shiftBudgetFromPayload({
         organizationId: params.organizationId,
         payload,
         fromAutoOptimise: params.fromAutoOptimise,
+        userId: params.userId,
       });
     } else if (recommendation.recommendation_type === "activate_campaign") {
-      await supabase
-        .from("ad_campaigns")
-        .update({ status: "active" })
-        .eq("id", String(payload.campaign_id ?? recommendation.campaign_id ?? ""))
-        .eq("organization_id", params.organizationId);
+      await activateCampaignFromPayload({
+        organizationId: params.organizationId,
+        campaignId: String(
+          payload.campaign_id ?? recommendation.campaign_id ?? "",
+        ),
+        userId: params.userId,
+      });
     } else if (recommendation.recommendation_type === "refresh_creative") {
       // Mark campaign as needing creative — no auto-upload
       await supabase
@@ -105,6 +111,8 @@ async function loadCampaignWithConnection(
 async function pauseCampaignFromPayload(params: {
   organizationId: string;
   campaignId: string;
+  userId?: string | null;
+  fromAgent?: boolean;
 }) {
   const { campaign, connection } = await loadCampaignWithConnection(
     params.organizationId,
@@ -117,6 +125,16 @@ async function pauseCampaignFromPayload(params: {
     campaign.platform_campaign_id &&
     adsWritesEnabled(campaign.platform)
   ) {
+    await authorizeAdWrite({
+      organizationId: params.organizationId,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "pause",
+      campaignId: campaign.id,
+      actorUserId: params.userId,
+      actorName: params.fromAgent ? "ads_optimisation_agent" : null,
+      currentDailyBudgetPence: campaign.daily_budget_pence,
+    });
     const provider = getAdsProvider(campaign.platform);
     const { accessToken, connection: fresh } =
       await ensureFreshAdAccessToken(connection);
@@ -124,6 +142,12 @@ async function pauseCampaignFromPayload(params: {
       accessToken,
       accountId: fresh.account_id,
       platformCampaignId: campaign.platform_campaign_id,
+      metadata: {
+        ...(fresh.metadata ?? {}),
+        ...(campaign.platform_metadata ?? {}),
+        platform_adset_id: campaign.platform_adset_id,
+        platform_ad_id: campaign.platform_ad_id,
+      },
     });
   } else if (campaign.platform_campaign_id && !adsWritesEnabled(campaign.platform)) {
     // Local pause still applied; remote write gated by ADS_WRITES_ENABLED
@@ -133,12 +157,78 @@ async function pauseCampaignFromPayload(params: {
     .from("ad_campaigns")
     .update({ status: "paused" })
     .eq("id", campaign.id);
+  await auditAdWrite({
+    organizationId: params.organizationId,
+    actorUserId: params.userId,
+    actorName: params.fromAgent ? "ads_optimisation_agent" : null,
+    campaign,
+    action: "ad_campaign_pause_recommendation",
+    before: { status: campaign.status },
+    after: { status: "paused" },
+  });
+}
+
+async function activateCampaignFromPayload(params: {
+  organizationId: string;
+  campaignId: string;
+  userId?: string | null;
+}) {
+  const { campaign, connection } = await loadCampaignWithConnection(
+    params.organizationId,
+    params.campaignId,
+  );
+  if (!connection || !campaign.platform_campaign_id) {
+    throw new Error("Remote campaign and active connection are required");
+  }
+  await authorizeAdWrite({
+    organizationId: params.organizationId,
+    brandId: campaign.brand_id,
+    platform: campaign.platform,
+    action: "activate",
+    campaignId: campaign.id,
+    actorUserId: params.userId,
+    proposedDailyBudgetPence: campaign.daily_budget_pence,
+  });
+  const { accessToken, connection: fresh } =
+    await ensureFreshAdAccessToken(connection);
+  await getAdsProvider(campaign.platform).setCampaignStatus({
+    accessToken,
+    accountId: fresh.account_id,
+    platformCampaignId: campaign.platform_campaign_id,
+    status: "active",
+    metadata: {
+      ...(fresh.metadata ?? {}),
+      ...(campaign.platform_metadata ?? {}),
+      platform_adset_id: campaign.platform_adset_id,
+      platform_ad_id: campaign.platform_ad_id,
+      platform_budget_id: campaign.platform_budget_id,
+    },
+  });
+  const supabase = createAdminClient();
+  const now = new Date().toISOString();
+  await supabase
+    .from("ad_campaigns")
+    .update({
+      status: "active",
+      launch_approved_by: params.userId ?? null,
+      launch_approved_at: now,
+    })
+    .eq("id", campaign.id);
+  await auditAdWrite({
+    organizationId: params.organizationId,
+    actorUserId: params.userId,
+    campaign,
+    action: "ad_campaign_activate_recommendation",
+    before: { status: campaign.status },
+    after: { status: "active", launch_approved_at: now },
+  });
 }
 
 async function shiftBudgetFromPayload(params: {
   organizationId: string;
   payload: Record<string, unknown>;
   fromAutoOptimise?: boolean;
+  userId?: string | null;
 }) {
   const supabase = createAdminClient();
   const { data: org } = await supabase
@@ -172,6 +262,19 @@ async function shiftBudgetFromPayload(params: {
     campaign.platform_campaign_id &&
     adsWritesEnabled(campaign.platform)
   ) {
+    await authorizeAdWrite({
+      organizationId: params.organizationId,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "budget_update",
+      campaignId: campaign.id,
+      actorUserId: params.userId,
+      actorName: params.fromAutoOptimise
+        ? "ads_optimisation_agent"
+        : null,
+      currentDailyBudgetPence: campaign.daily_budget_pence,
+      proposedDailyBudgetPence: nextBudget,
+    });
     const provider = getAdsProvider(campaign.platform);
     const { accessToken, connection: fresh } =
       await ensureFreshAdAccessToken(connection);
@@ -181,6 +284,12 @@ async function shiftBudgetFromPayload(params: {
       platformCampaignId: campaign.platform_campaign_id,
       dailyBudgetPence: nextBudget,
       currency: campaign.currency,
+      metadata: {
+        ...(fresh.metadata ?? {}),
+        ...(campaign.platform_metadata ?? {}),
+        platform_adset_id: campaign.platform_adset_id,
+        platform_budget_id: campaign.platform_budget_id,
+      },
     });
   }
 
@@ -188,20 +297,74 @@ async function shiftBudgetFromPayload(params: {
     .from("ad_campaigns")
     .update({ daily_budget_pence: nextBudget })
     .eq("id", campaign.id);
+  await auditAdWrite({
+    organizationId: params.organizationId,
+    actorUserId: params.userId,
+    actorName: params.fromAutoOptimise ? "ads_optimisation_agent" : null,
+    campaign,
+    action: "ad_campaign_budget_recommendation",
+    before: { daily_budget_pence: campaign.daily_budget_pence },
+    after: { daily_budget_pence: nextBudget },
+  });
 
   if (fromId && amount > 0) {
-    const { campaign: fromCampaign } = await loadCampaignWithConnection(
+    const { campaign: fromCampaign, connection: fromConnection } =
+      await loadCampaignWithConnection(
       params.organizationId,
       fromId,
     );
+    const fromNextBudget = Math.max(
+      0,
+      Number(fromCampaign.daily_budget_pence ?? 0) - amount,
+    );
+    if (
+      fromConnection &&
+      fromCampaign.platform_campaign_id &&
+      adsWritesEnabled(fromCampaign.platform)
+    ) {
+      await authorizeAdWrite({
+        organizationId: params.organizationId,
+        brandId: fromCampaign.brand_id,
+        platform: fromCampaign.platform,
+        action: "budget_update",
+        campaignId: fromCampaign.id,
+        actorUserId: params.userId,
+        actorName: params.fromAutoOptimise
+          ? "ads_optimisation_agent"
+          : null,
+        currentDailyBudgetPence: fromCampaign.daily_budget_pence,
+        proposedDailyBudgetPence: fromNextBudget,
+      });
+      const { accessToken, connection: freshFrom } =
+        await ensureFreshAdAccessToken(fromConnection);
+      await getAdsProvider(fromCampaign.platform).updateBudget({
+        accessToken,
+        accountId: freshFrom.account_id,
+        platformCampaignId: fromCampaign.platform_campaign_id,
+        dailyBudgetPence: fromNextBudget,
+        currency: fromCampaign.currency,
+        metadata: {
+          ...(freshFrom.metadata ?? {}),
+          ...(fromCampaign.platform_metadata ?? {}),
+          platform_adset_id: fromCampaign.platform_adset_id,
+          platform_budget_id: fromCampaign.platform_budget_id,
+        },
+      });
+    }
     await supabase
       .from("ad_campaigns")
       .update({
-        daily_budget_pence: Math.max(
-          0,
-          Number(fromCampaign.daily_budget_pence ?? 0) - amount,
-        ),
+        daily_budget_pence: fromNextBudget,
       })
       .eq("id", fromId);
+    await auditAdWrite({
+      organizationId: params.organizationId,
+      actorUserId: params.userId,
+      actorName: params.fromAutoOptimise ? "ads_optimisation_agent" : null,
+      campaign: fromCampaign,
+      action: "ad_campaign_budget_reallocation_source",
+      before: { daily_budget_pence: fromCampaign.daily_budget_pence },
+      after: { daily_budget_pence: fromNextBudget },
+    });
   }
 }

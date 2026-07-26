@@ -77,7 +77,9 @@ Only variables actually read by app/scripts/tests (or by the Inngest SDK used by
 | --- | --- | --- |
 | `ANTHROPIC_MODEL` | Yes | Defaults to `claude-sonnet-4-6` if unset |
 | `EMAIL_UNSUBSCRIBE_SECRET` | No | Campaign unsubscribe tokens; falls back to `TOKEN_ENCRYPTION_KEY` |
-| `ADS_WRITES_ENABLED` | No | Must be `"true"` to allow live ad writes |
+| `ADS_WRITES_ENABLED` | No | Global prerequisite for remote ad writes; hard limits still apply |
+| `ADS_WRITES_META` | No | Set `"true"` to enable Meta writes after API approval |
+| `ADS_WRITES_GOOGLE` | No | Set `"true"` to enable Google Search writes after API approval |
 | `SEO_AUDIT_PAGE_CAP` | No | Defaults to `40` |
 | `SENTRY_DSN` | No | Server/edge Sentry |
 | `NEXT_PUBLIC_SENTRY_DSN` | No | Client Sentry |

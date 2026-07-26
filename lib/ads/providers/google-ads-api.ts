@@ -184,6 +184,53 @@ function googleAdsHeaders(params: {
   return headers;
 }
 
+export type GoogleAdsMutatePath =
+  | "googleAds:mutate"
+  | "campaignBudgets:mutate"
+  | "campaigns:mutate"
+  | "adGroups:mutate"
+  | "adGroupAds:mutate";
+
+/** Direct REST mutation helper used by the Phase C write provider. */
+export async function googleAdsMutate<T>(params: {
+  accessToken: string;
+  customerId: string;
+  loginCustomerId?: string | null;
+  path: GoogleAdsMutatePath;
+  body: Record<string, unknown>;
+}): Promise<T> {
+  const customerId = normalizeGoogleAdsCustomerId(params.customerId);
+  const res = await fetch(
+    `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${customerId}/${params.path}`,
+    {
+      method: "POST",
+      headers: googleAdsHeaders({
+        accessToken: params.accessToken,
+        loginCustomerId: params.loginCustomerId,
+      }),
+      body: JSON.stringify(params.body),
+    },
+  );
+  const json = await readGoogleJson<
+    T & {
+      error?: {
+        message?: string;
+        status?: string;
+        details?: unknown;
+      };
+    }
+  >(res, `Google Ads ${params.path}`);
+  if (!res.ok) {
+    const requestId = res.headers.get("request-id");
+    throw new Error(
+      `${json.error?.message ?? `Google Ads mutate failed (${res.status})`}${
+        requestId ? ` [request-id: ${requestId}]` : ""
+      }`,
+    );
+  }
+  return json as T;
+}
+
 export async function listAccessibleCustomerIds(
   accessToken: string,
 ): Promise<string[]> {

@@ -6,11 +6,15 @@ GrowthOS Ads connects to Meta, TikTok, Google Ads, X Ads, and Microsoft Advertis
 
 | Env | Purpose |
 |-----|---------|
-| `ADS_WRITES_ENABLED=true` | Allow create/update/pause/upload across platforms |
+| `ADS_WRITES_ENABLED=true` | Global prerequisite for remote Ads mutations |
 | `ADS_WRITES_META=true\|false` | Optional per-platform override |
 | `ADS_WRITES_TIKTOK` / `GOOGLE` / `X` / `BING` | Same |
 
-**Default: writes are disabled.** Metrics sync and local campaign records still work. Apply on a recommendation updates GrowthOS state; remote API calls only run when writes are enabled **and** the provider method is implemented.
+**Default: writes are disabled.** Phase C implements remote writes for Meta and
+Google only. Both the global flag and platform flag must allow the operation,
+and organization limits must be configured under Ads → Settings. Missing limits,
+the master pause, or a platform kill switch fail closed and log an audit event.
+TikTok/X/Bing remain stubs.
 
 ## Shared interface
 
@@ -36,11 +40,15 @@ OAuth callback: `{SITE_URL}/api/ads/oauth/{platform}/callback`
 
 **Implemented:** OAuth, list ad accounts, campaign insights → `ad_metrics_daily`.
 
-**Writes:** stubbed behind `ADS_WRITES_ENABLED`. To enable create/update you need:
+**Writes:** implemented behind `ADS_WRITES_ENABLED` + `ADS_WRITES_META`. The
+launch pipeline creates campaign → ad set → image → creative → ad, all PAUSED.
+Budget updates, pause, resume, and archive are implemented. Activation is a
+separate approval action. To enable writes you need:
 
 1. App in Live mode with Ads Management standard access
 2. Advanced Access for `ads_management` (App Review)
-3. Implement Marketing API campaign/ad set/ad create calls in `lib/ads/providers/meta.ts`
+3. A connected Facebook Page for `object_story_spec`
+4. Hard limits configured in Ads → Settings
 
 ### TikTok Marketing API — partial metrics
 
@@ -50,7 +58,7 @@ OAuth callback: `{SITE_URL}/api/ads/oauth/{platform}/callback`
 
 **Writes:** stubbed. Requires TikTok Ads app approval + Marketing API write scopes.
 
-### Google Ads API — OAuth + metrics (reads)
+### Google Ads API — OAuth, metrics, and Search writes
 
 **Env:**
 
@@ -71,7 +79,11 @@ and set `GOOGLE_ADS_API_VERSION` to bump without a code change.
 - `customers:listAccessibleCustomers` → account list (non-managers preferred)
 - Daily campaign metrics via `googleAds:searchStream` (campaign, date, cost_micros, impressions, clicks, conversions, conversions_value)
 
-**Writes:** stubbed behind `ADS_WRITES_ENABLED`. Leave `false` until campaign mutate paths are implemented.
+**Writes:** implemented behind `ADS_WRITES_ENABLED` + `ADS_WRITES_GOOGLE`.
+GrowthOS atomically creates a non-shared budget, PAUSED Search campaign,
+location criteria, PAUSED ad group, and PAUSED RSA from approved creative
+variants. It also implements pause/resume/archive and budget updates. RSA launch
+requires at least three approved headlines and two approved descriptions.
 
 **Test MCC smoke:**
 

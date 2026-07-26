@@ -22,6 +22,12 @@ export function createWriteStubs(platform: AdPlatform) {
       if (!adsWritesEnabled(platform)) throw new AdsWriteDisabledError(platform);
       throw new Error(`${platform} pauseCampaign not implemented — see docs/ads-apis.md`);
     },
+    async setCampaignStatus(): Promise<void> {
+      if (!adsWritesEnabled(platform)) throw new AdsWriteDisabledError(platform);
+      throw new Error(
+        `${platform} setCampaignStatus not implemented — see docs/ads-apis.md`,
+      );
+    },
     async uploadCreative(): Promise<{ platformCreativeId: string }> {
       if (!adsWritesEnabled(platform)) throw new AdsWriteDisabledError(platform);
       throw new Error(`${platform} uploadCreative not implemented — see docs/ads-apis.md`);

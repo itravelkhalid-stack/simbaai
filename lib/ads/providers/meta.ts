@@ -1,11 +1,14 @@
 import { adsFetchJson } from "@/lib/ads/providers/http";
-import { createWriteStubs } from "@/lib/ads/providers/stub";
 import type {
   AdsAccount,
   AdsProvider,
   AdsTokenSet,
   DailyMetricRow,
   FetchMetricsInput,
+} from "@/lib/ads/providers/types";
+import {
+  AdsWriteDisabledError,
+  adsWritesEnabled,
 } from "@/lib/ads/providers/types";
 
 type MetaTokenResponse = {
@@ -36,6 +39,78 @@ function metaApp() {
   const secret = process.env.META_APP_SECRET;
   if (!id || !secret) throw new Error("META_APP_ID / META_APP_SECRET required for Meta Ads");
   return { id, secret };
+}
+
+const META_GRAPH = "https://graph.facebook.com/v21.0";
+
+function metaActId(accountId: string) {
+  return accountId.startsWith("act_") ? accountId : `act_${accountId}`;
+}
+
+async function metaWrite<T>(
+  path: string,
+  accessToken: string,
+  fields: Record<string, string | number | boolean>,
+): Promise<T> {
+  const body = new URLSearchParams();
+  for (const [key, value] of Object.entries(fields)) {
+    body.set(key, String(value));
+  }
+  body.set("access_token", accessToken);
+  return adsFetchJson<T>(`${META_GRAPH}/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+}
+
+function metaObjective(value?: string) {
+  const normalized = value?.toUpperCase() ?? "";
+  if (normalized.includes("SALE") || normalized.includes("CONVERSION")) {
+    return "OUTCOME_SALES";
+  }
+  if (normalized.includes("LEAD")) return "OUTCOME_LEADS";
+  if (normalized.includes("AWARE")) return "OUTCOME_AWARENESS";
+  if (normalized.includes("ENGAGE")) return "OUTCOME_ENGAGEMENT";
+  return "OUTCOME_TRAFFIC";
+}
+
+function metaCta(value?: string | null) {
+  const normalized = value?.trim().toUpperCase().replace(/\s+/g, "_");
+  const allowed = new Set([
+    "LEARN_MORE",
+    "SHOP_NOW",
+    "SIGN_UP",
+    "BOOK_NOW",
+    "CONTACT_US",
+    "GET_QUOTE",
+    "APPLY_NOW",
+  ]);
+  return normalized && allowed.has(normalized) ? normalized : "LEARN_MORE";
+}
+
+async function uploadMetaImage(params: {
+  accountId: string;
+  accessToken: string;
+  imageUrl: string;
+}) {
+  const image = await fetch(params.imageUrl, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!image.ok) {
+    throw new Error(`Creative image returned HTTP ${image.status}`);
+  }
+  const contentType = image.headers.get("content-type") ?? "";
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`Creative URL must serve an image, got ${contentType || "unknown"}`);
+  }
+  const bytes = Buffer.from(await image.arrayBuffer()).toString("base64");
+  const uploaded = await metaWrite<{
+    images?: Record<string, { hash?: string }>;
+  }>(`${metaActId(params.accountId)}/adimages`, params.accessToken, { bytes });
+  const hash = Object.values(uploaded.images ?? {})[0]?.hash;
+  if (!hash) throw new Error("Meta image upload did not return an image hash");
+  return hash;
 }
 
 export const metaAdsProvider: AdsProvider = {
@@ -101,7 +176,223 @@ export const metaAdsProvider: AdsProvider = {
       metadata: { act_account_id: a.account_id },
     }));
   },
-  ...createWriteStubs("meta"),
+  async createCampaign(input) {
+    if (!adsWritesEnabled("meta")) throw new AdsWriteDisabledError("meta");
+    const creative = input.creatives[0];
+    if (!creative) throw new Error("An approved creative is required");
+    const imageUrl = creative.mediaUrls[0];
+    if (!imageUrl) {
+      throw new Error("Meta campaign creation requires an approved creative image");
+    }
+    const pageId =
+      typeof input.metadata?.page_id === "string"
+        ? input.metadata.page_id
+        : null;
+    if (!pageId) {
+      throw new Error(
+        "Meta campaign creation requires a connected Facebook Page. Connect Meta under Social first.",
+      );
+    }
+
+    const actId = metaActId(input.accountId);
+    let campaignId: string | null = null;
+    try {
+      const campaign = await metaWrite<{ id: string }>(
+        `${actId}/campaigns`,
+        input.accessToken,
+        {
+          name: input.name,
+          objective: metaObjective(input.objective),
+          status: "PAUSED",
+          special_ad_categories: JSON.stringify([]),
+          is_adset_budget_sharing_enabled: false,
+        },
+      );
+      campaignId = campaign.id;
+
+      const countries = Array.isArray(input.targeting?.countries)
+        ? (input.targeting.countries as unknown[])
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.toUpperCase())
+        : ["GB"];
+      const adSet = await metaWrite<{ id: string }>(
+        `${actId}/adsets`,
+        input.accessToken,
+        {
+          name: `${input.name} — Ad set`,
+          campaign_id: campaign.id,
+          daily_budget: input.dailyBudgetPence ?? 0,
+          billing_event: "IMPRESSIONS",
+          optimization_goal: "LINK_CLICKS",
+          bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+          targeting: JSON.stringify({
+            geo_locations: { countries: countries.length ? countries : ["GB"] },
+          }),
+          status: "PAUSED",
+          ...(input.startDate ? { start_time: input.startDate } : {}),
+          ...(input.endDate ? { end_time: input.endDate } : {}),
+        },
+      );
+
+      const imageHash = await uploadMetaImage({
+        accountId: input.accountId,
+        accessToken: input.accessToken,
+        imageUrl,
+      });
+      const igUserId =
+        typeof input.metadata?.ig_user_id === "string"
+          ? input.metadata.ig_user_id
+          : null;
+      const linkData: Record<string, unknown> = {
+        image_hash: imageHash,
+        link: input.finalUrl,
+        message: creative.primaryText ?? "",
+        name: creative.headline ?? input.name,
+        description: creative.description ?? "",
+        call_to_action: {
+          type: metaCta(creative.cta),
+          value: { link: input.finalUrl },
+        },
+      };
+      const storySpec: Record<string, unknown> = {
+        page_id: pageId,
+        link_data: linkData,
+      };
+      if (igUserId) storySpec.instagram_user_id = igUserId;
+
+      const remoteCreative = await metaWrite<{ id: string }>(
+        `${actId}/adcreatives`,
+        input.accessToken,
+        {
+          name: `${input.name} — Creative`,
+          object_story_spec: JSON.stringify(storySpec),
+        },
+      );
+
+      const ad = await metaWrite<{ id: string }>(
+        `${actId}/ads`,
+        input.accessToken,
+        {
+          name: `${input.name} — Ad`,
+          adset_id: adSet.id,
+          creative: JSON.stringify({ creative_id: remoteCreative.id }),
+          status: "PAUSED",
+        },
+      );
+
+      return {
+        platformCampaignId: campaign.id,
+        platformAdSetId: adSet.id,
+        platformAdId: ad.id,
+        platformCreativeIds: [remoteCreative.id],
+        status: "PAUSED",
+        raw: {
+          campaign,
+          ad_set: adSet,
+          creative: remoteCreative,
+          ad,
+          local_creative_id: creative.localCreativeId,
+        },
+      };
+    } catch (error) {
+      if (campaignId) {
+        try {
+          await metaWrite(campaignId, input.accessToken, {
+            status: "ARCHIVED",
+          });
+        } catch {
+          // Best effort: never leave a partial campaign active (it was PAUSED).
+        }
+      }
+      throw error;
+    }
+  },
+  async updateBudget(input) {
+    if (!adsWritesEnabled("meta")) throw new AdsWriteDisabledError("meta");
+    const adSetId =
+      typeof input.metadata?.platform_adset_id === "string"
+        ? input.metadata.platform_adset_id
+        : null;
+    if (!adSetId) {
+      throw new Error("Meta budget update requires the platform ad set ID");
+    }
+    await metaWrite(adSetId, input.accessToken, {
+      ...(input.dailyBudgetPence != null
+        ? { daily_budget: input.dailyBudgetPence }
+        : {}),
+      ...(input.lifetimeBudgetPence != null
+        ? { lifetime_budget: input.lifetimeBudgetPence }
+        : {}),
+    });
+  },
+  async pauseCampaign(input) {
+    if (!adsWritesEnabled("meta")) throw new AdsWriteDisabledError("meta");
+    await metaWrite(input.platformCampaignId, input.accessToken, {
+      status: "PAUSED",
+    });
+  },
+  async setCampaignStatus(input) {
+    if (!adsWritesEnabled("meta")) throw new AdsWriteDisabledError("meta");
+    const status =
+      input.status === "active"
+        ? "ACTIVE"
+        : input.status === "archived"
+          ? "ARCHIVED"
+          : "PAUSED";
+    await metaWrite(input.platformCampaignId, input.accessToken, { status });
+    if (input.status === "active") {
+      const adSetId =
+        typeof input.metadata?.platform_adset_id === "string"
+          ? input.metadata.platform_adset_id
+          : null;
+      const adId =
+        typeof input.metadata?.platform_ad_id === "string"
+          ? input.metadata.platform_ad_id
+          : null;
+      if (adSetId) await metaWrite(adSetId, input.accessToken, { status: "ACTIVE" });
+      if (adId) await metaWrite(adId, input.accessToken, { status: "ACTIVE" });
+    }
+  },
+  async uploadCreative(input) {
+    if (!adsWritesEnabled("meta")) throw new AdsWriteDisabledError("meta");
+    const imageUrl = input.mediaUrls[0];
+    const pageId =
+      typeof input.metadata?.page_id === "string"
+        ? input.metadata.page_id
+        : null;
+    if (!imageUrl || !pageId || !input.finalUrl) {
+      throw new Error(
+        "Meta creative upload requires an image, final URL, and connected Page",
+      );
+    }
+    const imageHash = await uploadMetaImage({
+      accountId: input.accountId,
+      accessToken: input.accessToken,
+      imageUrl,
+    });
+    const created = await metaWrite<{ id: string }>(
+      `${metaActId(input.accountId)}/adcreatives`,
+      input.accessToken,
+      {
+        name: input.headline || "GrowthOS creative",
+        object_story_spec: JSON.stringify({
+          page_id: pageId,
+          link_data: {
+            image_hash: imageHash,
+            link: input.finalUrl,
+            message: input.primaryText ?? "",
+            name: input.headline ?? "",
+            description: input.description ?? "",
+            call_to_action: {
+              type: metaCta(input.cta),
+              value: { link: input.finalUrl },
+            },
+          },
+        }),
+      },
+    );
+    return { platformCreativeId: created.id };
+  },
   async fetchDailyMetrics(input: FetchMetricsInput): Promise<DailyMetricRow[]> {
     const actId = input.accountId.startsWith("act_")
       ? input.accountId

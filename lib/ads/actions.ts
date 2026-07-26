@@ -562,21 +562,43 @@ export async function getAdsSettingsForOrg(organizationId: string) {
 }
 
 export async function linkCampaignToPlatform(formData: FormData) {
-  const { active } = await assertCanWrite();
+  const { user, active } = await assertCanWrite();
   const campaignId = String(formData.get("campaignId") ?? "");
   const platformCampaignId = String(formData.get("platformCampaignId") ?? "").trim();
   const connectionId = String(formData.get("connectionId") ?? "") || null;
   const supabase = await createClient();
+  const { data: before } = await supabase
+    .from("ad_campaigns")
+    .select("platform_campaign_id, connection_id, status")
+    .eq("id", campaignId)
+    .eq("organization_id", active.organization_id)
+    .maybeSingle();
   const { error } = await supabase
     .from("ad_campaigns")
     .update({
       platform_campaign_id: platformCampaignId || null,
       connection_id: connectionId,
-      status: platformCampaignId ? "active" : undefined,
+      // Linking never activates. A separate explicit Set live approval is required.
+      status: platformCampaignId ? "pending_approval" : undefined,
     })
     .eq("id", campaignId)
     .eq("organization_id", active.organization_id);
   if (error) throw new Error(error.message);
+  const { writeAuditEvent } = await import("@/lib/compliance/audit");
+  await writeAuditEvent({
+    organizationId: active.organization_id,
+    actorUserId: user.id,
+    action: "ad_campaign_link",
+    entityType: "ad_campaign",
+    entityId: campaignId,
+    summary: "Linked local campaign to platform campaign; launch approval required",
+    before: before ?? null,
+    after: {
+      platform_campaign_id: platformCampaignId || null,
+      connection_id: connectionId,
+      status: platformCampaignId ? "pending_approval" : before?.status,
+    },
+  });
   revalidatePath(`/ads/campaigns/${campaignId}`);
 }
 

@@ -29,10 +29,27 @@ export type CreateCampaignInput = {
   startDate?: string;
   endDate?: string;
   targeting?: Record<string, unknown>;
+  /** Destination URL for Meta link ads / Google RSA final URL. */
+  finalUrl: string;
+  /** Approved local creatives used to build platform creative/ad resources. */
+  creatives: Array<{
+    localCreativeId: string;
+    headline?: string | null;
+    primaryText?: string | null;
+    description?: string | null;
+    cta?: string | null;
+    mediaUrls: string[];
+  }>;
+  /** Connection/provider context (login customer, Page, IG user, etc.). */
+  metadata?: Record<string, unknown>;
 };
 
 export type CreateCampaignResult = {
   platformCampaignId: string;
+  platformAdSetId?: string | null;
+  platformAdId?: string | null;
+  platformBudgetId?: string | null;
+  platformCreativeIds?: string[];
   status?: string;
   raw?: Record<string, unknown>;
 };
@@ -44,6 +61,7 @@ export type UpdateBudgetInput = {
   dailyBudgetPence?: number;
   lifetimeBudgetPence?: number;
   currency?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type UploadCreativeInput = {
@@ -56,6 +74,8 @@ export type UploadCreativeInput = {
   description?: string;
   cta?: string;
   mediaUrls: string[];
+  finalUrl?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type DailyMetricRow = {
@@ -124,6 +144,14 @@ export interface AdsProvider {
     accessToken: string;
     accountId: string;
     platformCampaignId: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void>;
+  setCampaignStatus(input: {
+    accessToken: string;
+    accountId: string;
+    platformCampaignId: string;
+    status: "active" | "paused" | "archived";
+    metadata?: Record<string, unknown>;
   }): Promise<void>;
   uploadCreative(input: UploadCreativeInput): Promise<{ platformCreativeId: string }>;
   fetchDailyMetrics(input: FetchMetricsInput): Promise<DailyMetricRow[]>;

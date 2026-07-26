@@ -883,6 +883,10 @@ export type Database = {
           media_plan_id?: string | null;
           platform: import("@/lib/types/ads").AdPlatform;
           platform_campaign_id?: string | null;
+          platform_adset_id?: string | null;
+          platform_ad_id?: string | null;
+          platform_budget_id?: string | null;
+          platform_metadata?: Record<string, unknown>;
           name: string;
           objective?: string | null;
           status?: import("@/lib/types/ads").AdCampaignStatus;
@@ -897,11 +901,33 @@ export type Database = {
           is_managed?: boolean;
           last_sync_at?: string | null;
           last_error?: string | null;
+          remote_created_at?: string | null;
+          launch_approved_by?: string | null;
+          launch_approved_at?: string | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
         },
         Partial<import("@/lib/types/ads").AdCampaign>
+      >;
+      org_ad_limits: TableDef<
+        import("@/lib/types/ads").OrgAdLimits,
+        {
+          id?: string;
+          organization_id: string;
+          brand_id?: string | null;
+          max_daily_spend_pence: number;
+          max_single_campaign_daily_budget_pence: number;
+          writes_paused?: boolean;
+          platform_kill_switches?: Partial<
+            Record<import("@/lib/types/ads").AdPlatform, boolean>
+          >;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<import("@/lib/types/ads").OrgAdLimits>
       >;
       ad_creatives: TableDef<
         import("@/lib/types/ads").AdCreative,

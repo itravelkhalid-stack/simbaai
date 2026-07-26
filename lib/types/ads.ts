@@ -128,6 +128,10 @@ export type AdCampaign = {
   media_plan_id: string | null;
   platform: AdPlatform;
   platform_campaign_id: string | null;
+  platform_adset_id: string | null;
+  platform_ad_id: string | null;
+  platform_budget_id: string | null;
+  platform_metadata: Record<string, unknown>;
   name: string;
   objective: string | null;
   status: AdCampaignStatus;
@@ -142,7 +146,26 @@ export type AdCampaign = {
   is_managed: boolean;
   last_sync_at: string | null;
   last_error: string | null;
+  remote_created_at: string | null;
+  launch_approved_by: string | null;
+  launch_approved_at: string | null;
   created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OrgAdLimits = {
+  id: string;
+  organization_id: string;
+  brand_id: string | null;
+  max_daily_spend_pence: number;
+  max_single_campaign_daily_budget_pence: number;
+  /** Master kill switch. True blocks every remote write. */
+  writes_paused: boolean;
+  /** Per-platform switches; true blocks that platform. */
+  platform_kill_switches: Partial<Record<AdPlatform, boolean>>;
+  created_by: string | null;
+  updated_by: string | null;
   created_at: string;
   updated_at: string;
 };
