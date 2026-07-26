@@ -30,7 +30,7 @@ export default async function DashboardLayout({
 
   if (!active) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#eef2ff,_#f8fafc_45%,_#f1f5f9)]">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_var(--sem-accent-soft),_var(--sem-surface-soft)_45%,_var(--sem-highlight))]">
         {children}
       </div>
     );

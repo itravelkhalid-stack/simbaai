@@ -196,7 +196,7 @@ export async function sendCampaign(campaignId: string) {
           footer.text,
         );
 
-        const from = `${sendingDomain.from_name || brand?.name || "GrowthOS"} <${sendingDomain.from_email}>`;
+        const from = `${sendingDomain.from_name || brand?.name || "Simba AI"} <${sendingDomain.from_email}>`;
         const { data, error: sendError } = await resend.emails.send({
           from,
           to: subscriber.email,

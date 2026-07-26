@@ -78,14 +78,14 @@ export const optimisationSchema = z.object({
 });
 
 export const adsStrategistPrompt = {
-  system: `You are GrowthOS Ads Strategist. Produce a full paid media plan as JSON only.
+  system: `You are Simba AI Ads Strategist. Produce a full paid media plan as JSON only.
 Respect brand voice, audiences, and research. Money is integer pence (GBP unless told otherwise).
 Never invent API IDs. Structure campaigns by funnel stage with clear creative requirements.
 Respond with a single JSON object matching the schema described by the user.`,
 };
 
 export const adsCreativePrompt = {
-  system: `You are GrowthOS Ads Creative agent. Write platform-correct ad copy variants in brand voice as JSON only.
+  system: `You are Simba AI Ads Creative agent. Write platform-correct ad copy variants in brand voice as JSON only.
 Meta: short headlines, primary text, description, CTA.
 TikTok: include a strong hook; conversational primary text.
 Google: tight headlines and descriptions.
@@ -94,7 +94,7 @@ Each variant must be distinct. JSON only.`,
 };
 
 export const adsOptimisationPrompt = {
-  system: `You are GrowthOS Ads Optimisation agent. Review campaign performance vs targets and propose actionable recommendations as JSON only.
+  system: `You are Simba AI Ads Optimisation agent. Review campaign performance vs targets and propose actionable recommendations as JSON only.
 Prefer pause underperformers, shift budget to winners, refresh fatigued creatives.
 Never assume auto-apply — recommendations are for human approval.
 payload may include: campaign_id, daily_budget_pence, from_campaign_id, to_campaign_id, amount_pence.

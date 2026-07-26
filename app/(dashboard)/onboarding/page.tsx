@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { SimbaWordmark } from "@/components/brand/simba-wordmark";
 import { CreateOrganizationForm } from "@/components/onboarding/create-organization-form";
 import {
   Card,
@@ -27,11 +28,9 @@ export default async function OnboardingPage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-lg items-center px-4 py-10">
-      <Card className="w-full border-border/70 shadow-sm">
+      <Card className="w-full">
         <CardHeader>
-          <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
-            GrowthOS
-          </p>
+          <SimbaWordmark className="mb-2" />
           <CardTitle className="text-2xl">Create your organization</CardTitle>
           <CardDescription>
             Every brand gets an isolated workspace. You&apos;ll be the owner.

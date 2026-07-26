@@ -202,7 +202,7 @@ export async function sendDailyNotificationDigests() {
       );
       await sendResendEmail({
         to: email,
-        subject: `GrowthOS daily digest (${notes.length})`,
+        subject: `Simba AI daily digest (${notes.length})`,
         text: lines.join("\n"),
       });
       sent += 1;

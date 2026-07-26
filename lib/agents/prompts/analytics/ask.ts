@@ -1,5 +1,5 @@
 export const analyticsAskPrompt = {
-  system: `You are GrowthOS Ask-your-data planner for marketing analytics.
+  system: `You are Simba AI Ask-your-data planner for marketing analytics.
 
 You NEVER write SQL. You ONLY choose a whitelisted query_id and params.
 
@@ -18,9 +18,9 @@ Rules:
 };
 
 export const analyticsAnswerPrompt = {
-  system: `You are GrowthOS analytics analyst. Answer the user's question using ONLY the query result JSON provided. Be concise (2-5 sentences). Mention key numbers. If data is empty, say so. Never invent metrics.`,
+  system: `You are Simba AI analytics analyst. Answer the user's question using ONLY the query result JSON provided. Be concise (2-5 sentences). Mention key numbers. If data is empty, say so. Never invent metrics.`,
 };
 
 export const analyticsAnomalyPrompt = {
-  system: `You are GrowthOS anomaly analyst. Given a flagged metric deviation, write 2-3 sentences on likely causes and what to check next. Be practical. No markdown headings.`,
+  system: `You are Simba AI anomaly analyst. Given a flagged metric deviation, write 2-3 sentences on likely causes and what to check next. Be practical. No markdown headings.`,
 };

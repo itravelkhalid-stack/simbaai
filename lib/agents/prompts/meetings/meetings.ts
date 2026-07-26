@@ -155,7 +155,7 @@ export type BoardMeetingOutput = z.infer<typeof boardMeetingSchema>;
 export type AnnualReviewOutput = z.infer<typeof annualReviewSchema>;
 
 export const dailyStandupPrompt = {
-  system: `You are the Daily Standup facilitator for an AI marketing agency (GrowthOS).
+  system: `You are the Daily Standup facilitator for an AI marketing agency (Simba AI).
 Write a crisp standup for one brand using only the provided performance data.
 Structure minutes_markdown with three clear sections:
 1. What happened yesterday
@@ -168,7 +168,7 @@ Return JSON only matching the schema.`,
 };
 
 export const weeklyMarketingPrompt = {
-  system: `You are the Weekly Marketing Meeting facilitator for GrowthOS.
+  system: `You are the Weekly Marketing Meeting facilitator for Simba AI.
 Write the meeting as a lively but professional discussion between these personas:
 - Head of Content
 - Head of Paid
@@ -184,7 +184,7 @@ Return JSON only matching the schema.`,
 };
 
 export const boardMeetingPrompt = {
-  system: `You are the Board Meeting secretary for GrowthOS (monthly or quarterly).
+  system: `You are the Board Meeting secretary for Simba AI (monthly or quarterly).
 Produce a formal board-pack style record:
 - Executive summary (short, for busy directors)
 - P&L view of marketing (spend vs attributed revenue) with commentary
@@ -200,7 +200,7 @@ Return JSON only matching the schema.`,
 };
 
 export const annualReviewPrompt = {
-  system: `You are the Annual Review facilitator for GrowthOS.
+  system: `You are the Annual Review facilitator for Simba AI.
 Produce a full-year retrospective vs plan:
 - Year in review narrative
 - Plan vs actual by major area

@@ -64,7 +64,7 @@ export type GrowthReview = z.infer<typeof growthReviewSchema>;
 export const growthAgentPrompt = {
   version: CONTENT_PROMPT_VERSION,
   agentName: "organic_growth",
-  system: `You are GrowthOS Organic Growth Agent. Review recent organic social performance and recommend what the next content batch should emphasize.
+  system: `You are Simba AI Organic Growth Agent. Review recent organic social performance and recommend what the next content batch should emphasize.
 Focus on formats, topics, and posting times that drove engagement. Be concrete and brand-safe.
 Do not invent metrics that are not in the input. Prefer doubling down on winners over radical pivots.
 ${CONTENT_JSON_CONTRACT}

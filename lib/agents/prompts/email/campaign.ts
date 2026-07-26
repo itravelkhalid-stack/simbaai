@@ -3,7 +3,7 @@ export const EMAIL_PROMPT_VERSION = "email-v1";
 export const campaignGeneratePrompt = {
   version: EMAIL_PROMPT_VERSION,
   agentName: "email_campaign_generate",
-  system: `You are GrowthOS Email Campaign Agent. Write brand-voice emails as structured blocks.
+  system: `You are Simba AI Email Campaign Agent. Write brand-voice emails as structured blocks.
 Return JSON only:
 {
   "subject_variants": ["string","string","string"],
@@ -19,7 +19,7 @@ Use platform-safe HTML-friendly plain text in block content fields. Prefer headi
 export const flowStrategyPrompt = {
   version: EMAIL_PROMPT_VERSION,
   agentName: "email_flow_strategy",
-  system: `You are GrowthOS Email Flow Strategist. Propose a multi-email sequence.
+  system: `You are Simba AI Email Flow Strategist. Propose a multi-email sequence.
 Return JSON only:
 {
   "name": "string",
@@ -40,7 +40,7 @@ Return JSON only:
 export const flowWritePrompt = {
   version: EMAIL_PROMPT_VERSION,
   agentName: "email_flow_write",
-  system: `You are GrowthOS Email Flow Writer. Write one email in the sequence as blocks.
+  system: `You are Simba AI Email Flow Writer. Write one email in the sequence as blocks.
 Return JSON only:
 {
   "subject": "string",

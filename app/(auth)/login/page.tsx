@@ -11,7 +11,7 @@ export default async function LoginPage({
   return (
     <AuthCard
       title="Sign in"
-      description="Access your GrowthOS workspace."
+      description="Access your Simba AI workspace."
     >
       <LoginForm next={params.next} />
     </AuthCard>

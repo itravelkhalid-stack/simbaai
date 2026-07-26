@@ -160,21 +160,21 @@ export const STATUS_LABELS: Record<ContentItemStatus, string> = {
 };
 
 export const PLATFORM_COLORS: Record<ContentPlatform, string> = {
-  instagram: "bg-pink-500",
-  facebook: "bg-blue-600",
-  tiktok: "bg-zinc-900",
-  x: "bg-sky-500",
-  linkedin: "bg-sky-700",
-  youtube: "bg-red-600",
-  pinterest: "bg-rose-600",
+  instagram: "bg-danger-soft text-danger",
+  facebook: "bg-brand-soft text-primary",
+  tiktok: "bg-muted text-ink",
+  x: "bg-accent text-primary",
+  linkedin: "bg-brand-soft text-primary",
+  youtube: "bg-danger-soft text-danger",
+  pinterest: "bg-warning-soft text-ink",
 };
 
 export const STATUS_COLORS: Record<ContentItemStatus, string> = {
-  draft: "border-zinc-300",
-  pending_approval: "border-amber-400",
-  approved: "border-emerald-500",
-  scheduled: "border-blue-500",
-  published: "border-violet-500",
-  rejected: "border-red-500",
-  publish_failed: "border-red-600",
+  draft: "border-border",
+  pending_approval: "border-warning",
+  approved: "border-success",
+  scheduled: "border-warning",
+  published: "border-brand",
+  rejected: "border-danger",
+  publish_failed: "border-danger",
 };

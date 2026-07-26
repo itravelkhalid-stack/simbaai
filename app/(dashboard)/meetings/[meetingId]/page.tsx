@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 
 import { MeetingChat } from "@/components/meetings/meeting-chat";
 import { MeetingsNav } from "@/components/meetings/meetings-nav";
+import { AiContentSurface } from "@/components/brand/ai-content";
 import {
   addMeetingComment,
   convertActionToTask,
@@ -119,7 +120,7 @@ export default async function MeetingDetailPage({
               <li key={i}>
                 <span className="font-medium">{b.title}</span>
                 {b.needs_human ? (
-                  <span className="ml-2 text-xs text-amber-700">needs human</span>
+                    <span className="ml-2 text-xs text-warning">needs human</span>
                 ) : null}
                 <p className="text-muted-foreground">{b.detail}</p>
               </li>
@@ -128,13 +129,15 @@ export default async function MeetingDetailPage({
         </section>
       ) : null}
 
-      <section className="rounded-xl border p-4">
+      <section>
         <h2 className="mb-3 text-sm font-medium">Minutes</h2>
-        <div className="prose prose-sm dark:prose-invert max-w-none">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {m.minutes_markdown || "_Minutes not generated yet._"}
-          </ReactMarkdown>
-        </div>
+        <AiContentSurface>
+          <div className="prose prose-sm max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {m.minutes_markdown || "_Minutes not generated yet._"}
+            </ReactMarkdown>
+          </div>
+        </AiContentSurface>
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">

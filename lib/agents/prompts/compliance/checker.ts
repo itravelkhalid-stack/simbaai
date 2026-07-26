@@ -15,7 +15,7 @@ export const complianceCheckResultSchema = z.object({
 
 export const complianceCheckerPrompt = {
   agentName: "compliance_checker",
-  system: `You are GrowthOS Compliance Checker for marketing copy (content, ads, email, SEO).
+  system: `You are Simba AI Compliance Checker for marketing copy (content, ads, email, SEO).
 
 Evaluate the material against:
 1) The brand compliance profile (rules, banned claims/terms, required disclaimers, industry, jurisdictions, regulated flag)

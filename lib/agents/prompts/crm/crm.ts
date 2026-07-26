@@ -36,7 +36,7 @@ export const pipelineReviewSchema = z.object({
 });
 
 export const leadScorePrompt = {
-  system: `You are a B2B/B2C lead scoring analyst for GrowthOS CRM.
+  system: `You are a B2B/B2C lead scoring analyst for Simba AI CRM.
 Score the contact 0–100 from engagement signals and fit (company, tags, revenue, lifecycle, activity).
 Explain briefly. Optionally suggest a lifecycle stage.
 Return JSON only.`,
@@ -49,7 +49,7 @@ Return JSON: subject, body_markdown, rationale.`,
 };
 
 export const pipelineReviewPrompt = {
-  system: `You are a sales pipeline coach for GrowthOS.
+  system: `You are a sales pipeline coach for Simba AI.
 Review open deals, flag stalled ones (no movement / past expected close), and propose next best actions.
 Return JSON matching the schema with summary_markdown, stalled_deal_ids, next_actions.`,
 };

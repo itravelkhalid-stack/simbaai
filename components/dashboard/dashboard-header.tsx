@@ -23,7 +23,7 @@ export function DashboardHeader({
   return (
     <div className="mb-6 space-y-3">
       {impersonating ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning bg-warning-soft px-4 py-3 text-sm text-ink">
           <p>
             Support mode: viewing <strong>{orgName}</strong> as platform admin.
             Actions are audited.

@@ -2,7 +2,7 @@ import { Resend } from "resend";
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const fromEmail =
-  process.env.RESEND_FROM_EMAIL ?? "GrowthOS <onboarding@resend.dev>";
+  process.env.RESEND_FROM_EMAIL ?? "Simba AI <onboarding@resend.dev>";
 
 export async function sendInvitationEmail(params: {
   to: string;
@@ -22,7 +22,7 @@ export async function sendInvitationEmail(params: {
   const { error } = await resend.emails.send({
     from: fromEmail,
     to: params.to,
-    subject: `You're invited to ${params.organizationName} on GrowthOS`,
+    subject: `You're invited to ${params.organizationName} on Simba AI`,
     html: `
       <div style="font-family: sans-serif; line-height: 1.5;">
         <h2>Join ${params.organizationName}</h2>

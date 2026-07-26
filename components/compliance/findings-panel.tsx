@@ -4,26 +4,25 @@ import type {
   ComplianceFinding,
 } from "@/lib/types/compliance";
 
-const SEVERITY_CLASS: Record<string, string> = {
-  critical: "bg-red-600 text-white hover:bg-red-600",
-  warning: "bg-amber-500 text-white hover:bg-amber-500",
-  info: "bg-slate-500 text-white hover:bg-slate-500",
+const SEVERITY_VARIANT: Record<
+  string,
+  "danger" | "warning" | "neutral"
+> = {
+  critical: "danger",
+  warning: "warning",
+  info: "neutral",
 };
 
 export function FindingBadges({ findings }: { findings: ComplianceFinding[] }) {
   if (!findings.length) {
-    return (
-      <Badge variant="secondary" className="bg-emerald-600 text-white">
-        pass
-      </Badge>
-    );
+    return <Badge variant="success">pass</Badge>;
   }
   return (
     <div className="flex flex-wrap gap-1">
       {findings.map((f, i) => (
         <Badge
           key={`${f.code}-${i}`}
-          className={SEVERITY_CLASS[f.severity] ?? SEVERITY_CLASS.warning}
+          variant={SEVERITY_VARIANT[f.severity] ?? "warning"}
         >
           {f.severity}: {f.code}
         </Badge>
@@ -52,12 +51,12 @@ export function ComplianceFindingsPanel({
 
   return (
     <div
-      className={`space-y-3 rounded-xl border p-4 ${
+      className={`space-y-3 rounded-lg border p-4 ${
         blocked
-          ? "border-red-500/40"
+          ? "border-danger bg-danger-soft/40"
           : check.status === "warn"
-            ? "border-amber-500/40"
-            : "border-emerald-500/30"
+            ? "border-warning bg-warning-soft/50"
+            : "border-success bg-success-soft/50"
       }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -72,9 +71,9 @@ export function ComplianceFindingsPanel({
       ) : (
         <ul className="space-y-2 text-sm">
           {findings.map((f, i) => (
-            <li key={`${f.code}-${i}`} className="rounded-lg border p-2">
+            <li key={`${f.code}-${i}`} className="rounded-lg border border-border p-2">
               <div className="mb-1 flex flex-wrap items-center gap-2">
-                <Badge className={SEVERITY_CLASS[f.severity]}>
+                <Badge variant={SEVERITY_VARIANT[f.severity] ?? "warning"}>
                   {f.severity}
                 </Badge>
                 <span className="font-medium">{f.code}</span>

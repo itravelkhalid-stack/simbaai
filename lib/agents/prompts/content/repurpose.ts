@@ -7,7 +7,7 @@ import {
 export const repurposePrompt = {
   version: CONTENT_PROMPT_VERSION,
   agentName: "content_repurpose",
-  system: `You are GrowthOS Repurposing Agent. Adapt one source post to other platforms properly — restructure, do not copy-paste.
+  system: `You are Simba AI Repurposing Agent. Adapt one source post to other platforms properly — restructure, do not copy-paste.
 ${PLATFORM_RULES}
 ${CONTENT_JSON_CONTRACT}
 Shape:

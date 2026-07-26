@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { SimbaWordmark } from "@/components/brand/simba-wordmark";
+import { OrgSwitcher } from "@/components/dashboard/org-switcher";
+import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/auth/actions";
 import { MODULE_NAV } from "@/lib/constants";
 import type { OrgMembership } from "@/lib/org/session";
 import type { Profile } from "@/lib/types/database";
-import { OrgSwitcher } from "@/components/dashboard/org-switcher";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function Sidebar({
@@ -25,14 +26,9 @@ export function Sidebar({
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
-      <div className="space-y-4 border-b p-4">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
-            GrowthOS
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">AI Marketing Agency</p>
-        </div>
+    <aside className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="space-y-4 border-b border-sidebar-border p-5">
+        <SimbaWordmark showTagline size="md" />
         <OrgSwitcher
           memberships={memberships}
           activeOrganizationId={activeOrganizationId}
@@ -51,10 +47,12 @@ export function Sidebar({
               key={item.href}
               href={item.href}
               className={cn(
-                "block rounded-lg px-3 py-2 text-sm transition-colors",
+                "relative block rounded-full px-3 py-2 text-sm transition-colors",
                 active
-                  ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70",
+                  ? "bg-brand-soft font-medium text-primary"
+                  : "text-ink-soft hover:bg-surface-soft hover:text-ink",
+                active &&
+                  "before:absolute before:top-1/2 before:left-0 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-brand",
               )}
             >
               {item.label}
@@ -63,12 +61,12 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="space-y-3 border-t p-4">
+      <div className="space-y-3 border-t border-sidebar-border p-4">
         <div>
-          <p className="truncate text-sm font-medium">
+          <p className="truncate text-sm font-medium text-ink">
             {profile?.full_name ?? "Account"}
           </p>
-          <p className="truncate text-xs text-muted-foreground">{email}</p>
+          <p className="truncate text-xs text-ink-soft">{email}</p>
         </div>
         <form action={signOut}>
           <Button type="submit" variant="outline" className="w-full">

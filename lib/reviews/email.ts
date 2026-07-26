@@ -41,7 +41,7 @@ export async function emailReport(params: {
           ? `<p><a href="${params.report.pdf_url}">Download PDF</a></p>`
           : ""
       }
-      <p style="color:#888;font-size:12px;">Sent by GrowthOS Reviews</p>
+      <p style="color:#888;font-size:12px;">Sent by Simba AI Reviews</p>
     </div>
   `;
 

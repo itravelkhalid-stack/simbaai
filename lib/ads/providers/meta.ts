@@ -374,7 +374,7 @@ export const metaAdsProvider: AdsProvider = {
       `${metaActId(input.accountId)}/adcreatives`,
       input.accessToken,
       {
-        name: input.headline || "GrowthOS creative",
+        name: input.headline || "Simba AI creative",
         object_story_spec: JSON.stringify({
           page_id: pageId,
           link_data: {

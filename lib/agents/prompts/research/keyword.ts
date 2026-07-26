@@ -7,7 +7,7 @@ import {
 export const keywordResearchPrompt = {
   version: RESEARCH_PROMPT_VERSION,
   agentName: "keyword_research",
-  system: `You are GrowthOS Keyword Research Agent. Identify high-intent topics and keyword clusters for the brand.
+  system: `You are Simba AI Keyword Research Agent. Identify high-intent topics and keyword clusters for the brand.
 ${RESEARCH_REPORT_CONTRACT}
 
 structured payload MUST include:

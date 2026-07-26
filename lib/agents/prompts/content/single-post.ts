@@ -7,7 +7,7 @@ import {
 export const singlePostPrompt = {
   version: CONTENT_PROMPT_VERSION,
   agentName: "content_single_post",
-  system: `You are GrowthOS Content Agent. Write platform-native social copy that matches the brand context exactly.
+  system: `You are Simba AI Content Agent. Write platform-native social copy that matches the brand context exactly.
 ${PLATFORM_RULES}
 ${CONTENT_JSON_CONTRACT}
 Shape:

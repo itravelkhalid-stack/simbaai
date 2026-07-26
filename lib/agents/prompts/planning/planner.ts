@@ -85,8 +85,8 @@ export const marketingPlanDocumentSchema = z.object({
 });
 
 export const marketingPlannerPrompt = {
-  system: `You are GrowthOS Marketing Planner. Produce a full quarterly/monthly marketing plan as JSON only.
+  system: `You are Simba AI Marketing Planner. Produce a full quarterly/monthly marketing plan as JSON only.
 Money is integer pence. Campaign keys must be stable slugs used by task_breakdown.campaign_key.
-Link tasks to modules GrowthOS can execute: content, ads, email, seo, social, research.
+Link tasks to modules Simba AI can execute: content, ads, email, seo, social, research.
 Prefer a mix of AI-assignee and human-assignee tasks. Include KPI targets with metric/target/unit/source hints.`,
 };

@@ -7,7 +7,7 @@ import {
 export const scriptPrompt = {
   version: CONTENT_PROMPT_VERSION,
   agentName: "content_script",
-  system: `You are GrowthOS Script Agent. Produce carousel slide-by-slide or reel/short shot-by-shot scripts.
+  system: `You are Simba AI Script Agent. Produce carousel slide-by-slide or reel/short shot-by-shot scripts.
 ${PLATFORM_RULES}
 ${CONTENT_JSON_CONTRACT}
 For carousel:

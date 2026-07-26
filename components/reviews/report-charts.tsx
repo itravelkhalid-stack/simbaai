@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import type { ReportChartPoint, ReportContent } from "@/lib/types/reviews";
+import { CHART, CHART_SERIES } from "@/lib/charts/colors";
 
 function chartData(series: ReportChartPoint[]) {
   return series.map((p) => ({
@@ -32,8 +33,8 @@ export function ReportCharts({
   content: ReportContent;
 }) {
   const data = chartData(content.series ?? []);
-  const primary = content.branding?.primary_color ?? "#0f766e";
-  const secondary = content.branding?.secondary_color ?? "#134e4a";
+  const primary = content.branding?.primary_color ?? CHART.emphasis;
+  const secondary = content.branding?.secondary_color ?? CHART.secondary;
 
   if (!data.length) {
     return (
@@ -47,7 +48,7 @@ export function ReportCharts({
         <p className="mb-2 text-sm font-medium">Spend vs revenue (£)</p>
         <ResponsiveContainer width="100%" height="90%">
           <AreaChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+            <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip />
@@ -75,14 +76,14 @@ export function ReportCharts({
         <p className="mb-2 text-sm font-medium">Channel activity</p>
         <ResponsiveContainer width="100%" height="90%">
           <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+            <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip />
             <Legend />
             <Bar dataKey="seo" fill={primary} name="SEO clicks" />
             <Bar dataKey="email" fill={secondary} name="Email opens" />
-            <Bar dataKey="content" fill="#64748b" name="Content eng." />
+            <Bar dataKey="content" fill={CHART_SERIES[2]} name="Content eng." />
           </BarChart>
         </ResponsiveContainer>
       </div>

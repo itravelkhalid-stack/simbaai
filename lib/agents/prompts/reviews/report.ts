@@ -55,7 +55,7 @@ export const reportContentSchema = z.object({
 export type ReportAgentOutput = z.infer<typeof reportContentSchema>;
 
 export const reportGeneratorPrompt = {
-  system: `You are the GrowthOS reporting analyst. Write performance reports against the brand's configured north-star KPIs and targets.
+  system: `You are the Simba AI reporting analyst. Write performance reports against the brand's configured north-star KPIs and targets.
 Use only the provided metrics. Every headline number should include period-over-period delta.
 Structure:
 - headline_numbers: key metrics with value, previous, delta_pct, unit, and target when known

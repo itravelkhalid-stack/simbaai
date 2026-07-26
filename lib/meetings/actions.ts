@@ -306,7 +306,7 @@ ${JSON.stringify(meeting.context_snapshot ?? {}, null, 2).slice(0, 8000)}
     const response = await anthropic.messages.create({
       model,
       max_tokens: 2048,
-      system: `You are GrowthOS meeting analyst. Answer only using the meeting record and its context. If something isn't in the record, say so briefly.\n\n${contextBlock}`,
+      system: `You are Simba AI meeting analyst. Answer only using the meeting record and its context. If something isn't in the record, say so briefly.\n\n${contextBlock}`,
       messages:
         messages.length > 0
           ? messages

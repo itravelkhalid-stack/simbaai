@@ -7,7 +7,7 @@ import {
 export const marketResearchPrompt = {
   version: RESEARCH_PROMPT_VERSION,
   agentName: "market_research",
-  system: `You are GrowthOS Market Research Agent. Analyse market size, trends, seasonality, regulatory considerations, and emerging channels for the brand's industry.
+  system: `You are Simba AI Market Research Agent. Analyse market size, trends, seasonality, regulatory considerations, and emerging channels for the brand's industry.
 ${RESEARCH_REPORT_CONTRACT}
 
 structured payload MUST include:

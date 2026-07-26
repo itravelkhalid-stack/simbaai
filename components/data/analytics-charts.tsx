@@ -22,6 +22,7 @@ import type {
   FunnelTotals,
 } from "@/lib/types/analytics";
 import { ANALYTICS_CHANNEL_LABELS } from "@/lib/types/analytics";
+import { CHART, CHART_SERIES } from "@/lib/charts/colors";
 
 export function FunnelChart({
   current,
@@ -46,14 +47,14 @@ export function FunnelChart({
       <p className="mb-2 text-sm font-medium">Funnel</p>
       <ResponsiveContainer width="100%" height="85%">
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
           <XAxis dataKey="stage" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
           <Tooltip />
           <Legend />
-          <Bar dataKey="current" fill="#0f766e" name="Current" radius={4} />
+          <Bar dataKey="current" fill={CHART.primary} name="Current" radius={4} />
           {prior ? (
-            <Bar dataKey="prior" fill="#94a3b8" name="Compare" radius={4} />
+            <Bar dataKey="prior" fill={CHART.muted} name="Compare" radius={4} />
           ) : null}
         </BarChart>
       </ResponsiveContainer>
@@ -80,13 +81,13 @@ export function ChannelMixChart({ rows }: { rows: ChannelMixRow[] }) {
       <p className="mb-2 text-sm font-medium">Channel mix (£)</p>
       <ResponsiveContainer width="100%" height="85%">
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
           <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
           <Tooltip />
           <Legend />
-          <Bar dataKey="spend" fill="#b45309" name="Spend" radius={4} />
-          <Bar dataKey="revenue" fill="#0f766e" name="Revenue" radius={4} />
+          <Bar dataKey="spend" fill={CHART.secondary} name="Spend" radius={4} />
+          <Bar dataKey="revenue" fill={CHART.primary} name="Revenue" radius={4} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -109,11 +110,11 @@ export function CohortChart({ rows }: { rows: CohortRow[] }) {
       </p>
       <ResponsiveContainer width="100%" height="85%">
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
           <Tooltip />
-          <Bar dataKey="revenue" fill="#0f766e" name="Revenue £" radius={4} />
+          <Bar dataKey="revenue" fill={CHART.primary} name="Revenue £" radius={4} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -141,7 +142,7 @@ export function TrendChart({
       <p className="mb-2 text-sm font-medium">Daily trend</p>
       <ResponsiveContainer width="100%" height="85%">
         <LineChart data={series}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 10 }} />
           <YAxis tick={{ fontSize: 11 }} />
           <Tooltip />
@@ -149,14 +150,14 @@ export function TrendChart({
           <Line
             type="monotone"
             dataKey="sessions"
-            stroke="#0f766e"
+            stroke={CHART.primary}
             dot={false}
             name="Sessions"
           />
           <Line
             type="monotone"
             dataKey="clicks"
-            stroke="#b45309"
+            stroke={CHART.secondary}
             dot={false}
             name="Clicks"
           />
@@ -175,7 +176,7 @@ export function AskChart({ chart }: { chart: AnalyticsChartSpec }) {
 
   const common = (
     <>
-      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+      <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
       <XAxis dataKey={chart.xKey} tick={{ fontSize: 11 }} />
       <YAxis tick={{ fontSize: 11 }} />
       <Tooltip />
@@ -198,7 +199,7 @@ export function AskChart({ chart }: { chart: AnalyticsChartSpec }) {
                 type="monotone"
                 dataKey={s.key}
                 name={s.label}
-                stroke={i === 0 ? "#0f766e" : "#b45309"}
+                stroke={CHART_SERIES[i % CHART_SERIES.length]}
                 dot={false}
               />
             ))}
@@ -212,8 +213,9 @@ export function AskChart({ chart }: { chart: AnalyticsChartSpec }) {
                 type="monotone"
                 dataKey={s.key}
                 name={s.label}
-                fill={i === 0 ? "#0f766e55" : "#b4530955"}
-                stroke={i === 0 ? "#0f766e" : "#b45309"}
+                fill={CHART_SERIES[i % CHART_SERIES.length]}
+                fillOpacity={0.35}
+                stroke={CHART_SERIES[i % CHART_SERIES.length]}
               />
             ))}
           </AreaChart>
@@ -225,7 +227,7 @@ export function AskChart({ chart }: { chart: AnalyticsChartSpec }) {
                 key={s.key}
                 dataKey={s.key}
                 name={s.label}
-                fill={i === 0 ? "#0f766e" : "#94a3b8"}
+                fill={CHART_SERIES[i % CHART_SERIES.length]}
                 radius={4}
               />
             ))}

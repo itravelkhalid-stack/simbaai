@@ -16,6 +16,7 @@ import {
   type ChannelBudgetActual,
   type MonthlyPnLRow,
 } from "@/lib/types/finance";
+import { CHART } from "@/lib/charts/colors";
 
 export function BudgetActualChart({ rows }: { rows: ChannelBudgetActual[] }) {
   const data = rows.map((r) => ({
@@ -37,13 +38,13 @@ export function BudgetActualChart({ rows }: { rows: ChannelBudgetActual[] }) {
       <p className="mb-2 text-sm font-medium">Budget vs actual (£)</p>
       <ResponsiveContainer width="100%" height="85%">
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
           <XAxis dataKey="channel" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
           <Tooltip />
           <Legend />
-          <Bar dataKey="planned" fill="#94a3b8" name="Planned" radius={4} />
-          <Bar dataKey="actual" fill="#0f766e" name="Actual" radius={4} />
+          <Bar dataKey="planned" fill={CHART.muted} name="Planned" radius={4} />
+          <Bar dataKey="actual" fill={CHART.primary} name="Actual" radius={4} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -63,14 +64,14 @@ export function MonthlyPnLChart({ rows }: { rows: MonthlyPnLRow[] }) {
       <p className="mb-2 text-sm font-medium">Monthly marketing P&amp;L (£)</p>
       <ResponsiveContainer width="100%" height="85%">
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
           <Tooltip />
           <Legend />
-          <Bar dataKey="spend" fill="#b45309" name="Spend" radius={4} />
-          <Bar dataKey="revenue" fill="#0f766e" name="Revenue" radius={4} />
-          <Bar dataKey="margin" fill="#64748b" name="Gross margin" radius={4} />
+          <Bar dataKey="spend" fill={CHART.secondary} name="Spend" radius={4} />
+          <Bar dataKey="revenue" fill={CHART.primary} name="Revenue" radius={4} />
+          <Bar dataKey="margin" fill={CHART.emphasis} name="Gross margin" radius={4} />
         </BarChart>
       </ResponsiveContainer>
     </div>

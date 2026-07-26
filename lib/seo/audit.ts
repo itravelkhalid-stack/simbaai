@@ -1,7 +1,7 @@
 import type { SeoPageIssue } from "@/lib/types/seo";
 
 const DEFAULT_CAP = 40;
-const USER_AGENT = "GrowthOS-SEO-Audit/1.0 (+https://growthos.app)";
+const USER_AGENT = "Simba AI-SEO-Audit/1.0 (+https://growthos.app)";
 
 type RobotsRules = {
   disallow: string[];

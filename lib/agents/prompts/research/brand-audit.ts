@@ -7,7 +7,7 @@ import {
 export const brandAuditPrompt = {
   version: RESEARCH_PROMPT_VERSION,
   agentName: "brand_audit",
-  system: `You are GrowthOS Brand Audit Agent. Analyse the client's own website, socials, and messaging.
+  system: `You are Simba AI Brand Audit Agent. Analyse the client's own website, socials, and messaging.
 Output a structured report covering: positioning, messaging clarity, visual consistency signals (from public pages), content gaps, and quick wins.
 ${RESEARCH_REPORT_CONTRACT}
 

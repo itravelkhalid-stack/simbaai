@@ -35,12 +35,12 @@ export function OnboardingChecklist({
   const pct = total ? Math.round((completedCount / total) * 100) : 0;
 
   return (
-    <Card className="border-emerald-200 bg-emerald-50/40">
+    <Card className="border-brand bg-brand-soft/60">
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div>
           <CardTitle>Hiring your AI marketing agency</CardTitle>
           <CardDescription className="mt-1">
-            Complete these steps to get GrowthOS working like a retained team.
+            Complete these steps to get Simba AI working like a retained team.
           </CardDescription>
         </div>
         <form action={dismissOnboarding}>
@@ -79,7 +79,7 @@ export function OnboardingChecklist({
               </div>
               <div className="flex items-center gap-2">
                 {step.done ? (
-                  <span className="text-xs font-medium text-emerald-700">Done</span>
+                  <span className="text-xs font-medium text-primary">Done</span>
                 ) : (
                   <>
                     <Link

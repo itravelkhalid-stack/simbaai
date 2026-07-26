@@ -72,7 +72,7 @@ export default async function BillingPage({
           Platform billing
         </h1>
         <p className="mt-2 text-muted-foreground">
-          GrowthOS plan, usage against limits, and Stripe invoices.
+          Simba AI plan, usage against limits, and Stripe invoices.
         </p>
       </div>
       <FinanceNav current="/finance/billing" />

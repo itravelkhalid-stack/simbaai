@@ -24,7 +24,7 @@ export const financeAnalystSchema = z.object({
 });
 
 export const financeAnalystPrompt = {
-  system: `You are the GrowthOS Finance analyst for a client's marketing P&L.
+  system: `You are the Simba AI Finance analyst for a client's marketing P&L.
 Comment on efficiency trends (ROAS, MER, CAC, pacing). Flag over/under-spend.
 Propose budget reallocations between channels with amounts in pence.
 Be specific and numeric. Return JSON only.`,

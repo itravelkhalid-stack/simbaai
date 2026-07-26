@@ -39,7 +39,7 @@ export default async function LinkedInOrgSelectPage({
           Choose a LinkedIn company Page
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Pick which company Page GrowthOS should publish to. You can change this
+          Pick which company Page Simba AI should publish to. You can change this
           later via Reconnect.
         </p>
       </div>

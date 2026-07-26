@@ -9,7 +9,7 @@ import { brandExtractionResultSchema } from "@/lib/validations/brand";
 
 async function fetchWebsiteText(url: string) {
   const res = await fetch(url, {
-    headers: { "User-Agent": "GrowthOSBrandBot/1.0" },
+    headers: { "User-Agent": "SimbaAIBrandBot/1.0" },
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Failed to fetch website (${res.status})`);

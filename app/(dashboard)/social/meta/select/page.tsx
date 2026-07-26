@@ -39,7 +39,7 @@ export default async function MetaPageSelectPage({
           Choose a Facebook Page
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Pick which Page GrowthOS should publish to. If the Page has a linked
+          Pick which Page Simba AI should publish to. If the Page has a linked
           Instagram Business account and Instagram scopes were granted, Instagram
           publishing is enabled automatically.
         </p>

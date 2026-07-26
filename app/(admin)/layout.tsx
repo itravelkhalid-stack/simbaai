@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { SimbaWordmark } from "@/components/brand/simba-wordmark";
 import { requireUser } from "@/lib/org/require";
 import { isPlatformAdminUser } from "@/lib/org/session";
 import { cn } from "@/lib/utils";
@@ -22,14 +23,14 @@ export default async function AdminLayout({
   if (!ok) redirect("/");
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b bg-white">
+    <div className="min-h-screen bg-surface-soft">
+      <header className="border-b border-border bg-surface">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
-          <div>
-            <p className="text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
-              GrowthOS
-            </p>
-            <h1 className="text-lg font-semibold">Platform admin</h1>
+          <div className="space-y-1">
+            <SimbaWordmark size="sm" />
+            <h1 className="font-heading text-lg font-semibold text-ink">
+              Platform admin
+            </h1>
           </div>
           <nav className="flex flex-wrap items-center gap-2">
             {ADMIN_NAV.map((item) => (
@@ -37,7 +38,7 @@ export default async function AdminLayout({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-slate-100 hover:text-foreground",
+                  "rounded-md px-3 py-1.5 text-sm text-ink-soft hover:bg-brand-soft hover:text-primary",
                 )}
               >
                 {item.label}
@@ -45,7 +46,7 @@ export default async function AdminLayout({
             ))}
             <Link
               href="/"
-              className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-slate-100"
+              className="rounded-md px-3 py-1.5 text-sm text-ink-soft hover:bg-surface-soft"
             >
               Exit to app
             </Link>

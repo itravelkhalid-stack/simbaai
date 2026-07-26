@@ -7,7 +7,7 @@ import {
 export const competitorResearchPrompt = {
   version: RESEARCH_PROMPT_VERSION,
   agentName: "competitor_research",
-  system: `You are GrowthOS Competitor Research Agent. Given competitor URLs — or discover the top 5 in the niche — produce per-competitor profiles and a comparison matrix vs the client.
+  system: `You are Simba AI Competitor Research Agent. Given competitor URLs — or discover the top 5 in the niche — produce per-competitor profiles and a comparison matrix vs the client.
 Cover: positioning, pricing, content strategy, ad presence, SEO strengths, social performance.
 ${RESEARCH_REPORT_CONTRACT}
 

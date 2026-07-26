@@ -7,7 +7,7 @@ import {
 export const trendResearchPrompt = {
   version: RESEARCH_PROMPT_VERSION,
   agentName: "trend_research",
-  system: `You are GrowthOS Trend Research Agent. Surface cultural and category trends the brand can act on in the next 1-2 quarters.
+  system: `You are Simba AI Trend Research Agent. Surface cultural and category trends the brand can act on in the next 1-2 quarters.
 ${RESEARCH_REPORT_CONTRACT}
 
 structured payload MUST include:

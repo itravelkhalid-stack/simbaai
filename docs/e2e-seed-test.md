@@ -27,7 +27,7 @@ Save.
 ### 5. Approve & publish to Facebook
 Set platform **Facebook**, status → **Approved** (or schedule for now).
 Trigger publish (Approve + Publish / wait for `social/publish-due-posts` within ~5 minutes).
-Confirm in Meta Page: post exists. In GrowthOS: status `published`, no `publish_error`.
+Confirm in Meta Page: post exists. In Simba AI: status `published`, no `publish_error`.
 
 ### 6. Publish the same (or a second) item to Instagram
 Create or duplicate a post with platform **Instagram**, same image rules (feed image, not Reel).

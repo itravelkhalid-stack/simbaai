@@ -90,7 +90,7 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle>Finance & billing</CardTitle>
           <CardDescription>
-            Marketing budgets and GrowthOS plan / Stripe invoices.
+            Marketing budgets and Simba AI plan / Stripe invoices.
           </CardDescription>
         </CardHeader>
         <div className="px-6 pb-6 flex flex-wrap gap-2">

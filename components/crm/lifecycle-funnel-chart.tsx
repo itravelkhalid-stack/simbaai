@@ -16,6 +16,7 @@ import {
   type CrmLifecycleStage,
   type FunnelStageStat,
 } from "@/lib/types/crm";
+import { CHART } from "@/lib/charts/colors";
 
 export function LifecycleFunnelChart({ stats }: { stats: FunnelStageStat[] }) {
   const data = stats
@@ -35,7 +36,7 @@ export function LifecycleFunnelChart({ stats }: { stats: FunnelStageStat[] }) {
       </p>
       <ResponsiveContainer width="100%" height="80%">
         <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid stroke={CHART.grid} strokeDasharray="3 3" />
           <XAxis dataKey="stage" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
           <Tooltip
@@ -48,8 +49,8 @@ export function LifecycleFunnelChart({ stats }: { stats: FunnelStageStat[] }) {
             }}
           />
           <Legend />
-          <Bar dataKey="current" fill="#0f766e" name="Current" radius={4} />
-          <Bar dataKey="previous" fill="#94a3b8" name="Prior window" radius={4} />
+          <Bar dataKey="current" fill={CHART.primary} name="Current" radius={4} />
+          <Bar dataKey="previous" fill={CHART.muted} name="Prior window" radius={4} />
         </BarChart>
       </ResponsiveContainer>
     </div>
