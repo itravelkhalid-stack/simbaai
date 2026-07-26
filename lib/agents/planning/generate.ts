@@ -35,6 +35,7 @@ Return JSON matching: summary, objectives[], strategies[], campaigns[], channel_
 Campaign keys must be unique slugs. Task campaign_key must match a campaign key.`,
     schema: marketingPlanDocumentSchema,
     model: input.model,
-    maxTokens: 8000,
+    // Full quarterly plans are large; 8k often truncates trailing task_breakdown.
+    maxTokens: 16000,
   });
 }

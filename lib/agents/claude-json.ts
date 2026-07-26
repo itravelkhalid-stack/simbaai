@@ -32,7 +32,7 @@ function structuredResultTool(schema: z.ZodType): Anthropic.Messages.Tool {
   return {
     name: STRUCTURED_TOOL_NAME,
     description:
-      "Return the final structured result. You MUST call this tool with the complete result — do not reply with freeform JSON text.",
+      "Return the final structured result. You MUST call this tool with the COMPLETE result — every required field must be present. Do not reply with freeform JSON text.",
     input_schema: zodSchemaToToolInputSchema(schema),
   };
 }
@@ -47,6 +47,13 @@ function extractToolInput(
     }
   }
   return null;
+}
+
+function formatZodIssues(err: z.ZodError) {
+  return err.issues
+    .slice(0, 8)
+    .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+    .join("; ");
 }
 
 export async function runClaudeJson<T>(params: {
@@ -81,8 +88,6 @@ export async function runClaudeJson<T>(params: {
       ]
     : [emitTool];
 
-  // Force the structured tool unless web search is enabled (needs auto so
-  // Anthropic can run server-side web_search before emit_structured_result).
   const toolChoice: Anthropic.Messages.ToolChoice = params.webSearch
     ? { type: "auto" }
     : { type: "tool", name: STRUCTURED_TOOL_NAME };
@@ -93,53 +98,98 @@ export async function runClaudeJson<T>(params: {
 
   let tokensIn = 0;
   let tokensOut = 0;
-  let toolInput: Record<string, unknown> | null = null;
+  let lastStopReason: string | null = null;
+  let lastToolInput: Record<string, unknown> | null = null;
+  let lastZodError: z.ZodError | null = null;
 
-  // When web search is on, allow a few turns until the model emits the result.
-  const maxTurns = params.webSearch ? 6 : 1;
+  // Turns: web-search loop + optional max_tokens continuation after a truncated tool call.
+  const maxTurns = (params.webSearch ? 6 : 1) + 2;
+  let baseMaxTokens = params.maxTokens ?? 4096;
+
   for (let turn = 0; turn < maxTurns; turn++) {
+    const forceEmit =
+      (!params.webSearch && turn === 0) ||
+      (params.webSearch && turn >= 5) ||
+      turn > 0;
+
     const response = await anthropic.messages.create({
       model,
-      max_tokens: params.maxTokens ?? 4096,
+      max_tokens: baseMaxTokens,
       system: `${params.system}
 
-You must call the tool "${STRUCTURED_TOOL_NAME}" with the complete result matching its input_schema. Do not return the result as plain text.`,
+You must call the tool "${STRUCTURED_TOOL_NAME}" with the COMPLETE result matching its input_schema. Every required field must be included. Do not return the result as plain text.`,
       tools,
-      tool_choice:
-        params.webSearch && turn === maxTurns - 1
-          ? { type: "tool", name: STRUCTURED_TOOL_NAME }
-          : toolChoice,
+      tool_choice: forceEmit
+        ? { type: "tool", name: STRUCTURED_TOOL_NAME }
+        : toolChoice,
       messages,
     });
 
     tokensIn += response.usage.input_tokens;
     tokensOut += response.usage.output_tokens;
-    toolInput = extractToolInput(response.content, STRUCTURED_TOOL_NAME);
-    if (toolInput) break;
+    lastStopReason = response.stop_reason;
 
-    // Continue the conversation so the model can finish after web_search.
-    messages.push({ role: "assistant", content: response.content });
-    messages.push({
-      role: "user",
-      content:
-        `Continue. When ready, call the "${STRUCTURED_TOOL_NAME}" tool with the complete structured result. Do not answer in plain text.`,
-    });
+    const toolInput = extractToolInput(response.content, STRUCTURED_TOOL_NAME);
+    if (toolInput) {
+      lastToolInput = toolInput;
+      try {
+        const data = params.schema.parse(toolInput);
+        return {
+          data,
+          model,
+          tokensIn,
+          tokensOut,
+          costPence: estimateCostPence(tokensIn, tokensOut),
+        };
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          lastZodError = err;
+          // Truncated tool JSON typically drops trailing required fields.
+          if (
+            response.stop_reason === "max_tokens" &&
+            turn < maxTurns - 1
+          ) {
+            baseMaxTokens = Math.min(baseMaxTokens + 8000, 24000);
+            messages.push({ role: "assistant", content: response.content });
+            messages.push({
+              role: "user",
+              content: `Your previous "${STRUCTURED_TOOL_NAME}" call was truncated (stop_reason=max_tokens) and failed validation: ${formatZodIssues(err)}.
+Call "${STRUCTURED_TOOL_NAME}" again with the COMPLETE object. Include every required field (especially any that were missing). Do not omit trailing arrays.`,
+            });
+            continue;
+          }
+          throw new Error(
+            `Structured output failed Zod validation (stop_reason=${response.stop_reason ?? "unknown"}): ${formatZodIssues(err)}`,
+          );
+        }
+        throw err;
+      }
+    }
+
+    // No tool call yet — continue (web search or truncated mid-stream without parseable input).
+    if (turn < maxTurns - 1) {
+      if (response.stop_reason === "max_tokens") {
+        baseMaxTokens = Math.min(baseMaxTokens + 8000, 24000);
+      }
+      messages.push({ role: "assistant", content: response.content });
+      messages.push({
+        role: "user",
+        content:
+          response.stop_reason === "max_tokens"
+            ? `Output was truncated (max_tokens). Call "${STRUCTURED_TOOL_NAME}" now with the COMPLETE structured result including all required fields.`
+            : `Continue. When ready, call the "${STRUCTURED_TOOL_NAME}" tool with the complete structured result. Do not answer in plain text.`,
+      });
+      continue;
+    }
   }
 
-  if (!toolInput) {
+  if (lastZodError && lastToolInput) {
     throw new Error(
-      `Model did not call ${STRUCTURED_TOOL_NAME} (structured output required)`,
+      `Structured output failed Zod validation after retries (stop_reason=${lastStopReason ?? "unknown"}): ${formatZodIssues(lastZodError)}`,
     );
   }
 
-  // Second gate: Zod validation of the tool input.
-  const data = params.schema.parse(toolInput);
-
-  return {
-    data,
-    model,
-    tokensIn,
-    tokensOut,
-    costPence: estimateCostPence(tokensIn, tokensOut),
-  };
+  throw new Error(
+    `Model did not call ${STRUCTURED_TOOL_NAME} (structured output required; stop_reason=${lastStopReason ?? "unknown"})`,
+  );
 }

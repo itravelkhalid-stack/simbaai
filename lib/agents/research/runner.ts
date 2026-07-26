@@ -1,36 +1,15 @@
-import Anthropic from "@anthropic-ai/sdk";
-
 import {
   getResearchAgent,
   researchReportSchema,
   type ResearchReport,
 } from "@/lib/agents/prompts/research";
+import { runClaudeJson } from "@/lib/agents/claude-json";
 import type { ResearchProjectType } from "@/lib/types/research";
-
-const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 export type AgentProgressCallback = (update: {
   message: string;
   progress?: number;
 }) => Promise<void>;
-
-function extractJsonObject(text: string) {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1]?.trim() ?? text.trim();
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end === -1) {
-    throw new Error("Model response did not contain a JSON object");
-  }
-  return candidate.slice(start, end + 1);
-}
-
-function estimateCostPence(inputTokens: number, outputTokens: number) {
-  // Approximate Sonnet pricing stored as integer pence for org cost tracking.
-  const inputUsd = (inputTokens / 1_000_000) * 3;
-  const outputUsd = (outputTokens / 1_000_000) * 15;
-  return Math.max(1, Math.round((inputUsd + outputUsd) * 100));
-}
 
 export async function runResearchClaudeAgent(params: {
   type: ResearchProjectType;
@@ -56,17 +35,10 @@ export async function runResearchClaudeAgent(params: {
   tokensOut: number;
   costPence: number;
 }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not configured");
-  }
-
-  const model = params.model || process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
   const agent = getResearchAgent(params.type);
-  const anthropic = new Anthropic({ apiKey });
 
   await params.onProgress?.({
-    message: `Starting ${agent.agentName} with web search (${model})`,
+    message: `Starting ${agent.agentName} with structured output + web search`,
     progress: 5,
   });
 
@@ -85,50 +57,25 @@ export async function runResearchClaudeAgent(params: {
           }
         ).buildUserPrompt(params.context);
 
-  let tokensIn = 0;
-  let tokensOut = 0;
-
-  // Anthropic web search tool — enables live research for public sources.
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: 8192,
+  const result = await runClaudeJson({
     system: agent.system,
-    tools: [
-      {
-        // Web search tool type from Anthropic Messages API
-        type: "web_search_20250305" as const,
-        name: "web_search",
-        max_uses: 8,
-      } as Anthropic.Messages.ToolUnion,
-    ],
-    messages: [{ role: "user", content: userPrompt }],
+    user: userPrompt,
+    schema: researchReportSchema,
+    model: params.model,
+    maxTokens: 12000,
+    webSearch: true,
   });
 
-  tokensIn += response.usage.input_tokens;
-  tokensOut += response.usage.output_tokens;
-
   await params.onProgress?.({
-    message: "Model finished tool-assisted research; validating structured report",
+    message: "Validated structured research report",
     progress: 85,
   });
 
-  const textBlocks = response.content.filter((block) => block.type === "text");
-  const text = textBlocks
-    .map((block) => (block.type === "text" ? block.text : ""))
-    .join("\n")
-    .trim();
-
-  if (!text) {
-    throw new Error("Empty model response");
-  }
-
-  const parsed = researchReportSchema.parse(JSON.parse(extractJsonObject(text)));
-
   return {
-    report: parsed,
-    model,
-    tokensIn,
-    tokensOut,
-    costPence: estimateCostPence(tokensIn, tokensOut),
+    report: result.data,
+    model: result.model,
+    tokensIn: result.tokensIn,
+    tokensOut: result.tokensOut,
+    costPence: result.costPence,
   };
 }
