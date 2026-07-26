@@ -18,6 +18,7 @@ import { complianceFunctions } from "@/lib/inngest/functions/compliance";
 import { automationsFunctions } from "@/lib/inngest/functions/automations";
 import { notificationsFunctions } from "@/lib/inngest/functions/notifications";
 import { jobsFunctions } from "@/lib/inngest/functions/jobs";
+import { growthFunctions } from "@/lib/inngest/functions/growth";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -39,5 +40,6 @@ export const { GET, POST, PUT } = serve({
     ...automationsFunctions,
     ...notificationsFunctions,
     ...jobsFunctions,
+    ...growthFunctions,
   ],
 });

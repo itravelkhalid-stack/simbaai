@@ -211,6 +211,11 @@ export type Database = {
           tagline?: string | null;
           products_summary?: string | null;
           is_primary?: boolean;
+          autonomy_mode?: "approval" | "autonomous";
+          channel_modes?: Record<string, unknown>;
+          agent_activity_paused?: boolean;
+          autonomy_min_roas?: number;
+          autonomy_max_cpa_pence?: number;
           created_at?: string;
           updated_at?: string;
         },

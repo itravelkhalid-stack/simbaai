@@ -12,6 +12,8 @@
 - [ ] `TOKEN_ENCRYPTION_KEY` rotated for production (not shared with staging)
 - [ ] Stripe webhook endpoint live + signature verified
 - [ ] `ADS_WRITES_ENABLED` remains `false` until ads write review complete
+- [ ] Migration `00025` applied (brand autonomy mode + kill switch)
+- [ ] Brand → Autonomy reviewed before enabling autonomous mode
 
 ## Third-party app reviews & access
 

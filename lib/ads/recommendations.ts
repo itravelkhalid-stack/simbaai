@@ -120,6 +120,62 @@ async function pauseCampaignFromPayload(params: {
   );
   const supabase = createAdminClient();
 
+  if (params.fromAgent) {
+    const { authorizeAgentAction, recordAutonomousAction } = await import(
+      "@/lib/autonomy/authorize"
+    );
+    const auth = await authorizeAgentAction({
+      organizationId: params.organizationId,
+      brandId: campaign.brand_id,
+      channel: "ads",
+      action: "ads_pause",
+      platform: campaign.platform,
+      campaignId: campaign.id,
+      agentName: "ads_optimisation_agent",
+      currentDailyBudgetPence: campaign.daily_budget_pence,
+    });
+    if (!auth.mayExecute) {
+      throw new Error(auth.reason);
+    }
+    if (
+      connection &&
+      campaign.platform_campaign_id &&
+      adsWritesEnabled(campaign.platform)
+    ) {
+      const provider = getAdsProvider(campaign.platform);
+      const { accessToken, connection: fresh } =
+        await ensureFreshAdAccessToken(connection);
+      await provider.pauseCampaign({
+        accessToken,
+        accountId: fresh.account_id,
+        platformCampaignId: campaign.platform_campaign_id,
+        metadata: {
+          ...(fresh.metadata ?? {}),
+          ...(campaign.platform_metadata ?? {}),
+          platform_adset_id: campaign.platform_adset_id,
+          platform_ad_id: campaign.platform_ad_id,
+        },
+      });
+    }
+    await supabase
+      .from("ad_campaigns")
+      .update({ status: "paused" })
+      .eq("id", campaign.id);
+    await recordAutonomousAction({
+      organizationId: params.organizationId,
+      brandId: campaign.brand_id,
+      agentName: "ads_optimisation_agent",
+      action: "ads_pause",
+      entityType: "ad_campaign",
+      entityId: campaign.id,
+      summary: `Paused campaign ${campaign.name} (autonomous optimisation)`,
+      before: { status: campaign.status },
+      after: { status: "paused" },
+      link: `/ads/campaigns/${campaign.id}`,
+    });
+    return;
+  }
+
   if (
     connection &&
     campaign.platform_campaign_id &&
@@ -132,7 +188,6 @@ async function pauseCampaignFromPayload(params: {
       action: "pause",
       campaignId: campaign.id,
       actorUserId: params.userId,
-      actorName: params.fromAgent ? "ads_optimisation_agent" : null,
       currentDailyBudgetPence: campaign.daily_budget_pence,
     });
     const provider = getAdsProvider(campaign.platform);
@@ -160,7 +215,6 @@ async function pauseCampaignFromPayload(params: {
   await auditAdWrite({
     organizationId: params.organizationId,
     actorUserId: params.userId,
-    actorName: params.fromAgent ? "ads_optimisation_agent" : null,
     campaign,
     action: "ad_campaign_pause_recommendation",
     before: { status: campaign.status },
@@ -244,18 +298,142 @@ async function shiftBudgetFromPayload(params: {
     : null;
   let amount = Number(params.payload.amount_pence ?? params.payload.daily_budget_pence ?? 0);
 
-  if (params.fromAutoOptimise) {
-    if (!settings.auto_optimise) {
-      throw new Error("Auto-optimise is disabled for this organization");
-    }
-    amount = Math.min(Math.abs(amount), settings.max_daily_budget_change_pence);
-  }
-
   const { campaign, connection } = await loadCampaignWithConnection(
     params.organizationId,
     toId,
   );
+
+  if (params.fromAutoOptimise) {
+    if (!settings.auto_optimise) {
+      const { parseBrandAutonomy, effectiveAutonomyMode } = await import(
+        "@/lib/autonomy/settings"
+      );
+      const { data: brandRow } = await supabase
+        .from("brands")
+        .select(
+          "autonomy_mode, channel_modes, agent_activity_paused, autonomy_min_roas, autonomy_max_cpa_pence",
+        )
+        .eq("id", campaign.brand_id)
+        .maybeSingle();
+      const mode = brandRow
+        ? effectiveAutonomyMode(
+            parseBrandAutonomy(brandRow as import("@/lib/types/research").Brand),
+            "ads",
+          )
+        : "approval";
+      if (mode !== "autonomous") {
+        throw new Error("Auto-optimise is disabled for this organization");
+      }
+    }
+    amount = Math.min(Math.abs(amount), settings.max_daily_budget_change_pence);
+  }
+
   const nextBudget = Math.max(0, Number(campaign.daily_budget_pence ?? 0) + amount);
+
+  if (params.fromAutoOptimise) {
+    const { authorizeAgentAction, recordAutonomousAction } = await import(
+      "@/lib/autonomy/authorize"
+    );
+    const auth = await authorizeAgentAction({
+      organizationId: params.organizationId,
+      brandId: campaign.brand_id,
+      channel: "ads",
+      action: "ads_budget_update",
+      platform: campaign.platform,
+      campaignId: campaign.id,
+      agentName: "ads_optimisation_agent",
+      currentDailyBudgetPence: campaign.daily_budget_pence,
+      proposedDailyBudgetPence: nextBudget,
+    });
+    if (!auth.mayExecute) {
+      throw new Error(auth.reason);
+    }
+    if (
+      connection &&
+      campaign.platform_campaign_id &&
+      adsWritesEnabled(campaign.platform)
+    ) {
+      const provider = getAdsProvider(campaign.platform);
+      const { accessToken, connection: fresh } =
+        await ensureFreshAdAccessToken(connection);
+      await provider.updateBudget({
+        accessToken,
+        accountId: fresh.account_id,
+        platformCampaignId: campaign.platform_campaign_id,
+        dailyBudgetPence: nextBudget,
+        currency: campaign.currency,
+        metadata: {
+          ...(fresh.metadata ?? {}),
+          ...(campaign.platform_metadata ?? {}),
+          platform_adset_id: campaign.platform_adset_id,
+          platform_budget_id: campaign.platform_budget_id,
+        },
+      });
+    }
+    await supabase
+      .from("ad_campaigns")
+      .update({ daily_budget_pence: nextBudget })
+      .eq("id", campaign.id);
+    await recordAutonomousAction({
+      organizationId: params.organizationId,
+      brandId: campaign.brand_id,
+      agentName: "ads_optimisation_agent",
+      action: "ads_budget_update",
+      entityType: "ad_campaign",
+      entityId: campaign.id,
+      summary: `Updated budget for ${campaign.name} to ${nextBudget}p`,
+      before: { daily_budget_pence: campaign.daily_budget_pence },
+      after: { daily_budget_pence: nextBudget },
+      link: `/ads/campaigns/${campaign.id}`,
+    });
+    if (fromId && amount > 0) {
+      const { campaign: fromCampaign, connection: fromConn } =
+        await loadCampaignWithConnection(params.organizationId, fromId);
+      const fromNext = Math.max(
+        0,
+        Number(fromCampaign.daily_budget_pence ?? 0) - amount,
+      );
+      const donorAuth = await authorizeAgentAction({
+        organizationId: params.organizationId,
+        brandId: fromCampaign.brand_id,
+        channel: "ads",
+        action: "ads_budget_update",
+        platform: fromCampaign.platform,
+        campaignId: fromCampaign.id,
+        agentName: "ads_optimisation_agent",
+        currentDailyBudgetPence: fromCampaign.daily_budget_pence,
+        proposedDailyBudgetPence: fromNext,
+      });
+      if (donorAuth.mayExecute) {
+        if (
+          fromConn &&
+          fromCampaign.platform_campaign_id &&
+          adsWritesEnabled(fromCampaign.platform)
+        ) {
+          const provider = getAdsProvider(fromCampaign.platform);
+          const { accessToken, connection: fresh } =
+            await ensureFreshAdAccessToken(fromConn);
+          await provider.updateBudget({
+            accessToken,
+            accountId: fresh.account_id,
+            platformCampaignId: fromCampaign.platform_campaign_id,
+            dailyBudgetPence: fromNext,
+            currency: fromCampaign.currency,
+            metadata: {
+              ...(fresh.metadata ?? {}),
+              ...(fromCampaign.platform_metadata ?? {}),
+              platform_budget_id: fromCampaign.platform_budget_id,
+            },
+          });
+        }
+        await supabase
+          .from("ad_campaigns")
+          .update({ daily_budget_pence: fromNext })
+          .eq("id", fromCampaign.id);
+      }
+    }
+    return;
+  }
 
   if (
     connection &&
@@ -269,9 +447,6 @@ async function shiftBudgetFromPayload(params: {
       action: "budget_update",
       campaignId: campaign.id,
       actorUserId: params.userId,
-      actorName: params.fromAutoOptimise
-        ? "ads_optimisation_agent"
-        : null,
       currentDailyBudgetPence: campaign.daily_budget_pence,
       proposedDailyBudgetPence: nextBudget,
     });
@@ -300,7 +475,6 @@ async function shiftBudgetFromPayload(params: {
   await auditAdWrite({
     organizationId: params.organizationId,
     actorUserId: params.userId,
-    actorName: params.fromAutoOptimise ? "ads_optimisation_agent" : null,
     campaign,
     action: "ad_campaign_budget_recommendation",
     before: { daily_budget_pence: campaign.daily_budget_pence },
@@ -309,10 +483,7 @@ async function shiftBudgetFromPayload(params: {
 
   if (fromId && amount > 0) {
     const { campaign: fromCampaign, connection: fromConnection } =
-      await loadCampaignWithConnection(
-      params.organizationId,
-      fromId,
-    );
+      await loadCampaignWithConnection(params.organizationId, fromId);
     const fromNextBudget = Math.max(
       0,
       Number(fromCampaign.daily_budget_pence ?? 0) - amount,
@@ -329,9 +500,6 @@ async function shiftBudgetFromPayload(params: {
         action: "budget_update",
         campaignId: fromCampaign.id,
         actorUserId: params.userId,
-        actorName: params.fromAutoOptimise
-          ? "ads_optimisation_agent"
-          : null,
         currentDailyBudgetPence: fromCampaign.daily_budget_pence,
         proposedDailyBudgetPence: fromNextBudget,
       });
@@ -353,14 +521,11 @@ async function shiftBudgetFromPayload(params: {
     }
     await supabase
       .from("ad_campaigns")
-      .update({
-        daily_budget_pence: fromNextBudget,
-      })
+      .update({ daily_budget_pence: fromNextBudget })
       .eq("id", fromId);
     await auditAdWrite({
       organizationId: params.organizationId,
       actorUserId: params.userId,
-      actorName: params.fromAutoOptimise ? "ads_optimisation_agent" : null,
       campaign: fromCampaign,
       action: "ad_campaign_budget_reallocation_source",
       before: { daily_budget_pence: fromCampaign.daily_budget_pence },

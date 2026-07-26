@@ -9,6 +9,7 @@ import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import {
   brandAudienceSchema,
+  brandAutonomySchema,
   brandBasicsSchema,
   brandExtractSchema,
   brandProductSchema,
@@ -458,4 +459,86 @@ export async function setPrimaryBrand(formData: FormData) {
     .eq("id", brandId)
     .eq("organization_id", active.organization_id);
   revalidatePath("/brand");
+}
+
+export async function saveBrandAutonomy(
+  _prev: BrandActionResult,
+  formData: FormData,
+): Promise<BrandActionResult> {
+  const parsed = brandAutonomySchema.safeParse({
+    brandId: formData.get("brandId"),
+    autonomy_mode: formData.get("autonomy_mode"),
+    agent_activity_paused: formData.get("agent_activity_paused") ?? "",
+    channel_ads: formData.get("channel_ads") || "inherit",
+    channel_organic_social: formData.get("channel_organic_social") || "inherit",
+    channel_email: formData.get("channel_email") || "inherit",
+    autonomy_min_roas: formData.get("autonomy_min_roas") || 1.5,
+    autonomy_max_cpa_major: formData.get("autonomy_max_cpa_major") || 50,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid autonomy settings" };
+  }
+
+  const { user, active } = await assertCanWrite();
+  if (active.role === "org_member") {
+    return { error: "Only org admins can change autonomy mode" };
+  }
+
+  const channel_modes: Record<string, "approval" | "autonomous"> = {};
+  if (parsed.data.channel_ads !== "inherit") {
+    channel_modes.ads = parsed.data.channel_ads;
+  }
+  if (parsed.data.channel_organic_social !== "inherit") {
+    channel_modes.organic_social = parsed.data.channel_organic_social;
+  }
+  if (parsed.data.channel_email !== "inherit") {
+    channel_modes.email = parsed.data.channel_email;
+  }
+
+  const supabase = await createClient();
+  const { data: before } = await supabase
+    .from("brands")
+    .select(
+      "autonomy_mode, channel_modes, agent_activity_paused, autonomy_min_roas, autonomy_max_cpa_pence",
+    )
+    .eq("id", parsed.data.brandId)
+    .eq("organization_id", active.organization_id)
+    .single();
+
+  const { error } = await supabase
+    .from("brands")
+    .update({
+      autonomy_mode: parsed.data.autonomy_mode,
+      channel_modes,
+      agent_activity_paused: parsed.data.agent_activity_paused,
+      autonomy_min_roas: parsed.data.autonomy_min_roas,
+      autonomy_max_cpa_pence: Math.round(parsed.data.autonomy_max_cpa_major * 100),
+    })
+    .eq("id", parsed.data.brandId)
+    .eq("organization_id", active.organization_id);
+  if (error) return { error: error.message };
+
+  const { writeAuditEvent } = await import("@/lib/compliance/audit");
+  await writeAuditEvent({
+    organizationId: active.organization_id,
+    actorUserId: user.id,
+    action: "brand_autonomy_updated",
+    entityType: "brand",
+    entityId: parsed.data.brandId,
+    summary: parsed.data.agent_activity_paused
+      ? "Paused all agent activity for brand"
+      : `Set autonomy mode to ${parsed.data.autonomy_mode}`,
+    before: before ?? null,
+    after: {
+      autonomy_mode: parsed.data.autonomy_mode,
+      channel_modes,
+      agent_activity_paused: parsed.data.agent_activity_paused,
+      autonomy_min_roas: parsed.data.autonomy_min_roas,
+      autonomy_max_cpa_pence: Math.round(parsed.data.autonomy_max_cpa_major * 100),
+    },
+  });
+
+  revalidatePath("/brand");
+  revalidatePath("/brand/autonomy");
+  return { success: "Autonomy settings saved" };
 }

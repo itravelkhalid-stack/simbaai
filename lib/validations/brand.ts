@@ -54,6 +54,22 @@ export const brandExtractSchema = z.object({
   websiteUrl: z.string().url(),
 });
 
+export const brandAutonomySchema = z.object({
+  brandId: z.string().uuid(),
+  autonomy_mode: z.enum(["approval", "autonomous"]),
+  agent_activity_paused: z
+    .union([z.literal("on"), z.literal("true"), z.literal("1"), z.literal("")])
+    .optional()
+    .transform((v) => v === "on" || v === "true" || v === "1"),
+  channel_ads: z.enum(["inherit", "approval", "autonomous"]).default("inherit"),
+  channel_organic_social: z
+    .enum(["inherit", "approval", "autonomous"])
+    .default("inherit"),
+  channel_email: z.enum(["inherit", "approval", "autonomous"]).default("inherit"),
+  autonomy_min_roas: z.coerce.number().min(0).max(100).default(1.5),
+  autonomy_max_cpa_major: z.coerce.number().min(0).max(1_000_000).default(50),
+});
+
 export const brandExtractionResultSchema = z.object({
   name: z.string().min(1),
   tagline: z.string().optional().nullable(),

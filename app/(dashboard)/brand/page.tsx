@@ -48,6 +48,12 @@ export default async function BrandPage() {
               Media
             </Link>
             <Link
+              href="/brand/autonomy"
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Autonomy
+            </Link>
+            <Link
               href={`/brand/guidelines?brandId=${list[0].id}`}
               className={cn(buttonVariants({ variant: "outline" }))}
             >

@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/brand/setup", label: "Setup" },
   { href: "/brand/guidelines", label: "Guidelines" },
   { href: "/brand/media", label: "Media" },
+  { href: "/brand/autonomy", label: "Autonomy" },
 ];
 
 export function BrandNav({ current }: { current: string }) {

@@ -85,6 +85,48 @@ export async function publishContentItem(itemId: string) {
     return { skipped: true as const, reason: "not_due" };
   }
 
+  const { getLatestComplianceCheck } = await import("@/lib/compliance/check");
+  const {
+    authorizeAgentAction,
+    recordAutonomousAction,
+  } = await import("@/lib/autonomy/authorize");
+  const latestCompliance = await getLatestComplianceCheck({
+    organizationId: typed.organization_id,
+    entityType: "content",
+    entityId: itemId,
+  });
+  const complianceStatus =
+    latestCompliance?.status === "fail" ||
+    latestCompliance?.status === "warn" ||
+    latestCompliance?.status === "pass"
+      ? latestCompliance.status
+      : null;
+
+  const auth = await authorizeAgentAction({
+    organizationId: typed.organization_id,
+    brandId: typed.brand_id,
+    channel: "organic_social",
+    action: typed.status === "scheduled" ? "content_schedule" : "organic_publish",
+    agentName: "social_publisher",
+    entityType: "content",
+    entityId: itemId,
+    complianceStatus,
+    allowAsRecommendation: true,
+  });
+  if (!auth.mayExecute) {
+    const message = auth.reason;
+    if (auth.mustQueue || complianceStatus === "fail") {
+      await supabase
+        .from("content_items")
+        .update({
+          status: "proposed",
+          publish_error: message,
+        })
+        .eq("id", itemId);
+    }
+    return { skipped: true as const, reason: message };
+  }
+
   if (
     typed.platform === "instagram" &&
     (!(typed.media_urls ?? []).length)
@@ -169,6 +211,20 @@ export async function publishContentItem(itemId: string) {
         publish_error: null,
       })
       .eq("id", itemId);
+
+    if (auth.mode === "autonomous") {
+      await recordAutonomousAction({
+        organizationId: typed.organization_id,
+        brandId: typed.brand_id,
+        agentName: "social_publisher",
+        action: "organic_publish",
+        entityType: "content",
+        entityId: itemId,
+        summary: `Published ${typed.platform} post ${itemId}`,
+        after: { platform_post_id: result.platformPostId },
+        link: `/content/${itemId}`,
+      });
+    }
 
     try {
       const { emitAutomationEvent } = await import("@/lib/automations/runner");

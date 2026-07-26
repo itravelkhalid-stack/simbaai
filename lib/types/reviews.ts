@@ -159,6 +159,7 @@ export const SUGGESTED_KPI_KEYS = [
   { metric_key: "ad_spend", label: "Ad spend", unit: "£", channel: "ads" },
   { metric_key: "ad_revenue", label: "Attributed ad revenue", unit: "£", channel: "ads" },
   { metric_key: "roas", label: "ROAS", unit: "x", channel: "ads" },
+  { metric_key: "cpa", label: "CPA", unit: "£", channel: "ads" },
   { metric_key: "email_opens", label: "Email opens", unit: "", channel: "email" },
   { metric_key: "seo_clicks", label: "SEO clicks", unit: "", channel: "seo" },
   { metric_key: "content_engagements", label: "Content engagements", unit: "", channel: "content" },
