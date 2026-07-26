@@ -20,16 +20,21 @@ Optional: create a Vercel **Staging** environment mapped to branch `staging` wit
 ## Supabase migrations
 
 ```bash
-# Link project (once)
-npx supabase link --project-ref <ref>
+# Preferred: apply via tracked migrator (writes public + supabase_migrations.schema_migrations)
+npx tsx scripts/apply-migrations.ts
 
-# Push migrations in order (00001 … 00018)
+# Full CLI link (needs SUPABASE_ACCESS_TOKEN from Dashboard → Account → Access Tokens)
+npx supabase link --project-ref <ref> --password "$SUPABASE_DB_PASSWORD"
 npx supabase db push
-
-# Or CI: supabase db push --linked
 ```
 
+`scripts/apply-migrations.ts` skips already-applied files and dual-writes:
+- `public.schema_migrations` (legacy filename tracker)
+- `supabase_migrations.schema_migrations` (official CLI versions)
+
 Always apply migrations to **staging first**, smoke-test, then production.
+
+Brand media storage access model: see `docs/brand-media-storage.md` (private bucket + signed URLs at publish).
 
 RLS audit after migrate:
 

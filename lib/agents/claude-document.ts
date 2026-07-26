@@ -1,18 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+import { zodSchemaToToolInputSchema } from "@/lib/agents/claude-json";
 
-function extractJsonObject(text: string) {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1]?.trim() ?? text.trim();
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end === -1) {
-    throw new Error("Model response did not contain a JSON object");
-  }
-  return candidate.slice(start, end + 1);
-}
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+const STRUCTURED_TOOL_NAME = "emit_structured_result";
 
 function estimateCostPence(inputTokens: number, outputTokens: number) {
   const inputUsd = (inputTokens / 1_000_000) * 3;
@@ -45,7 +37,18 @@ export async function runClaudeJsonWithDocument<T>(params: {
   const response = await anthropic.messages.create({
     model,
     max_tokens: params.maxTokens ?? 4096,
-    system: params.system,
+    system: `${params.system}
+
+You must call the tool "${STRUCTURED_TOOL_NAME}" with the complete result matching its input_schema. Do not return the result as plain text.`,
+    tools: [
+      {
+        name: STRUCTURED_TOOL_NAME,
+        description:
+          "Return the final structured result. You MUST call this tool with the complete result — do not reply with freeform JSON text.",
+        input_schema: zodSchemaToToolInputSchema(params.schema),
+      },
+    ],
+    tool_choice: { type: "tool", name: STRUCTURED_TOOL_NAME },
     messages: [
       {
         role: "user",
@@ -64,15 +67,17 @@ export async function runClaudeJsonWithDocument<T>(params: {
     ],
   });
 
-  const text = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => (block.type === "text" ? block.text : ""))
-    .join("\n")
-    .trim();
+  const toolBlock = response.content.find(
+    (block) =>
+      block.type === "tool_use" && block.name === STRUCTURED_TOOL_NAME,
+  );
+  if (!toolBlock || toolBlock.type !== "tool_use") {
+    throw new Error(
+      `Model did not call ${STRUCTURED_TOOL_NAME} (structured output required)`,
+    );
+  }
 
-  if (!text) throw new Error("Empty model response");
-
-  const data = params.schema.parse(JSON.parse(extractJsonObject(text)));
+  const data = params.schema.parse(toolBlock.input);
 
   return {
     data,

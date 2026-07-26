@@ -114,6 +114,24 @@ export async function sendCampaign(campaignId: string) {
     return { skipped: true as const, reason: `status=${typed.status}` };
   }
 
+  const {
+    authorizeAgentAction,
+    recordAutonomousAction,
+  } = await import("@/lib/autonomy/authorize");
+  const auth = await authorizeAgentAction({
+    organizationId: typed.organization_id,
+    brandId: typed.brand_id,
+    channel: "email",
+    action: "email_send",
+    agentName: "email_sender",
+    entityType: "email_campaign",
+    entityId: campaignId,
+    allowAsRecommendation: true,
+  });
+  if (!auth.mayExecute) {
+    return { skipped: true as const, reason: auth.reason };
+  }
+
   const { data: domain } = typed.sending_domain_id
     ? await supabase
         .from("email_sending_domains")
@@ -250,6 +268,18 @@ export async function sendCampaign(campaignId: string) {
       }),
     })
     .eq("id", campaignId);
+
+  await recordAutonomousAction({
+    organizationId: typed.organization_id,
+    brandId: typed.brand_id,
+    agentName: "email_sender",
+    action: "email_send",
+    entityType: "email_campaign",
+    entityId: campaignId,
+    summary: `Sent email campaign (${sent}/${recipients.length} recipients)`,
+    after: { sent, recipients: recipients.length },
+    link: `/email/campaigns/${campaignId}`,
+  });
 
   return { ok: true as const, sent, recipients: recipients.length };
 }

@@ -67,7 +67,7 @@ export function AdLimitsForm({
             step="0.01"
             required
             defaultValue={
-              (limits?.max_single_campaign_daily_budget_pence ?? 100) / 100
+              (limits?.max_single_campaign_daily_budget_pence ?? 200) / 100
             }
           />
         </div>

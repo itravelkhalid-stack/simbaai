@@ -67,14 +67,29 @@ async function syncContentItemMediaUrls(
 
   const { data: assets } = await supabase
     .from("media_assets")
-    .select("id, public_url")
+    .select("id, storage_path, public_url")
     .eq("organization_id", organizationId)
     .in("id", assetIds);
 
-  const byId = new Map((assets ?? []).map((a) => [a.id, a.public_url]));
-  const urls = assetIds
-    .map((id) => byId.get(id))
-    .filter((u): u is string => Boolean(u));
+  const byId = new Map(
+    (assets ?? []).map((a) => [
+      a.id,
+      { storage_path: a.storage_path as string, public_url: a.public_url as string },
+    ]),
+  );
+
+  // Mint long-lived signed URLs so Meta/Facebook Graph can fetch private brand-media.
+  const { mintPublishableBrandMediaUrl } = await import("@/lib/media/storage");
+  const urls: string[] = [];
+  for (const id of assetIds) {
+    const row = byId.get(id);
+    if (!row) continue;
+    try {
+      urls.push(await mintPublishableBrandMediaUrl(row.storage_path));
+    } catch {
+      if (row.public_url) urls.push(row.public_url);
+    }
+  }
 
   await supabase
     .from("content_items")

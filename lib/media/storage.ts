@@ -126,16 +126,47 @@ export async function uploadBrandMediaFile(params: {
     });
   if (error) throw new Error(error.message);
 
+  // Bucket is private — store a stable path-style reference URL for the column,
+  // and mint short-lived signed URLs for UI / long-lived ones for Graph publish.
   const { data } = supabase.storage.from(BRAND_MEDIA_BUCKET).getPublicUrl(finalPath);
-  if (!data.publicUrl) throw new Error("Failed to resolve public media URL");
+  const publicUrl =
+    data.publicUrl ||
+    (await createBrandMediaSignedUrl(finalPath, UI_SIGNED_URL_SECONDS));
 
   return {
-    publicUrl: data.publicUrl,
+    publicUrl,
     path: finalPath,
     mimeType: mime,
     sizeBytes: params.file.size,
     assetType,
   };
+}
+
+/** Short-lived signed URL for dashboard previews (private bucket). */
+export const UI_SIGNED_URL_SECONDS = 60 * 60; // 1 hour
+
+/** Long-lived signed URL so Meta/Facebook Graph can fetch the object once. */
+export const PUBLISH_SIGNED_URL_SECONDS = 60 * 60 * 48; // 48 hours
+
+export async function createBrandMediaSignedUrl(
+  storagePath: string,
+  expiresInSeconds = UI_SIGNED_URL_SECONDS,
+): Promise<string> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.storage
+    .from(BRAND_MEDIA_BUCKET)
+    .createSignedUrl(storagePath, expiresInSeconds);
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message ?? "Failed to create signed media URL");
+  }
+  return data.signedUrl;
+}
+
+/** Mint a Graph-fetchable URL at publish / attach time. */
+export async function mintPublishableBrandMediaUrl(
+  storagePath: string,
+): Promise<string> {
+  return createBrandMediaSignedUrl(storagePath, PUBLISH_SIGNED_URL_SECONDS);
 }
 
 export async function deleteBrandMediaFile(storagePath: string) {

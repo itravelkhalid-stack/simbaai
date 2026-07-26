@@ -52,24 +52,37 @@ export default async function BrandMediaPage({
 
   const list = (assets ?? []) as MediaAsset[];
 
+  // Private bucket: mint short-lived signed URLs for dashboard previews.
+  const { createBrandMediaSignedUrl } = await import("@/lib/media/storage");
+  const signed = await Promise.all(
+    list.map(async (asset) => {
+      try {
+        const url = await createBrandMediaSignedUrl(asset.storage_path);
+        return { ...asset, public_url: url };
+      } catch {
+        return asset;
+      }
+    }),
+  );
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Media library</h1>
         <p className="mt-2 text-muted-foreground">
-          Brand assets for {typedBrand.name}. Public URLs are used for Instagram
-          publishing.
+          Brand assets for {typedBrand.name}. The library is private;
+          Instagram/Facebook publish mints temporary signed URLs at attach time.
         </p>
       </div>
       <BrandNav current="/brand/media" />
       <BrandAssetSlots
         brandId={typedBrand.id}
-        assets={list}
+        assets={signed}
         canWrite={canWrite}
       />
       <MediaLibraryPanel
         brandId={typedBrand.id}
-        assets={list}
+        assets={signed}
         canWrite={canWrite}
       />
     </div>

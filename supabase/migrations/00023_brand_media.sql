@@ -186,16 +186,25 @@ create policy brand_guidelines_proposals_update on public.brand_guidelines_propo
     )
   );
 
--- Public bucket for IG publishing + brand asset URLs
+-- Private brand-media bucket.
+-- Access model (see docs/brand-media-storage.md):
+--   - Authenticated reads are org-scoped via path prefix {organization_id}/…
+--   - No anon/public blanket read (avoids cross-tenant leakage)
+--   - Instagram/Facebook Graph fetch uses long-lived signed URLs minted
+--     at publish time by the service role (lib/media/storage.ts)
 insert into storage.buckets (id, name, public)
-values ('brand-media', 'brand-media', true)
-on conflict (id) do nothing;
+values ('brand-media', 'brand-media', false)
+on conflict (id) do update set public = excluded.public;
+
+drop policy if exists brand_media_select on storage.objects;
+drop policy if exists brand_media_select_anon on storage.objects;
 
 create policy brand_media_select on storage.objects
   for select to authenticated
-  using (bucket_id = 'brand-media');
+  using (
+    bucket_id = 'brand-media'
+    and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and public.is_org_member(((storage.foldername(name))[1])::uuid)
+  );
 
-create policy brand_media_select_anon on storage.objects
-  for select to anon
-  using (bucket_id = 'brand-media');
--- Uploads via service role (admin client) only — no authenticated insert policy
+-- Uploads/deletes via service role (admin client) only — no authenticated write policies

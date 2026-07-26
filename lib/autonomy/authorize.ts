@@ -23,7 +23,9 @@ export type AgentActionKind =
   | "organic_publish"
   | "content_schedule"
   | "growth_propose"
-  | "growth_execute";
+  | "growth_execute"
+  | "email_send"
+  | "outbound_webhook";
 
 export type AuthorizeAgentActionInput = {
   organizationId: string;
