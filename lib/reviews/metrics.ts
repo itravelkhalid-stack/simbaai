@@ -1,9 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBrandContext } from "@/lib/brand/context";
 import {
+  buildKpiActualsMap,
+  resolveKpiActualsFromMap,
+} from "@/lib/reviews/kpi-actuals";
+import {
   deltaPct,
   listBrandKpis,
 } from "@/lib/reviews/periods";
+import { latestFollowersInPeriod } from "@/lib/social/metrics";
 import type { BrandKpi, ReportChartPoint, ReportType } from "@/lib/types/reviews";
 
 type PeriodBounds = {
@@ -216,46 +221,24 @@ function resolveKpiActuals(
     email: Awaited<ReturnType<typeof sumEmailEvents>>;
     seo: Awaited<ReturnType<typeof sumSeo>>;
     crm_revenue_pence: number;
+    ig_followers: number;
+    fb_followers: number;
   },
 ) {
-  return kpis.map((kpi) => {
-    let value = 0;
-    switch (kpi.metric_key) {
-      case "ad_spend":
-        value = current.ads.spend_pence / 100;
-        break;
-      case "crm_revenue": {
-        value = current.crm_revenue_pence / 100;
-        if (value === 0) value = current.ads.revenue_pence / 100;
-        break;
-      }
-      case "ad_revenue":
-        value = current.ads.revenue_pence / 100;
-        break;
-      case "roas":
-        value = current.ads.roas;
-        break;
-      case "email_opens":
-        value = current.email.opens;
-        break;
-      case "seo_clicks":
-        value = current.seo.clicks;
-        break;
-      case "content_engagements":
-        value = current.content.engagements;
-        break;
-      default:
-        value = 0;
-    }
-    return {
-      ...kpi,
-      actual: value,
-      vs_target_pct:
-        kpi.target_value === 0
-          ? null
-          : Math.round((value / Number(kpi.target_value)) * 1000) / 10,
-    };
-  });
+  return resolveKpiActualsFromMap(
+    kpis,
+    buildKpiActualsMap({
+      ad_spend_pence: current.ads.spend_pence,
+      ad_revenue_pence: current.ads.revenue_pence,
+      ad_conversions: current.ads.conversions,
+      email_opens: current.email.opens,
+      seo_clicks: current.seo.clicks,
+      content_engagements: current.content.engagements,
+      crm_revenue_pence: current.crm_revenue_pence,
+      ig_followers: current.ig_followers,
+      fb_followers: current.fb_followers,
+    }),
+  );
 }
 
 export type ReportMetricsBundle = {
@@ -272,6 +255,8 @@ export type ReportMetricsBundle = {
     email: Awaited<ReturnType<typeof sumEmailEvents>>;
     seo: Awaited<ReturnType<typeof sumSeo>>;
     crm_revenue_pence: number;
+    ig_followers: number;
+    fb_followers: number;
   };
   previous: {
     ads: Awaited<ReturnType<typeof sumAdMetrics>>;
@@ -279,6 +264,8 @@ export type ReportMetricsBundle = {
     email: Awaited<ReturnType<typeof sumEmailEvents>>;
     seo: Awaited<ReturnType<typeof sumSeo>>;
     crm_revenue_pence: number;
+    ig_followers: number;
+    fb_followers: number;
   };
   campaigns: Array<{
     name: string;
@@ -337,36 +324,72 @@ export async function gatherReportMetrics(params: {
 
   const supabase = createAdminClient();
   const { sumCrmRevenuePence } = await import("@/lib/crm/funnel");
-  const [crmCur, crmPrev, { data: campaigns }, { data: plans }] =
-    await Promise.all([
-      sumCrmRevenuePence({
-        organizationId: params.organizationId,
-        brandId: params.brandId,
-        fromDate: periodStart,
-        toDate: periodEnd,
-      }),
-      sumCrmRevenuePence({
-        organizationId: params.organizationId,
-        brandId: params.brandId,
-        fromDate: previousStart,
-        toDate: previousEnd,
-      }),
-      supabase
-        .from("campaigns")
-        .select("name, status, budget_pence, spent_pence, kpi")
-        .eq("organization_id", params.organizationId)
-        .eq("brand_id", params.brandId)
-        .in("status", ["active", "planned", "paused", "completed"])
-        .limit(25),
-      supabase
-        .from("marketing_plans")
-        .select("title, period_type, period_start, period_end, document, status")
-        .eq("organization_id", params.organizationId)
-        .eq("brand_id", params.brandId)
-        .in("status", ["approved", "active", "partially_approved"])
-        .order("created_at", { ascending: false })
-        .limit(3),
-    ]);
+  const [
+    crmCur,
+    crmPrev,
+    igCur,
+    igPrev,
+    fbCur,
+    fbPrev,
+    { data: campaigns },
+    { data: plans },
+  ] = await Promise.all([
+    sumCrmRevenuePence({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      fromDate: periodStart,
+      toDate: periodEnd,
+    }),
+    sumCrmRevenuePence({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      fromDate: previousStart,
+      toDate: previousEnd,
+    }),
+    latestFollowersInPeriod({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      platform: "instagram",
+      fromDate: periodStart,
+      toDate: periodEnd,
+    }),
+    latestFollowersInPeriod({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      platform: "instagram",
+      fromDate: previousStart,
+      toDate: previousEnd,
+    }),
+    latestFollowersInPeriod({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      platform: "facebook",
+      fromDate: periodStart,
+      toDate: periodEnd,
+    }),
+    latestFollowersInPeriod({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      platform: "facebook",
+      fromDate: previousStart,
+      toDate: previousEnd,
+    }),
+    supabase
+      .from("campaigns")
+      .select("name, status, budget_pence, spent_pence, kpi")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .in("status", ["active", "planned", "paused", "completed"])
+      .limit(25),
+    supabase
+      .from("marketing_plans")
+      .select("title, period_type, period_start, period_end, document, status")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .in("status", ["approved", "active", "partially_approved"])
+      .order("created_at", { ascending: false })
+      .limit(3),
+  ]);
 
   const current = {
     ads: adsCur,
@@ -374,6 +397,8 @@ export async function gatherReportMetrics(params: {
     email: emailCur,
     seo: seoCur,
     crm_revenue_pence: crmCur,
+    ig_followers: igCur,
+    fb_followers: fbCur,
   };
   const previous = {
     ads: adsPrev,
@@ -381,6 +406,8 @@ export async function gatherReportMetrics(params: {
     email: emailPrev,
     seo: seoPrev,
     crm_revenue_pence: crmPrev,
+    ig_followers: igPrev,
+    fb_followers: fbPrev,
   };
 
   const resolvedKpis = resolveKpiActuals(kpis, current);
@@ -400,12 +427,15 @@ export async function gatherReportMetrics(params: {
 - Spend: £${(adsCur.spend_pence / 100).toFixed(2)} (prev £${(adsPrev.spend_pence / 100).toFixed(2)}, Δ ${deltaPct(adsCur.spend_pence, adsPrev.spend_pence)}%)
 - Revenue: £${(adsCur.revenue_pence / 100).toFixed(2)} (prev £${(adsPrev.revenue_pence / 100).toFixed(2)}, Δ ${deltaPct(adsCur.revenue_pence, adsPrev.revenue_pence)}%)
 - ROAS: ${adsCur.roas.toFixed(2)}x (prev ${adsPrev.roas.toFixed(2)}x)
+- CPA: £${adsCur.conversions > 0 ? (adsCur.spend_pence / adsCur.conversions / 100).toFixed(2) : "n/a"} (conversions ${adsCur.conversions})
 - Clicks: ${adsCur.clicks}, Conversions: ${adsCur.conversions}
 
 ### Content
 - Published: ${contentCur.published} (prev ${contentPrev.published})
 - Engagements: ${contentCur.engagements} (prev ${contentPrev.engagements}, Δ ${deltaPct(contentCur.engagements, contentPrev.engagements)}%)
 - Impressions: ${contentCur.impressions}
+- IG followers: ${igCur} (prev ${igPrev})
+- FB followers: ${fbCur} (prev ${fbPrev})
 
 ### Email events
 - Opens: ${emailCur.opens} (prev ${emailPrev.opens}, Δ ${deltaPct(emailCur.opens, emailPrev.opens)}%)

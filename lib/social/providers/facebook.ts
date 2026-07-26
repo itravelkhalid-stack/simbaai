@@ -100,6 +100,22 @@ export const facebookProvider: SocialProvider = {
       raw: json,
     };
   },
+
+  async getAccountFollowers({ accessToken, accountId }) {
+    const url = new URL(`https://graph.facebook.com/v21.0/${accountId}`);
+    // fan_count is the classic Page likes/followers field on Graph.
+    url.searchParams.set("fields", "fan_count,followers_count,name");
+    url.searchParams.set("access_token", accessToken);
+    const json = (await readJson(await fetch(url))) as {
+      fan_count?: number;
+      followers_count?: number;
+      name?: string;
+    };
+    return {
+      followers: Number(json.followers_count ?? json.fan_count ?? 0),
+      raw: json as Record<string, unknown>,
+    };
+  },
 };
 
 /** @deprecated Token assembly happens in meta select flow */

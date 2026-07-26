@@ -1,6 +1,9 @@
 import { inngest } from "@/lib/inngest/client";
 import { recordJobFailure } from "@/lib/inngest/functions/jobs";
-import { ingestMetricsForPublishedItems } from "@/lib/social/metrics";
+import {
+  ingestAccountFollowerMetrics,
+  ingestMetricsForPublishedItems,
+} from "@/lib/social/metrics";
 import { listDueContentItems, publishContentItem } from "@/lib/social/publish";
 
 /** Publishes approved+scheduled content_items that are due. Runs every 5 minutes. */
@@ -42,7 +45,7 @@ export const publishDueSocialPosts = inngest.createFunction(
   },
 );
 
-/** Daily metrics pull into content_metrics for analytics. */
+/** Daily metrics pull into content_metrics + account follower snapshots. */
 export const ingestDailySocialMetrics = inngest.createFunction(
   {
     id: "social/ingest-daily-metrics",
@@ -50,13 +53,23 @@ export const ingestDailySocialMetrics = inngest.createFunction(
     triggers: [{ cron: "0 6 * * *" }],
   },
   async ({ step }) => {
-    const results = await step.run("ingest", async () =>
+    const results = await step.run("ingest-posts", async () =>
       ingestMetricsForPublishedItems(100),
     );
+    const followers = await step.run("ingest-followers", async () =>
+      ingestAccountFollowerMetrics(),
+    );
     return {
-      total: results.length,
-      ok: results.filter((r) => r.ok).length,
-      failed: results.filter((r) => !r.ok).length,
+      posts: {
+        total: results.length,
+        ok: results.filter((r) => r.ok).length,
+        failed: results.filter((r) => !r.ok).length,
+      },
+      followers: {
+        total: followers.length,
+        ok: followers.filter((r) => r.ok).length,
+        failed: followers.filter((r) => !r.ok).length,
+      },
     };
   },
 );

@@ -1,5 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBrandContext } from "@/lib/brand/context";
+import { buildKpiActualsMap } from "@/lib/reviews/kpi-actuals";
+import { latestFollowersInPeriod } from "@/lib/social/metrics";
 import type { MeetingType } from "@/lib/types/meetings";
 import type { BrandKpi } from "@/lib/types/reviews";
 
@@ -267,19 +269,47 @@ export async function gatherMeetingContext(params: {
       ?.kpi_targets ?? [];
 
   const kpis = (brandKpis ?? []) as BrandKpi[];
-  const kpiActuals: Record<string, number> = {
-    ad_spend: adSpend / 100,
-    ad_revenue: adRevenue / 100,
-    roas,
+  const { sumCrmRevenuePence } = await import("@/lib/crm/funnel");
+  const [crmRevenuePence, igFollowers, fbFollowers] = await Promise.all([
+    sumCrmRevenuePence({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      fromDate,
+      toDate,
+    }),
+    latestFollowersInPeriod({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      platform: "instagram",
+      fromDate,
+      toDate,
+    }),
+    latestFollowersInPeriod({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      platform: "facebook",
+      fromDate,
+      toDate,
+    }),
+  ]);
+
+  const kpiActuals = buildKpiActualsMap({
+    ad_spend_pence: adSpend,
+    ad_revenue_pence: adRevenue,
+    ad_conversions: adConversions,
     email_opens: emailOpens,
     seo_clicks: gscClicks,
     content_engagements: (contentMetrics ?? []).reduce(
       (s, m) => s + (m.likes ?? 0) + (m.comments ?? 0) + (m.shares ?? 0),
       0,
     ),
-  };
+    crm_revenue_pence: crmRevenuePence,
+    ig_followers: igFollowers,
+    fb_followers: fbFollowers,
+  });
 
   const emptySources: string[] = [];
+  if (!igFollowers && !fbFollowers) emptySources.push("social_followers");
   if (!(publishedPosts ?? []).length) emptySources.push("content_items");
   if (!(contentMetrics ?? []).length) emptySources.push("content_metrics");
   if (!(adMetrics ?? []).length) emptySources.push("ad_metrics_daily");
@@ -312,8 +342,14 @@ export async function gatherMeetingContext(params: {
       clicks: adClicks,
       conversions: adConversions,
       roas,
+      cpa_pounds: kpiActuals.cpa,
       daily: adMetrics ?? [],
     },
+    social_followers: {
+      ig_followers: igFollowers,
+      fb_followers: fbFollowers,
+    },
+    crm_revenue_pence: crmRevenuePence,
     email: {
       sends: emailSends.map((c) => ({
         id: c.id,
@@ -436,7 +472,15 @@ ${
 - Spend: £${(adSpend / 100).toFixed(2)} (${adSpend} pence)
 - Attributed revenue: £${(adRevenue / 100).toFixed(2)}
 - ROAS: ${roas.toFixed(2)}x
+- CPA: £${kpiActuals.cpa > 0 ? kpiActuals.cpa.toFixed(2) : "n/a"}
 - Clicks: ${adClicks}, Conversions: ${adConversions}
+
+### Social followers (latest snapshot in period)
+- Instagram: ${igFollowers || "n/a"}
+- Facebook Page: ${fbFollowers || "n/a"}
+
+### CRM revenue (orders)
+- £${(crmRevenuePence / 100).toFixed(2)} (falls back to ad revenue in KPI map when zero)
 
 ### Email
 - Campaigns sent/sending in window: ${emailSends.length}

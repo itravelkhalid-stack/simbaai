@@ -38,6 +38,19 @@ export type ContentMetric = {
   created_at: string;
 };
 
+export type SocialAccountMetricDaily = {
+  id: string;
+  organization_id: string;
+  brand_id: string;
+  connection_id: string | null;
+  platform: ContentPlatform;
+  account_id: string;
+  metric_date: string;
+  followers: number;
+  raw: Record<string, unknown>;
+  created_at: string;
+};
+
 export type TokenSet = {
   accessToken: string;
   refreshToken?: string | null;
@@ -70,6 +83,11 @@ export type PostMetrics = {
   raw?: Record<string, unknown>;
 };
 
+export type AccountFollowers = {
+  followers: number;
+  raw?: Record<string, unknown>;
+};
+
 export interface SocialProvider {
   id: ContentPlatform;
   displayName: string;
@@ -92,6 +110,12 @@ export interface SocialProvider {
     platformPostId: string;
     metadata?: Record<string, unknown>;
   }): Promise<PostMetrics>;
+  /** Account-level followers (IG / FB). Optional — other platforms may omit. */
+  getAccountFollowers?(input: {
+    accessToken: string;
+    accountId: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<AccountFollowers>;
 }
 
 export function expiresWithinDays(

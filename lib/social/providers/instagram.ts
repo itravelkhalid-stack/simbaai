@@ -235,4 +235,22 @@ export const instagramProvider: SocialProvider = {
       raw: json,
     };
   },
+
+  async getAccountFollowers({ accessToken, accountId }) {
+    const url = new URL(`${GRAPH}/${accountId}`);
+    url.searchParams.set("fields", "followers_count,username");
+    url.searchParams.set("access_token", accessToken);
+    try {
+      const json = (await readJson(await fetch(url))) as {
+        followers_count?: number;
+        username?: string;
+      };
+      return {
+        followers: Number(json.followers_count ?? 0),
+        raw: json as Record<string, unknown>,
+      };
+    } catch (error) {
+      throw new Error(humanizeInstagramGraphError(error));
+    }
+  },
 };

@@ -590,6 +590,22 @@ export type Database = {
         },
         Partial<import("@/lib/social/types").ContentMetric>
       >;
+      social_account_metrics_daily: TableDef<
+        import("@/lib/social/types").SocialAccountMetricDaily,
+        {
+          id?: string;
+          organization_id: string;
+          brand_id: string;
+          connection_id?: string | null;
+          platform: import("@/lib/types/content").ContentPlatform;
+          account_id: string;
+          metric_date: string;
+          followers?: number;
+          raw?: Record<string, unknown>;
+          created_at?: string;
+        },
+        Partial<import("@/lib/social/types").SocialAccountMetricDaily>
+      >;
       email_lists: TableDef<
         import("@/lib/types/email").EmailList,
         {

@@ -164,4 +164,16 @@ export const SUGGESTED_KPI_KEYS = [
   { metric_key: "seo_clicks", label: "SEO clicks", unit: "", channel: "seo" },
   { metric_key: "content_engagements", label: "Content engagements", unit: "", channel: "content" },
   { metric_key: "crm_revenue", label: "CRM / attributed revenue", unit: "£", channel: "crm" },
+  {
+    metric_key: "ig_followers",
+    label: "Instagram followers",
+    unit: "",
+    channel: "content",
+  },
+  {
+    metric_key: "fb_followers",
+    label: "Facebook Page followers",
+    unit: "",
+    channel: "content",
+  },
 ] as const;
