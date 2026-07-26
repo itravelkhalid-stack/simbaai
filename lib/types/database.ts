@@ -1335,6 +1335,9 @@ export type Database = {
           actions?: import("@/lib/types/meetings").MeetingActionItem[];
           context_snapshot?: Record<string, unknown>;
           blockers?: import("@/lib/types/meetings").MeetingBlocker[];
+          escalation_flagged?: boolean;
+          actions_taken?: import("@/lib/types/meetings").MeetingActionOutcome[];
+          actions_awaiting_approval?: import("@/lib/types/meetings").MeetingActionOutcome[];
           agent_run_id?: string | null;
           started_at?: string | null;
           completed_at?: string | null;
@@ -1356,6 +1359,10 @@ export type Database = {
           due_date?: string | null;
           status?: import("@/lib/types/meetings").MeetingActionStatus;
           linked_task_id?: string | null;
+          action_type?: import("@/lib/types/meetings").MeetingTypedAction;
+          payload?: Record<string, unknown>;
+          execution_status?: import("@/lib/types/meetings").MeetingActionExecution;
+          execution_result?: string | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;

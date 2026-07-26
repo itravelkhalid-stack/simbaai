@@ -119,7 +119,7 @@ export async function publishContentItem(itemId: string) {
       await supabase
         .from("content_items")
         .update({
-          status: "proposed",
+          status: "pending_approval",
           publish_error: message,
         })
         .eq("id", itemId);

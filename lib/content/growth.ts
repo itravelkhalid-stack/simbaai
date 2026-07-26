@@ -11,6 +11,7 @@ import {
 } from "@/lib/autonomy/settings";
 import { getBrandContext } from "@/lib/brand/context";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 import type { ContentItem } from "@/lib/types/content";
 import type { Brand } from "@/lib/types/research";
 import type { ContentMetric } from "@/lib/social/types";
@@ -55,8 +56,8 @@ async function seedSuggestedSlots(params: {
   brandId: string;
   planId: string;
   slots: Array<{
-    platform: string;
-    format: string;
+    platform: ContentPlatform;
+    format: ContentFormat;
     topic: string;
     pillar_hint?: string;
     preferred_day_offset?: number;
