@@ -23,6 +23,20 @@ export function MeetingsSettingsForm({
 
   return (
     <form action={action} className="space-y-6 rounded-xl border p-4">
+      <div className="space-y-2">
+        <Label htmlFor="timezone">Timezone</Label>
+        <Input
+          id="timezone"
+          name="timezone"
+          defaultValue={settings.timezone}
+          placeholder="Europe/London"
+        />
+        <p className="text-xs text-muted-foreground">
+          Hours below are local to this timezone. Defaults: daily 07:00, weekly Mon
+          08:00, quarterly/annual first Monday 09:00.
+        </p>
+      </div>
+
       <section className="space-y-3">
         <label className="flex items-center gap-2 text-sm font-medium">
           <input
@@ -33,14 +47,14 @@ export function MeetingsSettingsForm({
           Daily standup
         </label>
         <div className="space-y-2 pl-6">
-          <Label htmlFor="dailyHour">Hour (UTC)</Label>
+          <Label htmlFor="dailyHour">Hour (local)</Label>
           <Input
             id="dailyHour"
             name="dailyHour"
             type="number"
             min={0}
             max={23}
-            defaultValue={settings.daily_standup_hour_utc}
+            defaultValue={settings.daily_standup_hour}
           />
         </div>
       </section>
@@ -67,14 +81,14 @@ export function MeetingsSettingsForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="weeklyHour">Hour (UTC)</Label>
+            <Label htmlFor="weeklyHour">Hour (local)</Label>
             <Input
               id="weeklyHour"
               name="weeklyHour"
               type="number"
               min={0}
               max={23}
-              defaultValue={settings.weekly_marketing_hour_utc}
+              defaultValue={settings.weekly_marketing_hour}
             />
           </div>
         </div>
@@ -102,14 +116,14 @@ export function MeetingsSettingsForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="monthlyHour">Hour (UTC)</Label>
+            <Label htmlFor="monthlyHour">Hour (local)</Label>
             <Input
               id="monthlyHour"
               name="monthlyHour"
               type="number"
               min={0}
               max={23}
-              defaultValue={settings.monthly_board_hour_utc}
+              defaultValue={settings.monthly_board_hour}
             />
           </div>
         </div>
@@ -122,17 +136,39 @@ export function MeetingsSettingsForm({
             name="quarterlyEnabled"
             defaultChecked={settings.quarterly_board_enabled}
           />
-          Quarterly board (1st of Jan/Apr/Jul/Oct)
+          Quarterly board (first Monday of Jan/Apr/Jul/Oct)
         </label>
         <div className="space-y-2 pl-6">
-          <Label htmlFor="quarterlyHour">Hour (UTC)</Label>
+          <Label htmlFor="quarterlyHour">Hour (local)</Label>
           <Input
             id="quarterlyHour"
             name="quarterlyHour"
             type="number"
             min={0}
             max={23}
-            defaultValue={settings.quarterly_board_hour_utc}
+            defaultValue={settings.quarterly_board_hour}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            name="annualEnabled"
+            defaultChecked={settings.annual_review_enabled}
+          />
+          Annual review (first Monday of January)
+        </label>
+        <div className="space-y-2 pl-6">
+          <Label htmlFor="annualHour">Hour (local)</Label>
+          <Input
+            id="annualHour"
+            name="annualHour"
+            type="number"
+            min={0}
+            max={23}
+            defaultValue={settings.annual_review_hour}
           />
         </div>
       </section>

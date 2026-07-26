@@ -167,9 +167,15 @@ export default async function MeetingDetailPage({
                 <li key={a.id} className="rounded-lg border p-3 text-sm">
                   <p>{a.description}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {a.owner_type} · {a.status}
+                    {a.action_type ?? "note"} · {a.owner_type} · {a.status}
+                    {a.execution_status ? ` · exec ${a.execution_status}` : ""}
                     {a.due_date ? ` · due ${a.due_date}` : ""}
                   </p>
+                  {a.execution_result ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {a.execution_result}
+                    </p>
+                  ) : null}
                   {a.linked_task_id ? (
                     <Link
                       href={`/planning/campaigns`}
@@ -205,6 +211,56 @@ export default async function MeetingDetailPage({
           )}
         </section>
       </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-xl border p-4">
+          <h2 className="mb-3 text-sm font-medium">Actions taken</h2>
+          {(m.actions_taken ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">None executed.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {(m.actions_taken ?? []).map((a, i) => (
+                <li key={i}>
+                  <span className="font-medium">[{a.action_type}]</span> {a.description}
+                  {a.detail ? (
+                    <span className="text-muted-foreground"> — {a.detail}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="rounded-xl border p-4">
+          <h2 className="mb-3 text-sm font-medium">Actions awaiting approval</h2>
+          {(m.actions_awaiting_approval ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">None awaiting.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {(m.actions_awaiting_approval ?? []).map((a, i) => (
+                <li key={i}>
+                  <span className="font-medium">
+                    [{a.action_type} / {a.status}]
+                  </span>{" "}
+                  {a.description}
+                  {a.detail ? (
+                    <span className="text-muted-foreground"> — {a.detail}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      {m.escalation_flagged ? (
+        <section className="rounded-xl border border-destructive/40 p-4 text-sm">
+          <h2 className="mb-1 font-medium text-destructive">Escalation</h2>
+          <p className="text-muted-foreground">
+            One or more KPIs were more than 25% off target for two consecutive weekly
+            meetings. Org admins were notified.
+          </p>
+        </section>
+      ) : null}
 
       <MeetingChat
         meetingId={meetingId}

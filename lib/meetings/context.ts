@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBrandContext } from "@/lib/brand/context";
 import type { MeetingType } from "@/lib/types/meetings";
+import type { BrandKpi } from "@/lib/types/reviews";
 
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -22,13 +23,14 @@ export type MeetingPeriodContext = {
   toDate: string;
   markdown: string;
   snapshot: Record<string, unknown>;
+  emptySources: string[];
+  dataSparse: boolean;
 };
 
 function periodForType(type: MeetingType): { from: Date; to: Date; label: string } {
   const to = new Date();
   if (type === "daily_standup") {
-    const from = daysAgo(1);
-    return { from, to: daysAgo(0), label: "Yesterday → today" };
+    return { from: daysAgo(1), to: daysAgo(0), label: "Yesterday → today" };
   }
   if (type === "weekly_marketing") {
     return { from: daysAgo(7), to, label: "Last 7 days" };
@@ -38,6 +40,9 @@ function periodForType(type: MeetingType): { from: Date; to: Date; label: string
   }
   if (type === "quarterly_board") {
     return { from: daysAgo(90), to, label: "Last 90 days" };
+  }
+  if (type === "annual_review") {
+    return { from: daysAgo(365), to, label: "Last 12 months" };
   }
   return { from: daysAgo(14), to, label: "Last 14 days" };
 }
@@ -64,17 +69,26 @@ export async function gatherMeetingContext(params: {
     .eq("brand_id", params.brandId);
   const seoProjectIds = (seoProjects ?? []).map((p) => p.id);
 
+  const { data: brandCampaigns } = await supabase
+    .from("ad_campaigns")
+    .select("id")
+    .eq("organization_id", params.organizationId)
+    .eq("brand_id", params.brandId);
+  const campaignIds = (brandCampaigns ?? []).map((c) => c.id);
+
   const [
     { data: publishedPosts },
-    { data: contentMetrics },
-    { data: adMetrics },
     { data: emailCampaigns },
+    { data: emailEvents },
     { data: gscDaily },
     { data: seoKeywords },
     { data: seoSummaries },
     { data: tasks },
     { data: plans },
     { data: campaigns },
+    { data: brandKpis },
+    { data: ga4Daily },
+    { data: financeSummaries },
   ] = await Promise.all([
     supabase
       .from("content_items")
@@ -87,29 +101,19 @@ export async function gatherMeetingContext(params: {
       .order("published_at", { ascending: false })
       .limit(40),
     supabase
-      .from("content_metrics")
-      .select(
-        "content_item_id, impressions, reach, likes, comments, shares, clicks, captured_at",
-      )
-      .eq("organization_id", params.organizationId)
-      .gte("captured_at", from.toISOString())
-      .lte("captured_at", to.toISOString())
-      .limit(200),
-    supabase
-      .from("ad_metrics_daily")
-      .select(
-        "metric_date, spend_pence, impressions, clicks, conversions, revenue_pence",
-      )
-      .eq("organization_id", params.organizationId)
-      .gte("metric_date", fromDate)
-      .lte("metric_date", toDate),
-    supabase
       .from("email_campaigns")
       .select("id, name, status, stats, sent_at, created_at")
       .eq("organization_id", params.organizationId)
       .eq("brand_id", params.brandId)
       .order("created_at", { ascending: false })
       .limit(20),
+    supabase
+      .from("email_events")
+      .select("event_type, occurred_at")
+      .eq("organization_id", params.organizationId)
+      .gte("occurred_at", from.toISOString())
+      .lte("occurred_at", to.toISOString())
+      .limit(500),
     seoProjectIds.length
       ? supabase
           .from("seo_gsc_daily")
@@ -167,7 +171,55 @@ export async function gatherMeetingContext(params: {
       .eq("brand_id", params.brandId)
       .in("status", ["active", "planned", "paused"])
       .limit(20),
+    supabase
+      .from("brand_kpis")
+      .select("*")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("analytics_ga4_daily")
+      .select("metric_date, sessions, conversions")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .gte("metric_date", fromDate)
+      .lte("metric_date", toDate)
+      .limit(400),
+    supabase
+      .from("finance_weekly_summaries")
+      .select("week_start, summary_markdown, alerts")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .gte("week_start", fromDate)
+      .order("week_start", { ascending: false })
+      .limit(8),
   ]);
+
+  const postIds = (publishedPosts ?? []).map((p) => p.id);
+  const { data: contentMetrics } = postIds.length
+    ? await supabase
+        .from("content_metrics")
+        .select(
+          "content_item_id, impressions, reach, likes, comments, shares, clicks, captured_at",
+        )
+        .eq("organization_id", params.organizationId)
+        .in("content_item_id", postIds)
+        .gte("captured_at", from.toISOString())
+        .lte("captured_at", to.toISOString())
+        .limit(200)
+    : { data: [] as never[] };
+
+  const { data: adMetrics } = campaignIds.length
+    ? await supabase
+        .from("ad_metrics_daily")
+        .select(
+          "campaign_id, metric_date, spend_pence, impressions, clicks, conversions, revenue_pence",
+        )
+        .eq("organization_id", params.organizationId)
+        .in("campaign_id", campaignIds)
+        .gte("metric_date", fromDate)
+        .lte("metric_date", toDate)
+    : { data: [] as never[] };
 
   const adSpend = (adMetrics ?? []).reduce((s, r) => s + (r.spend_pence ?? 0), 0);
   const adRevenue = (adMetrics ?? []).reduce((s, r) => s + (r.revenue_pence ?? 0), 0);
@@ -191,6 +243,20 @@ export async function gatherMeetingContext(params: {
     (s, c) => s + Number((c.stats as Record<string, number>)?.opens ?? 0),
     0,
   );
+  const emailEventCounts = (emailEvents ?? []).reduce(
+    (acc, e) => {
+      const key = String(e.event_type ?? "unknown");
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+
+  const ga4Sessions = (ga4Daily ?? []).reduce((s, r) => s + Number(r.sessions ?? 0), 0);
+  const ga4Conversions = (ga4Daily ?? []).reduce(
+    (s, r) => s + Number(r.conversions ?? 0),
+    0,
+  );
 
   const completedTasks = (tasks ?? []).filter((t) => t.status === "done");
   const blockedTasks = (tasks ?? []).filter((t) => t.status === "blocked");
@@ -200,8 +266,36 @@ export async function gatherMeetingContext(params: {
     (plans?.[0]?.document as { kpi_targets?: Array<{ metric: string; target: number; current?: number }> } | null)
       ?.kpi_targets ?? [];
 
+  const kpis = (brandKpis ?? []) as BrandKpi[];
+  const kpiActuals: Record<string, number> = {
+    ad_spend: adSpend / 100,
+    ad_revenue: adRevenue / 100,
+    roas,
+    email_opens: emailOpens,
+    seo_clicks: gscClicks,
+    content_engagements: (contentMetrics ?? []).reduce(
+      (s, m) => s + (m.likes ?? 0) + (m.comments ?? 0) + (m.shares ?? 0),
+      0,
+    ),
+  };
+
+  const emptySources: string[] = [];
+  if (!(publishedPosts ?? []).length) emptySources.push("content_items");
+  if (!(contentMetrics ?? []).length) emptySources.push("content_metrics");
+  if (!(adMetrics ?? []).length) emptySources.push("ad_metrics_daily");
+  if (!emailSends.length && !(emailEvents ?? []).length) emptySources.push("email");
+  if (!(gscDaily ?? []).length) emptySources.push("gsc");
+  if (!(ga4Daily ?? []).length) emptySources.push("ga4");
+  if (!(financeSummaries ?? []).length) emptySources.push("finance");
+  if (!kpis.length && !planKpis.length) emptySources.push("kpi_targets");
+  if (!(plans ?? []).length) emptySources.push("marketing_plan");
+
+  const dataSparse = emptySources.length >= 4;
+
   const snapshot = {
     period: { fromDate, toDate, label, yesterday, today },
+    empty_sources: emptySources,
+    data_sparse: dataSparse,
     content: {
       published_count: (publishedPosts ?? []).length,
       posts: (publishedPosts ?? []).map((p) => ({
@@ -228,6 +322,7 @@ export async function gatherMeetingContext(params: {
         sent_at: c.sent_at,
       })),
       opens: emailOpens,
+      events: emailEventCounts,
     },
     seo: {
       clicks: gscClicks,
@@ -236,6 +331,25 @@ export async function gatherMeetingContext(params: {
       weekly_summaries: seoSummaries ?? [],
       daily: gscDaily ?? [],
     },
+    ga4: {
+      sessions: ga4Sessions,
+      conversions: ga4Conversions,
+      days: (ga4Daily ?? []).length,
+    },
+    finance: {
+      weekly_summaries: financeSummaries ?? [],
+    },
+    brand_kpis: kpis.map((k) => ({
+      metric_key: k.metric_key,
+      label: k.label,
+      target_value: k.target_value,
+      unit: k.unit,
+      actual: kpiActuals[k.metric_key] ?? null,
+      variance_pct:
+        k.target_value > 0 && kpiActuals[k.metric_key] != null
+          ? ((kpiActuals[k.metric_key]! - k.target_value) / k.target_value) * 100
+          : null,
+    })),
     tasks: {
       completed: completedTasks.map((t) => ({
         id: t.id,
@@ -258,8 +372,38 @@ export async function gatherMeetingContext(params: {
     campaigns: campaigns ?? [],
   };
 
+  const emptyDisclosure = dataSparse
+    ? `
+## DATA AVAILABILITY WARNING
+This meeting has sparse or empty live data. Missing sources: ${emptySources.join(", ") || "none"}.
+You MUST state explicitly in the minutes that context is incomplete / empty for those sources. Do not invent metrics.
+`
+    : emptySources.length
+      ? `
+## Data gaps
+Missing or empty sources this period: ${emptySources.join(", ")}. Mention these gaps briefly in the minutes.
+`
+      : "";
+
   const markdown = `
 ## Period: ${label} (${fromDate} → ${toDate})
+${emptyDisclosure}
+
+### Brand KPI targets vs actuals
+${
+  kpis.length
+    ? kpis
+        .map((k) => {
+          const actual = kpiActuals[k.metric_key];
+          const variance =
+            k.target_value > 0 && actual != null
+              ? `${(((actual - k.target_value) / k.target_value) * 100).toFixed(1)}%`
+              : "n/a";
+          return `- ${k.label} (${k.metric_key}): target ${k.target_value}${k.unit} | actual ${actual ?? "n/a"} | variance ${variance}`;
+        })
+        .join("\n")
+    : "- No brand_kpis configured"
+}
 
 ### Content published
 - Count: ${(publishedPosts ?? []).length}
@@ -275,7 +419,7 @@ ${
     : "- None"
 }
 
-### Early content metrics (sample)
+### Content metrics (brand-scoped)
 ${
   (contentMetrics ?? []).length
     ? (contentMetrics ?? [])
@@ -288,7 +432,7 @@ ${
     : "- No metrics yet"
 }
 
-### Paid ads
+### Paid ads (brand campaigns only)
 - Spend: £${(adSpend / 100).toFixed(2)} (${adSpend} pence)
 - Attributed revenue: £${(adRevenue / 100).toFixed(2)}
 - ROAS: ${roas.toFixed(2)}x
@@ -297,6 +441,7 @@ ${
 ### Email
 - Campaigns sent/sending in window: ${emailSends.length}
 - Opens (sum of stats): ${emailOpens}
+- Event counts: ${JSON.stringify(emailEventCounts)}
 ${
   emailSends.length
     ? emailSends
@@ -340,6 +485,23 @@ ${
     : "- None"
 }
 
+### GA4
+- Sessions: ${ga4Sessions}, Conversions: ${ga4Conversions}
+- Days with data: ${(ga4Daily ?? []).length}
+
+### Finance rollups
+${
+  (financeSummaries ?? []).length
+    ? (financeSummaries ?? [])
+        .slice(0, 4)
+        .map(
+          (s) =>
+            `- Week ${s.week_start}: ${(s.summary_markdown ?? "").slice(0, 240)}`,
+        )
+        .join("\n")
+    : "- No finance weekly summaries in window"
+}
+
 ### Planning tasks
 - Completed: ${completedTasks.length}
 - Blocked: ${blockedTasks.length}
@@ -347,14 +509,6 @@ ${
 ${
   blockedTasks.length
     ? `Blocked:\n${blockedTasks.map((t) => `- ${t.title} (${t.module})`).join("\n")}`
-    : ""
-}
-${
-  inProgressTasks.length
-    ? `In progress:\n${inProgressTasks
-        .slice(0, 10)
-        .map((t) => `- ${t.title} (${t.module})`)
-        .join("\n")}`
     : ""
 }
 
@@ -381,6 +535,13 @@ ${
         .join("\n")
     : "- No approved plan KPIs"
 }
+
+### Active ad campaign IDs (for typed pause/budget actions)
+${
+  campaignIds.length
+    ? campaignIds.map((id) => `- ${id}`).join("\n")
+    : "- None"
+}
 `.trim();
 
   return {
@@ -393,5 +554,7 @@ ${
     toDate,
     markdown,
     snapshot,
+    emptySources,
+    dataSparse,
   };
 }

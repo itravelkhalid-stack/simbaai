@@ -28,6 +28,7 @@ const scheduleTypeSchema = z.enum([
   "weekly_marketing",
   "monthly_board",
   "quarterly_board",
+  "annual_review",
   "adhoc",
 ]);
 
@@ -50,16 +51,20 @@ export async function saveMeetingsSettings(
     const next = {
       ...settings,
       meetings: {
+        timezone: String(formData.get("timezone") ?? "Europe/London").trim() ||
+          "Europe/London",
         daily_standup_enabled: formData.get("dailyEnabled") === "on",
-        daily_standup_hour_utc: Number(formData.get("dailyHour") ?? 8),
+        daily_standup_hour: Number(formData.get("dailyHour") ?? 7),
         weekly_marketing_enabled: formData.get("weeklyEnabled") === "on",
         weekly_marketing_weekday: Number(formData.get("weeklyWeekday") ?? 1),
-        weekly_marketing_hour_utc: Number(formData.get("weeklyHour") ?? 14),
+        weekly_marketing_hour: Number(formData.get("weeklyHour") ?? 8),
         monthly_board_enabled: formData.get("monthlyEnabled") === "on",
         monthly_board_day: Number(formData.get("monthlyDay") ?? 1),
-        monthly_board_hour_utc: Number(formData.get("monthlyHour") ?? 15),
+        monthly_board_hour: Number(formData.get("monthlyHour") ?? 9),
         quarterly_board_enabled: formData.get("quarterlyEnabled") === "on",
-        quarterly_board_hour_utc: Number(formData.get("quarterlyHour") ?? 15),
+        quarterly_board_hour: Number(formData.get("quarterlyHour") ?? 9),
+        annual_review_enabled: formData.get("annualEnabled") === "on",
+        annual_review_hour: Number(formData.get("annualHour") ?? 9),
       },
     };
     const { error } = await supabase

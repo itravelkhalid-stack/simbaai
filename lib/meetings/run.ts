@@ -1,17 +1,18 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateMeetingForType } from "@/lib/agents/meetings/generate";
 import { gatherMeetingContext } from "@/lib/meetings/context";
+import { evaluateWeeklyKpiEscalation } from "@/lib/meetings/escalation";
+import { executeMeetingActions } from "@/lib/meetings/execute-actions";
 import { notifyUser } from "@/lib/planning/materialize";
 import type {
   Meeting,
   MeetingActionItem,
+  MeetingActionOutcome,
   MeetingBlocker,
   MeetingDecision,
   MeetingType,
 } from "@/lib/types/meetings";
-import {
-  MEETING_TYPE_LABELS,
-} from "@/lib/types/meetings";
+import { MEETING_TYPE_LABELS } from "@/lib/types/meetings";
 
 function addDays(isoDate: string, days: number) {
   const d = new Date(`${isoDate}T00:00:00Z`);
@@ -63,13 +64,52 @@ async function persistActions(params: {
       meeting_id: params.meetingId,
       description: a.description,
       owner_type: a.owner_type,
-      due_date: a.due_offset_days != null
-        ? addDays(todayUtc(), a.due_offset_days)
-        : null,
+      due_date:
+        a.due_offset_days != null ? addDays(todayUtc(), a.due_offset_days) : null,
       sort_order: i,
       status: "open" as const,
+      action_type: a.action_type ?? "note",
+      payload: a.payload ?? {},
+      execution_status: "pending" as const,
     })),
   );
+}
+
+function appendActionsSections(
+  minutes: string,
+  taken: MeetingActionOutcome[],
+  awaiting: MeetingActionOutcome[],
+) {
+  const takenMd = taken.length
+    ? taken
+        .map(
+          (a) =>
+            `- **[${a.action_type}]** ${a.description}${a.detail ? ` — ${a.detail}` : ""}`,
+        )
+        .join("\n")
+    : "- None executed automatically";
+  const awaitingMd = awaiting.length
+    ? awaiting
+        .map(
+          (a) =>
+            `- **[${a.action_type} / ${a.status}]** ${a.description}${a.detail ? ` — ${a.detail}` : ""}`,
+        )
+        .join("\n")
+    : "- None awaiting approval";
+
+  const stripped = minutes
+    .replace(/## Actions taken[\s\S]*?(?=## |$)/gi, "")
+    .replace(/## Actions awaiting approval[\s\S]*?(?=## |$)/gi, "")
+    .trim();
+
+  return `${stripped}
+
+## Actions taken
+${takenMd}
+
+## Actions awaiting approval
+${awaitingMd}
+`.trim();
 }
 
 function extractCommon(data: Record<string, unknown>) {
@@ -83,7 +123,6 @@ function extractCommon(data: Record<string, unknown>) {
   const executive_summary =
     typeof data.executive_summary === "string" ? data.executive_summary : null;
 
-  // Enrich standup minutes if structured fields present
   let minutesMarkdown = minutes;
   if (data.yesterday || data.today) {
     minutesMarkdown = [
@@ -104,19 +143,34 @@ function extractCommon(data: Record<string, unknown>) {
       .join("\n");
   }
 
-  // Weekly: weave persona discussion into minutes if thin
   if (
     Array.isArray(data.persona_discussion) &&
     data.persona_discussion.length &&
     !minutes.includes("Head of")
   ) {
-    const dialogue = (data.persona_discussion as Array<{ role: string; statement: string }>)
+    const dialogue = (
+      data.persona_discussion as Array<{ role: string; statement: string }>
+    )
       .map((p) => `**${p.role}:** ${p.statement}`)
       .join("\n\n");
     const priorities = Array.isArray(data.priorities_next_week)
       ? `\n\n## Priorities next week\n${(data.priorities_next_week as string[]).map((p) => `- ${p}`).join("\n")}`
       : "";
     minutesMarkdown = `${minutes}\n\n## Discussion\n\n${dialogue}${priorities}`;
+  }
+
+  if (typeof data.year_in_review === "string" && data.year_in_review) {
+    minutesMarkdown = [
+      minutes,
+      "",
+      "## Year in review",
+      data.year_in_review,
+      Array.isArray(data.strategic_recommendations_next_year)
+        ? `\n## Next-year recommendations\n${(data.strategic_recommendations_next_year as string[]).map((r) => `- ${r}`).join("\n")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   return {
@@ -175,29 +229,72 @@ export async function runMeeting(meetingId: string) {
     const result = await generateMeetingForType(m.type, ctx);
     const common = extractCommon(result.data as unknown as Record<string, unknown>);
 
+    await persistActions({
+      organizationId: m.organization_id,
+      meetingId,
+      actions: common.actions,
+    });
+
+    const { taken, awaiting } = await executeMeetingActions({
+      organizationId: m.organization_id,
+      brandId: m.brand_id,
+      meetingId,
+      actions: common.actions,
+    });
+
+    let minutes = appendActionsSections(
+      common.minutes_markdown,
+      taken,
+      awaiting,
+    );
+    if (ctx.dataSparse) {
+      const banner = `> **Sparse data notice:** Missing sources — ${ctx.emptySources.join(", ") || "unknown"}. Minutes reflect incomplete live context.\n\n`;
+      if (!minutes.includes("Sparse data notice")) {
+        minutes = banner + minutes;
+      }
+    }
+
+    let escalated = false;
+    if (m.type === "weekly_marketing") {
+      const variances = (
+        (ctx.snapshot.brand_kpis as Array<{
+          metric_key: string;
+          label: string;
+          variance_pct: number | null;
+        }>) ?? []
+      );
+      const esc = await evaluateWeeklyKpiEscalation({
+        organizationId: m.organization_id,
+        brandId: m.brand_id,
+        meetingId,
+        currentVariances: variances,
+      });
+      escalated = esc.escalated;
+      if (escalated) {
+        minutes += `\n\n## Escalation\nKPI(s) >25% off target for two consecutive weekly meetings: ${esc.metrics.join(", ")}. Org admins have been notified.\n`;
+      }
+    }
+
     await supabase
       .from("meetings")
       .update({
         status: "complete",
         title: common.title || m.title,
         agenda: common.agenda,
-        minutes_markdown: common.minutes_markdown,
+        minutes_markdown: minutes,
         executive_summary: common.executive_summary,
         decisions: common.decisions,
         actions: common.actions,
         blockers: common.blockers,
         context_snapshot: ctx.snapshot,
+        actions_taken: taken,
+        actions_awaiting_approval: awaiting,
+        escalation_flagged: escalated,
         agent_run_id: agentRun?.id ?? null,
         completed_at: new Date().toISOString(),
         error: null,
       })
       .eq("id", meetingId);
-
-    await persistActions({
-      organizationId: m.organization_id,
-      meetingId,
-      actions: common.actions,
-    });
 
     if (agentRun?.id) {
       await supabase
@@ -209,6 +306,10 @@ export async function runMeeting(meetingId: string) {
             decisions: common.decisions.length,
             actions: common.actions.length,
             blockers: common.blockers.length,
+            executed: taken.length,
+            awaiting: awaiting.length,
+            escalated,
+            empty_sources: ctx.emptySources,
           },
           tokens_in: result.tokensIn,
           tokens_out: result.tokensOut,
@@ -234,6 +335,9 @@ export async function runMeeting(meetingId: string) {
       decisions: common.decisions.length,
       actions: common.actions.length,
       blockers: humanBlockers.length,
+      executed: taken.length,
+      awaiting: awaiting.length,
+      escalated,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Meeting failed";

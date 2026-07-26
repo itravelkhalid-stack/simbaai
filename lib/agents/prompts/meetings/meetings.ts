@@ -16,6 +16,28 @@ const actionSchema = z.object({
   owner_type: z.enum(["ai", "human"]),
   owner_label: z.string().optional(),
   due_offset_days: z.number().int().nonnegative().optional(),
+  action_type: z
+    .enum([
+      "pause_campaign",
+      "shift_budget",
+      "change_content_mix",
+      "flag_risk",
+      "note",
+    ])
+    .default("note"),
+  payload: z
+    .object({
+      campaign_id: z.string().optional(),
+      platform: z.enum(["meta", "google", "tiktok", "x", "bing"]).optional(),
+      amount_pence: z.number().int().optional(),
+      current_daily_budget_pence: z.number().int().optional(),
+      proposed_daily_budget_pence: z.number().int().optional(),
+      content_mix_notes: z.string().optional(),
+      risk_code: z.string().optional(),
+    })
+    .passthrough()
+    .optional()
+    .default({}),
 });
 
 const blockerSchema = z.object({
@@ -23,6 +45,18 @@ const blockerSchema = z.object({
   detail: z.string(),
   needs_human: z.boolean(),
 });
+
+const TYPED_ACTIONS_CONTRACT = `
+Typed actions (required when recommending operational changes):
+- action_type: pause_campaign | shift_budget | change_content_mix | flag_risk | note
+- payload.campaign_id must be a real ad campaign UUID from the data when pausing/shifting budget
+- shift_budget: include amount_pence and/or proposed_daily_budget_pence
+- change_content_mix: include content_mix_notes
+- flag_risk / note: human review only
+Every meeting minutes MUST end with sections "## Actions taken" and "## Actions awaiting approval"
+(placeholders are fine — the system fills results after execution).
+If data sources are missing/empty, say so explicitly — never invent numbers.
+`;
 
 export const standupMeetingSchema = z.object({
   title: z.string(),
@@ -83,9 +117,42 @@ export const boardMeetingSchema = z.object({
   blockers: z.array(blockerSchema).default([]),
 });
 
+export const annualReviewSchema = z.object({
+  title: z.string(),
+  agenda: z.array(agendaItemSchema).default([]),
+  executive_summary: z.string(),
+  minutes_markdown: z.string(),
+  year_in_review: z.string(),
+  plan_vs_actual: z
+    .array(
+      z.object({
+        area: z.string(),
+        planned: z.string(),
+        actual: z.string(),
+        verdict: z.enum(["hit", "miss", "exceeded", "unknown"]),
+      }),
+    )
+    .default([]),
+  kpi_attainment: z
+    .array(
+      z.object({
+        metric: z.string(),
+        target: z.number(),
+        actual: z.number(),
+        attainment_pct: z.number(),
+      }),
+    )
+    .default([]),
+  strategic_recommendations_next_year: z.array(z.string()).min(1),
+  decisions: z.array(decisionSchema).min(1),
+  actions: z.array(actionSchema).min(1),
+  blockers: z.array(blockerSchema).default([]),
+});
+
 export type StandupMeetingOutput = z.infer<typeof standupMeetingSchema>;
 export type WeeklyMeetingOutput = z.infer<typeof weeklyMeetingSchema>;
 export type BoardMeetingOutput = z.infer<typeof boardMeetingSchema>;
+export type AnnualReviewOutput = z.infer<typeof annualReviewSchema>;
 
 export const dailyStandupPrompt = {
   system: `You are the Daily Standup facilitator for an AI marketing agency (GrowthOS).
@@ -96,6 +163,7 @@ Structure minutes_markdown with three clear sections:
 3. Blockers needing human input
 
 Be specific with numbers. Flag blockers that truly need a human (approvals, budget, strategy choices, blocked tasks).
+${TYPED_ACTIONS_CONTRACT}
 Return JSON only matching the schema.`,
 };
 
@@ -108,8 +176,10 @@ Write the meeting as a lively but professional discussion between these personas
 - Analyst
 - Managing Director
 
-Use persona_discussion for the debate (each entry is one speaking turn). End with agreed next-week priorities, clear decisions, and owned actions (ai or human).
+Use persona_discussion for the debate (each entry is one speaking turn). End with agreed next-week priorities, clear decisions, and owned typed actions (ai or human).
+When a campaign is clearly underperforming vs KPI targets, prefer pause_campaign or shift_budget with a real campaign_id from the data.
 Minutes should read like meeting minutes that weave the discussion and conclusions.
+${TYPED_ACTIONS_CONTRACT}
 Return JSON only matching the schema.`,
 };
 
@@ -122,8 +192,23 @@ Produce a formal board-pack style record:
 - Wins, misses, risks
 - Strategic recommendations
 - Proposed next-period budget (pence)
-- Decisions and owned actions
+- Decisions and owned typed actions
 
 Tone: formal, concise, evidence-led. Minutes are longer and board-ready.
+${TYPED_ACTIONS_CONTRACT}
+Return JSON only matching the schema.`,
+};
+
+export const annualReviewPrompt = {
+  system: `You are the Annual Review facilitator for GrowthOS.
+Produce a full-year retrospective vs plan:
+- Year in review narrative
+- Plan vs actual by major area
+- KPI attainment for the year
+- Strategic recommendations for next year
+- Decisions and typed actions to set up the next year
+
+Be honest about data gaps. Do not invent annual totals that are not in the provided data.
+${TYPED_ACTIONS_CONTRACT}
 Return JSON only matching the schema.`,
 };

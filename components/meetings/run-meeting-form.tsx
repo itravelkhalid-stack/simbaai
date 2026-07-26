@@ -19,6 +19,7 @@ const TYPES: MeetingType[] = [
   "weekly_marketing",
   "monthly_board",
   "quarterly_board",
+  "annual_review",
   "adhoc",
 ];
 

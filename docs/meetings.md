@@ -2,22 +2,42 @@
 
 Module path: `/meetings`
 
-The agency “holds meetings” about each brand’s marketing and stores them as readable records with decisions and actions.
+The agency “holds meetings” about each brand’s marketing and stores them as readable records with decisions, typed actions, and escalation.
 
 ## Meeting types
 
 | Type | Agent | Output |
 |------|--------|--------|
 | `daily_standup` | Morning cross-module digest | Yesterday / Today / Blockers |
-| `weekly_marketing` | Persona panel | Discussion + next-week priorities + decisions/actions |
-| `monthly_board` / `quarterly_board` | Board pack | Exec summary, P&L, KPIs, wins/misses/risks, budget proposal |
+| `weekly_marketing` | Persona panel | Discussion + priorities + typed actions |
+| `monthly_board` / `quarterly_board` | Board pack | Exec summary, P&L, KPIs, recommendations |
+| `annual_review` | Full-year retrospective | Plan vs actual, KPI attainment, next-year strategy |
 | `adhoc` | Weekly-style panel | On-demand |
 
 ## Scheduling
 
 Org settings live under `organizations.settings.meetings` (UI: `/meetings/settings`).
 
-Hourly Inngest job `meetings/hourly-scheduler` creates due meetings per brand (idempotent per day+type), then emits `meetings/run`.
+Defaults (timezone `Europe/London`):
+
+- Daily standup **07:00**
+- Weekly marketing **Monday 08:00**
+- Quarterly board **first Monday of quarter 09:00**
+- Annual review **first Monday of January 09:00**
+
+Hourly Inngest job `meetings/hourly-scheduler` creates due meetings per brand (idempotent per local day+type), then emits `meetings/run`.
+
+## Typed actions
+
+Meeting agents emit `action_type` + `payload`. After the meeting:
+
+- **Autonomous** brands: `authorizeAgentAction()` may execute pause/budget/content-mix
+- **Approval** mode: actions land in the recommendations feed / awaiting-approval list
+- Minutes always include **Actions taken** and **Actions awaiting approval**
+
+## Escalation
+
+If a brand KPI is **>25% off target for 2 consecutive weekly marketing meetings**, the meeting is flagged and org admins are notified (any mode).
 
 ## Jobs
 
@@ -28,17 +48,9 @@ Hourly Inngest job `meetings/hourly-scheduler` creates due meetings per brand (i
 
 ## Product features
 
-- Meetings feed at `/meetings`
-- Comments on any meeting
-- Convert action → `campaign_tasks` (picks/creates a campaign for the brand)
-- Blockers with `needs_human` create `notifications` for org members
-- “Ask about this meeting” chat grounded in minutes + context snapshot
+- Upcoming calendar + past feed at `/meetings`
+- Comments + “Ask about this meeting” chat
+- Convert action → `campaign_tasks`
+- Sparse-data disclosure when live metrics are missing
 
-## Tables
-
-- `meetings` — agenda, minutes_markdown, decisions, actions, blockers, context_snapshot
-- `meeting_actions` — owned actions with optional `linked_task_id`
-- `meeting_comments`
-- `meeting_chat_messages`
-
-See migration `00010_meetings_module.sql`.
+See migrations `00010_meetings_module.sql` and `00026_meetings_with_teeth.sql`.

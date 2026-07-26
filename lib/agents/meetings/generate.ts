@@ -1,5 +1,7 @@
 import { runClaudeJson } from "@/lib/agents/claude-json";
 import {
+  annualReviewPrompt,
+  annualReviewSchema,
   boardMeetingPrompt,
   boardMeetingSchema,
   dailyStandupPrompt,
@@ -56,6 +58,20 @@ Produce a ${type === "quarterly_board" ? "quarterly" : "monthly"} board meeting 
   });
 }
 
+export async function generateAnnualReview(ctx: MeetingPeriodContext) {
+  return runClaudeJson({
+    system: annualReviewPrompt.system,
+    user: `${ctx.brandMarkdown}
+
+## Annual review data (${ctx.periodLabel})
+${ctx.markdown}
+
+Produce an annual review JSON for brand "${ctx.brandName}".`,
+    schema: annualReviewSchema,
+    maxTokens: 12000,
+  });
+}
+
 export async function generateMeetingForType(
   type: MeetingType,
   ctx: MeetingPeriodContext,
@@ -65,6 +81,6 @@ export async function generateMeetingForType(
   if (type === "monthly_board" || type === "quarterly_board") {
     return generateBoardMeeting(ctx, type);
   }
-  // adhoc → weekly-style panel by default
+  if (type === "annual_review") return generateAnnualReview(ctx);
   return generateWeeklyMarketingMeeting(ctx);
 }

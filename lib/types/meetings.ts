@@ -3,6 +3,7 @@ export type MeetingType =
   | "weekly_marketing"
   | "monthly_board"
   | "quarterly_board"
+  | "annual_review"
   | "adhoc";
 
 export type MeetingStatus =
@@ -20,6 +21,20 @@ export type MeetingActionStatus =
   | "done"
   | "cancelled";
 
+export type MeetingTypedAction =
+  | "pause_campaign"
+  | "shift_budget"
+  | "change_content_mix"
+  | "flag_risk"
+  | "note";
+
+export type MeetingActionExecution =
+  | "pending"
+  | "executed"
+  | "queued_approval"
+  | "skipped"
+  | "failed";
+
 export type MeetingAgendaItem = {
   title: string;
   detail?: string;
@@ -36,12 +51,22 @@ export type MeetingActionItem = {
   owner_type: MeetingOwnerType;
   owner_label?: string;
   due_offset_days?: number;
+  action_type?: MeetingTypedAction;
+  /** campaign_id, amount_pence, content_mix_notes, risk_code, etc. */
+  payload?: Record<string, unknown>;
 };
 
 export type MeetingBlocker = {
   title: string;
   detail: string;
   needs_human: boolean;
+};
+
+export type MeetingActionOutcome = {
+  description: string;
+  action_type: MeetingTypedAction;
+  status: MeetingActionExecution;
+  detail?: string;
 };
 
 export type Meeting = {
@@ -59,6 +84,9 @@ export type Meeting = {
   actions: MeetingActionItem[];
   context_snapshot: Record<string, unknown>;
   blockers: MeetingBlocker[];
+  escalation_flagged?: boolean;
+  actions_taken?: MeetingActionOutcome[];
+  actions_awaiting_approval?: MeetingActionOutcome[];
   agent_run_id: string | null;
   started_at: string | null;
   completed_at: string | null;
@@ -77,6 +105,10 @@ export type MeetingAction = {
   due_date: string | null;
   status: MeetingActionStatus;
   linked_task_id: string | null;
+  action_type?: MeetingTypedAction;
+  payload?: Record<string, unknown>;
+  execution_status?: MeetingActionExecution;
+  execution_result?: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -103,29 +135,36 @@ export type MeetingChatMessage = {
 };
 
 export type MeetingsOrgSettings = {
+  timezone: string;
   daily_standup_enabled: boolean;
-  daily_standup_hour_utc: number;
+  /** Local hour in `timezone` (not necessarily UTC). */
+  daily_standup_hour: number;
   weekly_marketing_enabled: boolean;
   weekly_marketing_weekday: number; // 1=Mon … 7=Sun
-  weekly_marketing_hour_utc: number;
+  weekly_marketing_hour: number;
   monthly_board_enabled: boolean;
   monthly_board_day: number; // 1–28
-  monthly_board_hour_utc: number;
+  monthly_board_hour: number;
   quarterly_board_enabled: boolean;
-  quarterly_board_hour_utc: number;
+  quarterly_board_hour: number;
+  annual_review_enabled: boolean;
+  annual_review_hour: number;
 };
 
 export const DEFAULT_MEETINGS_SETTINGS: MeetingsOrgSettings = {
+  timezone: "Europe/London",
   daily_standup_enabled: true,
-  daily_standup_hour_utc: 8,
+  daily_standup_hour: 7,
   weekly_marketing_enabled: true,
   weekly_marketing_weekday: 1,
-  weekly_marketing_hour_utc: 14,
+  weekly_marketing_hour: 8,
   monthly_board_enabled: true,
   monthly_board_day: 1,
-  monthly_board_hour_utc: 15,
+  monthly_board_hour: 9,
   quarterly_board_enabled: true,
-  quarterly_board_hour_utc: 15,
+  quarterly_board_hour: 9,
+  annual_review_enabled: true,
+  annual_review_hour: 9,
 };
 
 export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
@@ -133,5 +172,6 @@ export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
   weekly_marketing: "Weekly marketing",
   monthly_board: "Monthly board",
   quarterly_board: "Quarterly board",
+  annual_review: "Annual review",
   adhoc: "Ad hoc",
 };
