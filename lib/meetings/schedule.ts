@@ -6,7 +6,14 @@ import {
   isFirstMondayOfJanuary,
   isFirstMondayOfQuarter,
 } from "@/lib/meetings/timezone";
-import type { MeetingType, MeetingsOrgSettings } from "@/lib/types/meetings";
+import type {
+  MeetingStatus,
+  MeetingType,
+  MeetingsOrgSettings,
+} from "@/lib/types/meetings";
+import { statusBlocksScheduleSlot } from "@/lib/meetings/schedule-policy";
+
+export { statusBlocksScheduleSlot } from "@/lib/meetings/schedule-policy";
 
 function dueTypesForMoment(
   settings: MeetingsOrgSettings,
@@ -97,7 +104,8 @@ export function previewUpcomingMeetings(params: {
 
 /**
  * For each brand in every org, schedule meetings that should fire this local hour
- * (org timezone) if not already scheduled for the same local calendar day + type.
+ * (org timezone) if not already scheduled/running/complete for the same local
+ * calendar day + type. Failed and cancelled meetings do not block the slot.
  */
 export async function scheduleDueMeetings(now = new Date()) {
   const supabase = createAdminClient();
@@ -130,16 +138,22 @@ export async function scheduleDueMeetings(now = new Date()) {
 
         const { data: existing } = await supabase
           .from("meetings")
-          .select("id, scheduled_for")
+          .select("id, scheduled_for, status")
           .eq("organization_id", org.id)
           .eq("brand_id", brand.id)
           .eq("type", type)
           .gte("scheduled_for", dayStart)
           .lt("scheduled_for", dayEnd)
-          .limit(5);
+          .limit(20);
 
         const already = (existing ?? []).some((row) => {
-          const z = getZonedParts(new Date(row.scheduled_for), settings.timezone);
+          if (!statusBlocksScheduleSlot(row.status as MeetingStatus)) {
+            return false;
+          }
+          const z = getZonedParts(
+            new Date(row.scheduled_for),
+            settings.timezone,
+          );
           return z.dateKey === dateKey;
         });
         if (already) continue;

@@ -184,7 +184,19 @@ function extractCommon(data: Record<string, unknown>) {
   };
 }
 
-export async function runMeeting(meetingId: string) {
+export async function runMeeting(meetingId: string): Promise<{
+  meetingId: string;
+  skipped?: boolean;
+  retry?: boolean;
+  permanentlyFailed?: boolean;
+  error?: string;
+  decisions?: number;
+  actions?: number;
+  blockers?: number;
+  executed?: number;
+  awaiting?: number;
+  escalated?: boolean;
+}> {
   const supabase = createAdminClient();
   const { data: meeting, error } = await supabase
     .from("meetings")
@@ -196,6 +208,8 @@ export async function runMeeting(meetingId: string) {
   const m = meeting as Meeting;
 
   if (m.status === "complete") return { meetingId, skipped: true as const };
+
+  const priorAttempts = m.generation_attempts ?? 0;
 
   await supabase
     .from("meetings")
@@ -213,7 +227,12 @@ export async function runMeeting(meetingId: string) {
       module: "meetings",
       agent_name: m.type,
       status: "running",
-      input: { meeting_id: meetingId, brand_id: m.brand_id, type: m.type },
+      input: {
+        meeting_id: meetingId,
+        brand_id: m.brand_id,
+        type: m.type,
+        attempt: priorAttempts + 1,
+      },
       progress: 10,
     })
     .select("id")
@@ -290,6 +309,7 @@ export async function runMeeting(meetingId: string) {
         actions_taken: taken,
         actions_awaiting_approval: awaiting,
         escalation_flagged: escalated,
+        generation_attempts: priorAttempts + 1,
         agent_run_id: agentRun?.id ?? null,
         completed_at: new Date().toISOString(),
         error: null,
@@ -341,14 +361,8 @@ export async function runMeeting(meetingId: string) {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Meeting failed";
-    await supabase
-      .from("meetings")
-      .update({
-        status: "failed",
-        error: message,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", meetingId);
+    const attempts = priorAttempts + 1;
+    const canSoftRetry = attempts < 2;
 
     if (agentRun?.id) {
       await supabase
@@ -360,7 +374,52 @@ export async function runMeeting(meetingId: string) {
         })
         .eq("id", agentRun.id);
     }
-    throw err;
+
+    if (canSoftRetry) {
+      // Soft-fail: leave scheduled so a 15m delayed retry can re-run.
+      // Does not consume the day slot as "complete", but blocks duplicate creates.
+      await supabase
+        .from("meetings")
+        .update({
+          status: "scheduled",
+          generation_attempts: attempts,
+          error: `Attempt ${attempts} failed (will retry once): ${message}`,
+          completed_at: null,
+        })
+        .eq("id", meetingId);
+
+      return {
+        meetingId,
+        retry: true,
+        error: message,
+      };
+    }
+
+    await supabase
+      .from("meetings")
+      .update({
+        status: "failed",
+        generation_attempts: attempts,
+        error: message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", meetingId);
+
+    await notifyOrgAdmins({
+      organizationId: m.organization_id,
+      title: `${MEETING_TYPE_LABELS[m.type]} failed`,
+      body: `Generation failed permanently after ${attempts} attempts: ${message}`.slice(
+        0,
+        280,
+      ),
+      link: `/meetings/${meetingId}`,
+    });
+
+    return {
+      meetingId,
+      permanentlyFailed: true,
+      error: message,
+    };
   }
 }
 

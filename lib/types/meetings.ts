@@ -87,6 +87,8 @@ export type Meeting = {
   escalation_flagged?: boolean;
   actions_taken?: MeetingActionOutcome[];
   actions_awaiting_approval?: MeetingActionOutcome[];
+  /** Completed generation attempts (success or failure). Soft-retry once when < 2. */
+  generation_attempts?: number;
   agent_run_id: string | null;
   started_at: string | null;
   completed_at: string | null;

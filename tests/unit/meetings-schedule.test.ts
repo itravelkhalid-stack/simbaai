@@ -7,7 +7,11 @@ import {
   isFirstMondayOfQuarter,
 } from "@/lib/meetings/timezone";
 import { parseMeetingsSettings } from "@/lib/meetings/settings";
-import { previewUpcomingMeetings } from "@/lib/meetings/schedule";
+import {
+  previewUpcomingMeetings,
+  statusBlocksScheduleSlot,
+} from "@/lib/meetings/schedule";
+import { statusBlocksScheduleSlot as statusBlocksFromPolicy } from "@/lib/meetings/schedule-policy";
 import { DEFAULT_MEETINGS_SETTINGS } from "@/lib/types/meetings";
 
 describe("meeting timezone helpers", () => {
@@ -72,5 +76,19 @@ describe("upcoming preview", () => {
     });
     expect(slots.some((s) => s.type === "daily_standup")).toBe(true);
     expect(slots.some((s) => s.type === "weekly_marketing")).toBe(true);
+  });
+});
+
+describe("schedule slot dedupe", () => {
+  it("failed and cancelled do not block the day slot", () => {
+    expect(statusBlocksScheduleSlot("failed")).toBe(false);
+    expect(statusBlocksScheduleSlot("cancelled")).toBe(false);
+    expect(statusBlocksFromPolicy("failed")).toBe(false);
+  });
+
+  it("scheduled, running, and complete block the day slot", () => {
+    expect(statusBlocksScheduleSlot("scheduled")).toBe(true);
+    expect(statusBlocksScheduleSlot("running")).toBe(true);
+    expect(statusBlocksScheduleSlot("complete")).toBe(true);
   });
 });

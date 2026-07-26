@@ -25,7 +25,11 @@ Defaults (timezone `Europe/London`):
 - Quarterly board **first Monday of quarter 09:00**
 - Annual review **first Monday of January 09:00**
 
-Hourly Inngest job `meetings/hourly-scheduler` creates due meetings per brand (idempotent per local day+type), then emits `meetings/run`.
+Hourly Inngest job `meetings/hourly-scheduler` creates due meetings per brand (idempotent per local day+type for statuses `scheduled` / `running` / `complete` only — **failed and cancelled do not block** the slot), then emits `meetings/run`.
+
+### Generation retries
+
+If generation throws, the meeting is soft-failed (`status=scheduled`, `generation_attempts` incremented) and Inngest sleeps **15 minutes** then retries once. A second failure marks `failed` permanently and notifies org owners/admins.
 
 ## Typed actions
 
@@ -53,4 +57,4 @@ If a brand KPI is **>25% off target for 2 consecutive weekly marketing meetings*
 - Convert action → `campaign_tasks`
 - Sparse-data disclosure when live metrics are missing
 
-See migrations `00010_meetings_module.sql` and `00026_meetings_with_teeth.sql`.
+See migrations `00010_meetings_module.sql`, `00026_meetings_with_teeth.sql`, and `00027_meeting_generation_retries.sql`.
