@@ -1,10 +1,6 @@
-import { ModulePlaceholder } from "@/components/dashboard/module-placeholder";
+import { redirect } from "next/navigation";
 
+/** Operations UI lives on /team (live agent runs + job registry). */
 export default function Page() {
-  return (
-    <ModulePlaceholder
-      title="Operations"
-      description="Module scaffold for Operations inside the active organization workspace."
-    />
-  );
+  redirect("/team");
 }

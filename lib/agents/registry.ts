@@ -88,7 +88,7 @@ export const DEPARTMENT_META: Record<
   operations: {
     label: "Operations",
     blurb: "Integrations, automations, digests, and job recovery",
-    href: "/operations",
+    href: "/team",
   },
 };
 
@@ -956,7 +956,7 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
     executionPath: "lib/inngest/functions/jobs.ts",
     inngestId: "jobs/integration-health",
     agentNames: [],
-    moduleHref: "/operations",
+    moduleHref: "/team",
   },
   {
     id: "jobs-retry",
@@ -969,7 +969,21 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
     executionPath: "lib/inngest/functions/jobs.ts",
     inngestId: "jobs/retry-agent-run",
     agentNames: [],
-    moduleHref: "/operations",
+    moduleHref: "/team",
+  },
+  {
+    id: "agent-run-sweeper",
+    displayName: "Agent Run Sweeper",
+    roleTitle: "Pipeline Ops",
+    department: "operations",
+    responsibility:
+      "Drains queued agent_runs, heals completed-but-stuck runs, fails running >2h.",
+    trigger: { kind: "cron", schedule: "*/10 * * * *" },
+    module: "operations",
+    executionPath: "lib/jobs/agent-run-sweeper.ts",
+    inngestId: "jobs/agent-run-sweeper",
+    agentNames: [],
+    moduleHref: "/team",
   },
   {
     id: "automations-schedule",

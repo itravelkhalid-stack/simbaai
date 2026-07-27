@@ -137,23 +137,42 @@ export async function askAnalytics(
     });
 
     const today = new Date().toISOString().slice(0, 10);
-    const planned = await planAnalyticsQuery({
-      question,
-      brandName: brand.name,
-      today,
-    });
-
-    const executed = await executeWhitelistedQuery({
+    const { withAgentRun } = await import("@/lib/agents/run-lifecycle");
+    const { data: answerPayload } = await withAgentRun({
       organizationId: active.organization_id,
-      brandId,
-      plan: planned.data,
-    });
-
-    const answered = await answerAnalyticsQuestion({
-      question,
-      plan: planned.data,
-      resultSummary: executed.summary,
-      rows: executed.rows,
+      module: "data",
+      agentName: "analytics_ask",
+      input: { brandId, question },
+      work: async () => {
+        const planned = await planAnalyticsQuery({
+          question,
+          brandName: brand.name,
+          today,
+        });
+        const executed = await executeWhitelistedQuery({
+          organizationId: active.organization_id,
+          brandId,
+          plan: planned.data,
+        });
+        const answered = await answerAnalyticsQuestion({
+          question,
+          plan: planned.data,
+          resultSummary: executed.summary,
+          rows: executed.rows,
+        });
+        return {
+          data: {
+            answer: answered.data.answer,
+            chart: executed.chart,
+            plan: planned.data,
+          },
+          model: answered.model,
+          tokensIn: planned.tokensIn + answered.tokensIn,
+          tokensOut: planned.tokensOut + answered.tokensOut,
+          costPence: planned.costPence + answered.costPence,
+          output: { answerPreview: answered.data.answer.slice(0, 200) },
+        };
+      },
     });
 
     await supabase.from("analytics_chat_messages").insert({
@@ -161,16 +180,16 @@ export async function askAnalytics(
       brand_id: brandId,
       user_id: null,
       role: "assistant",
-      content: answered.data.answer,
-      query_plan: planned.data as unknown as Record<string, unknown>,
-      chart: executed.chart,
+      content: answerPayload.answer,
+      query_plan: answerPayload.plan as unknown as Record<string, unknown>,
+      chart: answerPayload.chart,
     });
 
     revalidatePath("/data");
     return {
       success: "Answered",
-      answer: answered.data.answer,
-      chart: executed.chart,
+      answer: answerPayload.answer,
+      chart: answerPayload.chart,
     };
   } catch (error) {
     return {

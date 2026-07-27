@@ -87,7 +87,29 @@ export const jobsIntegrationHealth = inngest.createFunction(
   },
 );
 
-export const jobsFunctions = [jobsRetryAgentRun, jobsIntegrationHealth];
+/**
+ * Every 10 minutes: drain queued agent_runs (re-emit / inline process) and
+ * finalize zombies stuck in running.
+ */
+export const jobsAgentRunSweeper = inngest.createFunction(
+  {
+    id: "jobs/agent-run-sweeper",
+    retries: 1,
+    triggers: [{ cron: "*/10 * * * *" }],
+  },
+  async ({ step }) => {
+    return step.run("sweep", async () => {
+      const { sweepAgentRuns } = await import("@/lib/jobs/agent-run-sweeper");
+      return sweepAgentRuns();
+    });
+  },
+);
+
+export const jobsFunctions = [
+  jobsRetryAgentRun,
+  jobsIntegrationHealth,
+  jobsAgentRunSweeper,
+];
 
 /** Test helper re-export */
 export { resetCircuits };

@@ -11,7 +11,7 @@ export async function appendAgentRunLog(
   const supabase = createAdminClient();
   const { data: run, error } = await supabase
     .from("agent_runs")
-    .select("logs, progress")
+    .select("logs, progress, status")
     .eq("id", runId)
     .single();
 
@@ -20,13 +20,24 @@ export async function appendAgentRunLog(
   const existingLogs = (run.logs as AgentRunLog[] | null) ?? [];
   const logs = [...existingLogs, { at: new Date().toISOString(), message, level }];
 
+  // Never clobber terminal status. Callers that finalize with
+  // status=complete then append a log were being reset to running
+  // (market research + content batch stuck at progress 100 / mid-run).
+  const patch: {
+    logs: AgentRunLog[];
+    progress: number;
+    status?: "running";
+  } = {
+    logs,
+    progress: progress ?? (run.progress as number) ?? 0,
+  };
+  if (run.status === "queued" || run.status === "running") {
+    patch.status = "running";
+  }
+
   const { error: updateError } = await supabase
     .from("agent_runs")
-    .update({
-      logs,
-      progress: progress ?? run.progress,
-      status: "running",
-    })
+    .update(patch)
     .eq("id", runId);
 
   if (updateError) throw new Error(updateError.message);

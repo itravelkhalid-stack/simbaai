@@ -197,7 +197,23 @@ export async function generateCampaignWithAi(
     if (brief.length < 10) return { error: "Brief is required" };
     const brandId = await primaryBrandId(active.organization_id);
     const brandContext = await getBrandContext(active.organization_id, brandId);
-    const generated = await generateCampaignEmail({ brandContext, brief });
+    const { withAgentRun } = await import("@/lib/agents/run-lifecycle");
+    const { data: generatedData, agentRunId } = await withAgentRun({
+      organizationId: active.organization_id,
+      module: "email",
+      agentName: "email_campaign_generate",
+      input: { brief },
+      work: async () => {
+        const generated = await generateCampaignEmail({ brandContext, brief });
+        return {
+          data: generated.data,
+          model: generated.model,
+          tokensIn: generated.tokensIn,
+          tokensOut: generated.tokensOut,
+          costPence: generated.costPence,
+        };
+      },
+    });
 
     const supabase = await createClient();
     const footer = buildComplianceFooter({
@@ -207,8 +223,8 @@ export async function generateCampaignWithAi(
       email: "preview@example.com",
     });
     const html = renderEmailHtml({
-      preheader: generated.data.preheader,
-      blocks: generated.data.blocks,
+      preheader: generatedData.preheader,
+      blocks: generatedData.blocks,
       footerHtml: footer.html,
       brandName: active.organization.name,
     });
@@ -219,16 +235,17 @@ export async function generateCampaignWithAi(
         organization_id: active.organization_id,
         brand_id: brandId,
         name: brief.slice(0, 80),
-        subject: generated.data.subject_variants[0] ?? "",
-        subject_variants: generated.data.subject_variants,
+        subject: generatedData.subject_variants[0] ?? "",
+        subject_variants: generatedData.subject_variants,
         ab_test: true,
-        preheader: generated.data.preheader,
-        blocks: generated.data.blocks,
+        preheader: generatedData.preheader,
+        blocks: generatedData.blocks,
         html_content: html,
-        plain_text: blocksToPlainText(generated.data.blocks, footer.text),
+        plain_text: blocksToPlainText(generatedData.blocks, footer.text),
         status: "draft",
         brief,
         created_by: user.id,
+        agent_run_id: agentRunId,
       })
       .select("id")
       .single();
@@ -321,10 +338,26 @@ export async function proposeWelcomeFlow(
     if (brief.length < 10) return { error: "Brief is required" };
     const brandId = await primaryBrandId(active.organization_id);
     const brandContext = await getBrandContext(active.organization_id, brandId);
-    const proposal = await proposeEmailFlow({
-      brandContext,
-      brief,
-      emailCount: Number(formData.get("emailCount") ?? 5),
+    const { withAgentRun } = await import("@/lib/agents/run-lifecycle");
+    const { data: proposalData, agentRunId } = await withAgentRun({
+      organizationId: active.organization_id,
+      module: "email",
+      agentName: "email_flow_strategy",
+      input: { brief },
+      work: async () => {
+        const proposal = await proposeEmailFlow({
+          brandContext,
+          brief,
+          emailCount: Number(formData.get("emailCount") ?? 5),
+        });
+        return {
+          data: proposal.data,
+          model: proposal.model,
+          tokensIn: proposal.tokensIn,
+          tokensOut: proposal.tokensOut,
+          costPence: proposal.costPence,
+        };
+      },
     });
 
     const supabase = await createClient();
@@ -333,12 +366,13 @@ export async function proposeWelcomeFlow(
       .insert({
         organization_id: active.organization_id,
         brand_id: brandId,
-        name: proposal.data.name,
+        name: proposalData.name,
         trigger_type: "signup",
         status: "draft",
-        strategy: proposal.data,
+        strategy: proposalData,
         list_id: String(formData.get("listId") ?? "") || null,
         created_by: user.id,
+        agent_run_id: agentRunId,
       })
       .select("id")
       .single();
@@ -380,36 +414,60 @@ export async function writeApprovedFlowEmails(formData: FormData) {
   const brandContext = await getBrandContext(active.organization_id, flow.brand_id);
   await supabase.from("email_flow_steps").delete().eq("flow_id", flowId);
 
-  for (const email of strategy.emails ?? []) {
-    const written = await writeFlowEmail({
-      brandContext,
-      strategySummary: strategy.strategy_summary ?? "",
-      email,
-    });
-    const footer = buildComplianceFooter({
-      organizationId: active.organization_id,
-      brandName: active.organization.name,
-      physicalAddress: "Address pending — set in Email settings",
-      email: "preview@example.com",
-    });
-    await supabase.from("email_flow_steps").insert({
-      organization_id: active.organization_id,
-      flow_id: flowId,
-      position: email.position,
-      delay_hours: email.delay_hours,
-      subject: written.data.subject || email.subject,
-      preheader: written.data.preheader || email.preheader,
-      blocks: written.data.blocks,
-      html_content: renderEmailHtml({
-        preheader: written.data.preheader,
-        blocks: written.data.blocks,
-        footerHtml: footer.html,
-        brandName: active.organization.name,
-      }),
-      goal: email.goal,
-      condition: {},
-    });
-  }
+  const { withAgentRun } = await import("@/lib/agents/run-lifecycle");
+  await withAgentRun({
+    organizationId: active.organization_id,
+    module: "email",
+    agentName: "email_flow_write",
+    input: { flowId, emailCount: strategy.emails?.length ?? 0 },
+    work: async () => {
+      let tokensIn = 0;
+      let tokensOut = 0;
+      let costPence = 0;
+      let model: string | undefined;
+      for (const email of strategy.emails ?? []) {
+        const written = await writeFlowEmail({
+          brandContext,
+          strategySummary: strategy.strategy_summary ?? "",
+          email,
+        });
+        tokensIn += written.tokensIn;
+        tokensOut += written.tokensOut;
+        costPence += written.costPence;
+        model = written.model;
+        const footer = buildComplianceFooter({
+          organizationId: active.organization_id,
+          brandName: active.organization.name,
+          physicalAddress: "Address pending — set in Email settings",
+          email: "preview@example.com",
+        });
+        await supabase.from("email_flow_steps").insert({
+          organization_id: active.organization_id,
+          flow_id: flowId,
+          position: email.position,
+          delay_hours: email.delay_hours,
+          subject: written.data.subject || email.subject,
+          preheader: written.data.preheader || email.preheader,
+          blocks: written.data.blocks,
+          html_content: renderEmailHtml({
+            preheader: written.data.preheader,
+            blocks: written.data.blocks,
+            footerHtml: footer.html,
+            brandName: active.organization.name,
+          }),
+          goal: email.goal,
+          condition: {},
+        });
+      }
+      return {
+        data: { steps: strategy.emails?.length ?? 0 },
+        model,
+        tokensIn,
+        tokensOut,
+        costPence,
+      };
+    },
+  });
 
   revalidatePath(`/email/flows/${flowId}`);
 }

@@ -150,8 +150,6 @@ export async function extractGuidelinesFromPdfAsset(params: {
       })
       .eq("id", runId);
 
-    await appendAgentRunLog(runId, `Proposal ${proposal.id} ready for review`, 100);
-
     return { proposalId: proposal.id, agentRunId: runId };
   } catch (error) {
     await supabase

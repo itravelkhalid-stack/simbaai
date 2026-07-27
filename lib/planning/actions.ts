@@ -131,19 +131,34 @@ Email campaigns: ${(emailStats ?? []).length}
       .select("id")
       .single();
 
-    const generated = await generateMarketingPlan({
-      brandContext,
-      goalBrief,
-      periodType,
-      periodStart,
-      periodEnd,
-      budgetPence,
-      currency: "GBP",
-      performanceMarkdown,
-      researchMarkdown: (research ?? [])
-        .map((d) => `### ${d.section}\n${String(d.content ?? "").slice(0, 1500)}`)
-        .join("\n\n"),
-    });
+    let generated;
+    try {
+      generated = await generateMarketingPlan({
+        brandContext,
+        goalBrief,
+        periodType,
+        periodStart,
+        periodEnd,
+        budgetPence,
+        currency: "GBP",
+        performanceMarkdown,
+        researchMarkdown: (research ?? [])
+          .map((d) => `### ${d.section}\n${String(d.content ?? "").slice(0, 1500)}`)
+          .join("\n\n"),
+      });
+    } catch (err) {
+      if (run) {
+        await supabase
+          .from("agent_runs")
+          .update({
+            status: "failed",
+            progress: 100,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          .eq("id", run.id);
+      }
+      throw err;
+    }
 
     if (run) {
       await supabase

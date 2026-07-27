@@ -115,15 +115,16 @@ export async function publishContentItem(itemId: string) {
   });
   if (!auth.mayExecute) {
     const message = auth.reason;
-    if (auth.mustQueue || complianceStatus === "fail") {
-      await supabase
-        .from("content_items")
-        .update({
-          status: "pending_approval",
-          publish_error: message,
-        })
-        .eq("id", itemId);
-    }
+    // Always leave a visible error on the item — silent skips hid approval /
+    // kill-switch / compliance blocks from the calendar UI.
+    const demote = auth.mustQueue || complianceStatus === "fail";
+    await supabase
+      .from("content_items")
+      .update({
+        publish_error: message,
+        ...(demote ? { status: "pending_approval" as const } : {}),
+      })
+      .eq("id", itemId);
     return { skipped: true as const, reason: message };
   }
 

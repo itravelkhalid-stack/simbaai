@@ -583,6 +583,7 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
       });
 
       await step.run("finalize", async () => {
+        await appendAgentRunLog(agentRunId, "Batch generation complete", 100);
         await supabase
           .from("content_plans")
           .update({ status: "complete" })
@@ -591,7 +592,6 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
           .from("agent_runs")
           .update({ status: "complete", progress: 100 })
           .eq("id", agentRunId);
-        await appendAgentRunLog(agentRunId, "Batch generation complete", 100);
 
         const { count } = await supabase
           .from("content_items")

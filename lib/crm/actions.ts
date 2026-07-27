@@ -362,12 +362,29 @@ export async function scoreContactNow(
       active.organization_id,
       contact.brand_id,
     );
-    const scored = await scoreLead({
-      brandContext,
-      contact: contact as never,
-      activities: (activities ?? []) as never,
-      deals: (deals ?? []) as never,
-      emailEngagement,
+    const { withAgentRun } = await import("@/lib/agents/run-lifecycle");
+    const { data: scoredData } = await withAgentRun({
+      organizationId: active.organization_id,
+      module: "crm",
+      agentName: "crm_score_lead",
+      input: { contactId },
+      work: async () => {
+        const scored = await scoreLead({
+          brandContext,
+          contact: contact as never,
+          activities: (activities ?? []) as never,
+          deals: (deals ?? []) as never,
+          emailEngagement,
+        });
+        return {
+          data: scored.data,
+          model: scored.model,
+          tokensIn: scored.tokensIn,
+          tokensOut: scored.tokensOut,
+          costPence: scored.costPence,
+          output: { score: scored.data.score },
+        };
+      },
     });
 
     const patch: {
@@ -376,12 +393,12 @@ export async function scoreContactNow(
       lead_scored_at: string;
       lifecycle_stage?: CrmLifecycleStage;
     } = {
-      lead_score: scored.data.score,
-      lead_score_reasoning: scored.data.reasoning,
+      lead_score: scoredData.score,
+      lead_score_reasoning: scoredData.reasoning,
       lead_scored_at: new Date().toISOString(),
     };
-    if (scored.data.suggested_stage) {
-      patch.lifecycle_stage = scored.data.suggested_stage;
+    if (scoredData.suggested_stage) {
+      patch.lifecycle_stage = scoredData.suggested_stage;
     }
 
     await supabase.from("crm_contacts").update(patch).eq("id", contactId);
@@ -390,12 +407,12 @@ export async function scoreContactNow(
       organizationId: active.organization_id,
       contactId,
       type: "note",
-      content: `AI lead score: ${scored.data.score}/100 — ${scored.data.reasoning}`,
-      meta: { score: scored.data.score },
+      content: `AI lead score: ${scoredData.score}/100 — ${scoredData.reasoning}`,
+      meta: { score: scoredData.score },
     });
 
     revalidatePath(`/crm/contacts/${contactId}`);
-    return { success: `Scored ${scored.data.score}/100` };
+    return { success: `Scored ${scoredData.score}/100` };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed" };
   }
@@ -433,25 +450,41 @@ export async function draftContactFollowUp(
       active.organization_id,
       contact.brand_id,
     );
-    const drafted = await draftFollowUpEmail({
-      brandContext,
-      contact: contact as never,
-      activities: (activities ?? []) as never,
-      deals: (deals ?? []) as never,
+    const { withAgentRun } = await import("@/lib/agents/run-lifecycle");
+    const { data: draft } = await withAgentRun({
+      organizationId: active.organization_id,
+      module: "crm",
+      agentName: "crm_follow_up",
+      input: { contactId },
+      work: async () => {
+        const drafted = await draftFollowUpEmail({
+          brandContext,
+          contact: contact as never,
+          activities: (activities ?? []) as never,
+          deals: (deals ?? []) as never,
+        });
+        return {
+          data: drafted.data,
+          model: drafted.model,
+          tokensIn: drafted.tokensIn,
+          tokensOut: drafted.tokensOut,
+          costPence: drafted.costPence,
+        };
+      },
     });
 
     await logCrmActivity({
       organizationId: active.organization_id,
       contactId,
       type: "email",
-      content: `AI draft — ${drafted.data.subject}\n\n${drafted.data.body_markdown}`,
-      meta: { draft: true, rationale: drafted.data.rationale },
+      content: `AI draft — ${draft.subject}\n\n${draft.body_markdown}`,
+      meta: { draft: true, rationale: draft.rationale },
     });
 
     revalidatePath(`/crm/contacts/${contactId}`);
     return {
       success: "Follow-up drafted",
-      draft: drafted.data,
+      draft,
     };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed" };

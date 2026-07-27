@@ -121,6 +121,7 @@ export const runResearchProject = inngest.createFunction(
       });
 
       await step.run("persist-report", async () => {
+        await appendAgentRunLog(agentRunId, "Saving report to research library", 95);
         await persistResearchReport({
           organizationId: context.project.organization_id,
           projectId,
@@ -132,7 +133,6 @@ export const runResearchProject = inngest.createFunction(
           costPence: result.costPence,
           durationMs: Date.now() - startedAt,
         });
-        await appendAgentRunLog(agentRunId, "Report saved to research library", 100);
       });
 
       return { ok: true, projectId };

@@ -2,21 +2,15 @@ import { singlePostPrompt } from "@/lib/agents/prompts/content/single-post";
 import { batchPlanPrompt } from "@/lib/agents/prompts/content/batch-plan";
 import { repurposePrompt } from "@/lib/agents/prompts/content/repurpose";
 import { scriptPrompt } from "@/lib/agents/prompts/content/script";
-import { compliancePrompt } from "@/lib/agents/prompts/content/compliance";
 import { runClaudeJson } from "@/lib/agents/claude-json";
 import {
   batchPlanResultSchema,
-  complianceResultSchema,
   repurposeResultSchema,
   scriptResultSchema,
   singlePostResultSchema,
 } from "@/lib/validations/content";
 import type { BrandContext } from "@/lib/brand/context";
-import type {
-  ComplianceFlag,
-  ContentFormat,
-  ContentPlatform,
-} from "@/lib/types/content";
+import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 
 export async function generateSinglePostVariants(input: {
   brandContext: BrandContext;
@@ -124,45 +118,6 @@ export async function generateRepurposeAdaptations(input: {
     model: input.model,
     maxTokens: 6000,
   });
-}
-
-export async function runComplianceCheck(input: {
-  brandContext: BrandContext;
-  platform: ContentPlatform;
-  format: ContentFormat;
-  copy: string;
-  hashtags: string[];
-  structured: Record<string, unknown>;
-  model?: string;
-}): Promise<{
-  flags: ComplianceFlag[];
-  tokensIn: number;
-  tokensOut: number;
-  costPence: number;
-  model: string;
-}> {
-  const result = await runClaudeJson({
-    system: compliancePrompt.system,
-    user: compliancePrompt.buildUserPrompt({
-      brandContextMarkdown: input.brandContext.markdown,
-      platform: input.platform,
-      format: input.format,
-      copy: input.copy,
-      hashtags: input.hashtags,
-      structured: input.structured,
-    }),
-    schema: complianceResultSchema,
-    model: input.model || "claude-sonnet-4-6",
-    maxTokens: 1500,
-  });
-
-  return {
-    flags: result.data.flags,
-    tokensIn: result.tokensIn,
-    tokensOut: result.tokensOut,
-    costPence: result.costPence,
-    model: result.model,
-  };
 }
 
 export function isScriptFormat(format: ContentFormat) {
