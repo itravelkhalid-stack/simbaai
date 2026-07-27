@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ["lucide-react", "recharts"],
+    // Safety net only — brand-media files upload browser→Supabase directly.
+    // Default 1MB caused digest 345093329 when Files were sent via server actions.
+    serverActions: {
+      bodySizeLimit: "4mb",
+    },
   },
 };
 

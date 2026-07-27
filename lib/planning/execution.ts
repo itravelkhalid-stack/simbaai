@@ -134,6 +134,15 @@ export async function executeAiTask(taskId: string) {
     if (t.module === "content") {
       let runId = linked.id as string | null;
       const topic = brief;
+      const { getBrandEnabledContentPlatforms } = await import(
+        "@/lib/brand/channels"
+      );
+      const platforms = await getBrandEnabledContentPlatforms({
+        organizationId: t.organization_id,
+        brandId: campaign.brand_id,
+        admin: true,
+      });
+      const platform = platforms[0] ?? "facebook";
       if (!runId) {
         const { data: run } = await supabase
           .from("agent_runs")
@@ -144,14 +153,14 @@ export async function executeAiTask(taskId: string) {
             status: "queued",
             input: {
               brief: topic,
-              platform: "linkedin",
+              platform,
               format: "post",
               from_planning_task: t.id,
             },
             logs: [
               {
                 at: new Date().toISOString(),
-                message: "Queued by execution engine",
+                message: `Queued by execution engine (${platform})`,
               },
             ],
             progress: 0,
@@ -167,7 +176,7 @@ export async function executeAiTask(taskId: string) {
             organizationId: t.organization_id,
             brandId: campaign.brand_id,
             agentRunId: runId,
-            platform: "linkedin",
+            platform,
             format: "post",
             topic,
             createdBy: campaign.created_by ?? campaign.organization_id,

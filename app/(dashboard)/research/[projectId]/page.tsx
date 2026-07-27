@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ErrorState } from "@/components/brand/error-state";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { ResearchActions } from "@/components/research/research-actions";
 import { ResearchReportView } from "@/components/research/report-view";
 import { ResearchRunProgress } from "@/components/research/run-progress";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { AgentRun } from "@/lib/types/database";
@@ -14,6 +17,8 @@ import {
   type ResearchDocument,
   type ResearchProject,
 } from "@/lib/types/research";
+import { statusTone } from "@/lib/ui/status";
+import { cn } from "@/lib/utils";
 
 export default async function ResearchProjectPage({
   params,
@@ -60,27 +65,34 @@ export default async function ResearchProjectPage({
 
   const canWrite = active.role !== "org_viewer";
 
+  const { data: brand } = typedProject.brand_id
+    ? await supabase
+        .from("brands")
+        .select("name, primary_color")
+        .eq("id", typedProject.brand_id)
+        .maybeSingle()
+    : { data: null };
+
   return (
     <div className="space-y-6">
-      <div className="space-y-3">
-        <Link href="/research" className="text-sm text-muted-foreground underline">
-          ← Research library
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              {RESEARCH_TYPE_LABELS[typedProject.type]}
-            </p>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              {typedProject.title}
-            </h1>
+      <PageHeader
+        title={typedProject.title}
+        description={RESEARCH_TYPE_LABELS[typedProject.type]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={statusTone(typedProject.status)}>
+              {typedProject.status}
+            </Badge>
+            <Badge variant="neutral">{freshness.label}</Badge>
+            <Link
+              href="/research"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              Library
+            </Link>
           </div>
-          <div className="flex gap-2">
-            <Badge variant="outline">{typedProject.status}</Badge>
-            <Badge variant="secondary">{freshness.label}</Badge>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       {run ? <ResearchRunProgress runId={run.id} initialRun={run} /> : null}
 
@@ -90,6 +102,8 @@ export default async function ResearchProjectPage({
             project={typedProject}
             documents={(documents ?? []) as ResearchDocument[]}
             canWrite={canWrite}
+            brandName={brand?.name ?? active.organization.name}
+            primaryColor={brand?.primary_color}
           />
           <ResearchReportView
             title={typedProject.title}
@@ -99,10 +113,15 @@ export default async function ResearchProjectPage({
       ) : null}
 
       {typedProject.status === "failed" ? (
-        <p className="text-sm text-destructive">
-          This run failed{run?.error ? `: ${run.error}` : "."} Use Refresh to retry with
-          prior context once available.
-        </p>
+        <ErrorState
+          title="Research run failed"
+          description={
+            run?.error
+              ? `Simba couldn't finish this report: ${run.error}`
+              : "Simba couldn't finish this report. Refresh to retry with prior context."
+          }
+          retryHref={`/research/${typedProject.id}`}
+        />
       ) : null}
     </div>
   );

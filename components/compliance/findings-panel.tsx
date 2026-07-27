@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { fieldSelectClass } from "@/lib/ui/field";
 import type {
   ComplianceCheck,
   ComplianceFinding,
@@ -99,7 +100,7 @@ export function ComplianceFindingsPanel({
           <input
             name="overrideReason"
             placeholder="Logged reason for override…"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
           />
         </div>
       ) : null}

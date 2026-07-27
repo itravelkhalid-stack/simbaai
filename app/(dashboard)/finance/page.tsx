@@ -16,10 +16,14 @@ import {
 } from "@/lib/finance/metrics";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
+import { EmptyState } from "@/components/brand/empty-state";
+import { MetricCard } from "@/components/brand/metric-card";
+import { PageHeader } from "@/components/dashboard/page-header";
 import {
   FINANCE_CHANNEL_LABELS,
   type FinanceWeeklySummary,
 } from "@/lib/types/finance";
+import { cn } from "@/lib/utils";
 
 function monthBounds(d = new Date()) {
   const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
@@ -50,9 +54,17 @@ export default async function FinanceDashboardPage({
 
   if (!brandId) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Finance</h1>
-        <p className="text-sm text-muted-foreground">Create a brand first.</p>
+      <div className="space-y-6">
+        <PageHeader
+          title="Finance"
+          description="Marketing budgets, spend, and attributed revenue."
+        />
+        <EmptyState
+          title="Create a brand to track money"
+          description="Finance is scoped per brand so budgets, spend, and ROAS stay cleanly separated."
+          actionLabel="Set up brand"
+          actionHref="/brand"
+        />
       </div>
     );
   }
@@ -92,12 +104,14 @@ export default async function FinanceDashboardPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Finance</h1>
-        <p className="mt-2 text-muted-foreground">
-          Marketing budgets, spend, attributed revenue, and platform billing.
-        </p>
-      </div>
+      <PageHeader
+        title="Finance"
+        description={
+          <>
+            Marketing budgets, spend, attributed revenue, and platform billing.
+          </>
+        }
+      />
       <FinanceNav current="/finance" />
 
       <div className="flex flex-wrap gap-2">
@@ -105,35 +119,44 @@ export default async function FinanceDashboardPage({
           <a
             key={b.id}
             href={`/finance?brandId=${b.id}`}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
-              b.id === brandId ? "bg-foreground text-background" : ""
-            }`}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-sm",
+              b.id === brandId
+                ? "bg-brand-soft font-medium text-primary"
+                : "text-ink-soft ring-1 ring-border hover:bg-surface-soft",
+            )}
           >
             {b.name}
           </a>
         ))}
         <a
           href={`/api/finance/export?brandId=${brandId}`}
-          className="rounded-md border px-3 py-1.5 text-sm"
+          className="rounded-full px-3 py-1.5 text-sm text-ink-soft ring-1 ring-border hover:bg-surface-soft"
         >
           Export CSV
         </a>
-        <Link href="/finance/billing" className="rounded-md border px-3 py-1.5 text-sm">
+        <Link
+          href="/finance/billing"
+          className="rounded-full px-3 py-1.5 text-sm text-ink-soft ring-1 ring-border hover:bg-surface-soft"
+        >
           Platform billing
         </Link>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric
+        <MetricCard
           label="Spend (period)"
           value={`£${(blended.total_spend_pence / 100).toLocaleString()}`}
         />
-        <Metric
+        <MetricCard
           label="Revenue"
           value={`£${(blended.total_revenue_pence / 100).toLocaleString()}`}
         />
-        <Metric label="Blended ROAS / MER" value={`${blended.blended_roas}x`} />
-        <Metric
+        <MetricCard
+          label="Blended ROAS / MER"
+          value={`${blended.blended_roas}x`}
+        />
+        <MetricCard
           label="CAC"
           value={
             blended.cac_pence != null
@@ -144,9 +167,11 @@ export default async function FinanceDashboardPage({
       </div>
 
       {pacingAlerts.length ? (
-        <div className="rounded-xl border border-amber-500/30 p-4">
-          <p className="mb-2 text-sm font-medium">Burn-rate pacing</p>
-          <ul className="space-y-1 text-sm">
+        <div className="rounded-lg bg-warning-soft p-5 ring-1 ring-warning/40">
+          <p className="mb-2 font-heading text-sm font-semibold text-ink">
+            Burn-rate pacing
+          </p>
+          <ul className="space-y-1 text-sm text-ink">
             {pacingAlerts.map((a) => (
               <li key={a.channel}>{a.pacing_label}</li>
             ))}
@@ -159,19 +184,23 @@ export default async function FinanceDashboardPage({
         <MonthlyPnLChart rows={pnl} />
       </div>
 
-      <section className="rounded-xl border p-4">
-        <h2 className="mb-3 text-sm font-medium">Channel detail</h2>
-        <ul className="divide-y text-sm">
+      <section className="rounded-lg bg-card p-5 shadow-elevated ring-1 ring-border">
+        <h2 className="mb-3 font-heading text-sm font-semibold text-ink">
+          Channel detail
+        </h2>
+        <ul className="divide-y divide-border text-sm">
           {budgetActual.length === 0 ? (
-            <li className="py-2 text-muted-foreground">No channels yet.</li>
+            <li className="py-2 text-ink-soft">No channels yet.</li>
           ) : (
             budgetActual.map((row) => (
               <li
                 key={row.channel}
                 className="flex flex-wrap items-center justify-between gap-2 py-2"
               >
-                <span>{FINANCE_CHANNEL_LABELS[row.channel]}</span>
-                <span className="text-muted-foreground">
+                <span className="text-ink">
+                  {FINANCE_CHANNEL_LABELS[row.channel]}
+                </span>
+                <span className="tabular-nums text-ink-soft">
                   £{(row.actual_pence / 100).toFixed(0)} / £
                   {(row.planned_pence / 100).toFixed(0)}
                   {row.variance_pct != null
@@ -183,7 +212,7 @@ export default async function FinanceDashboardPage({
           )}
         </ul>
         {blended.gross_margin_pence != null ? (
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="mt-3 text-sm text-ink-soft">
             Gross margin (after COGS + marketing spend): £
             {(blended.gross_margin_pence / 100).toLocaleString()}
             {blended.gross_margin_pct != null
@@ -194,11 +223,11 @@ export default async function FinanceDashboardPage({
       </section>
 
       {latest ? (
-        <section className="rounded-xl border p-4">
-          <h2 className="mb-2 text-sm font-medium">
-            AI Finance analyst · week of {latest.week_start}
+        <section className="rounded-lg bg-highlight p-5 ring-1 ring-border">
+          <h2 className="mb-2 font-heading text-sm font-semibold text-ink">
+            ✦ AI Finance analyst · week of {latest.week_start}
           </h2>
-          <div className="prose prose-sm dark:prose-invert max-w-none">
+          <div className="prose prose-sm max-w-none prose-a:text-primary">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {latest.summary_markdown}
             </ReactMarkdown>
@@ -207,16 +236,18 @@ export default async function FinanceDashboardPage({
             <ul className="mt-3 space-y-1 text-sm">
               {latest.alerts.map((a, i) => (
                 <li key={i}>
-                  <span className="font-medium uppercase">{a.severity}</span>:{" "}
-                  {a.message}
+                  <span className="font-medium uppercase text-ink-soft">
+                    {a.severity}
+                  </span>
+                  : {a.message}
                 </li>
               ))}
             </ul>
           ) : null}
           {(latest.reallocation_suggestions ?? []).length ? (
-            <p className="mt-3 text-xs text-muted-foreground">
+            <p className="mt-3 text-xs text-ink-soft">
               Reallocation suggestions were pushed to{" "}
-              <Link href="/ads/recommendations" className="underline">
+              <Link href="/ads/recommendations" className="text-primary underline">
                 Ads recommendations
               </Link>
               .
@@ -229,15 +260,6 @@ export default async function FinanceDashboardPage({
 
       {/* Keep csv string referenced so buildFinanceCsv stays exercised server-side */}
       <span className="hidden">{csv.length}</span>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-2xl font-semibold">{value}</p>
     </div>
   );
 }

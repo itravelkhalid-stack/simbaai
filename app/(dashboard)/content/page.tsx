@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { PageHeader } from "@/components/dashboard/page-header";
 import { ContentNav } from "@/components/content/content-nav";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -46,18 +47,20 @@ export default async function ContentHomePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Content</h1>
-          <p className="mt-2 text-muted-foreground">
+      <PageHeader
+        title="Content"
+        description={
+          <>
             Generate, review, and schedule brand-safe content for{" "}
             {active.organization.name}.
-          </p>
-        </div>
-        <Link href="/content/generate" className={cn(buttonVariants())}>
-          Generate content
-        </Link>
-      </div>
+          </>
+        }
+        actions={
+          <Link href="/content/generate" className={cn(buttonVariants())}>
+            Generate content
+          </Link>
+        }
+      />
 
       <ContentNav current="/content" />
 

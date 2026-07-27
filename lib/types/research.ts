@@ -37,6 +37,8 @@ export type Brand = {
   agent_activity_paused: boolean;
   autonomy_min_roas: number;
   autonomy_max_cpa_pence: number;
+  /** Empty = derive from connected social/ad accounts. */
+  enabled_channels: string[];
   created_at: string;
   updated_at: string;
 };

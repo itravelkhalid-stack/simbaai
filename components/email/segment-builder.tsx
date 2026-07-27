@@ -1,4 +1,5 @@
 "use client";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 import { useActionState, useState } from "react";
 
@@ -43,7 +44,7 @@ export function SegmentBuilder() {
         <select
           value={combinator}
           onChange={(e) => setCombinator(e.target.value as "and" | "or")}
-          className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+          className={fieldSelectClass}
         >
           <option value="and">ALL rules (AND)</option>
           <option value="or">ANY rule (OR)</option>
@@ -54,7 +55,7 @@ export function SegmentBuilder() {
         {rules.map((rule) => (
           <div key={rule.id} className="grid gap-2 md:grid-cols-4">
             <select
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+              className={fieldSelectClass}
               value={rule.field}
               onChange={(e) =>
                 setRules((prev) =>
@@ -73,7 +74,7 @@ export function SegmentBuilder() {
               <option value="custom.city">custom.city</option>
             </select>
             <select
-              className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+              className={fieldSelectClass}
               value={rule.operator}
               onChange={(e) =>
                 setRules((prev) =>

@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 
+import { drawClientPdfHeader } from "@/lib/brand/pdf-header";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Report, ReportContent } from "@/lib/types/reviews";
 import { REPORT_TYPE_LABELS } from "@/lib/types/reviews";
@@ -8,16 +9,21 @@ function money(n: number) {
   return `£${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
-export function buildReportPdfBuffer(params: {
+export async function buildReportPdfBuffer(params: {
   report: Pick<Report, "title" | "type" | "period_start" | "period_end">;
   content: ReportContent;
-}): ArrayBuffer {
+}): Promise<ArrayBuffer> {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const primary = params.content.branding?.primary_color ?? "#0F6F68";
   const brand = params.content.branding?.brand_name ?? "Brand";
   const margin = 48;
   const maxWidth = 500;
-  let y = 48;
+  let y = await drawClientPdfHeader(doc, {
+    brandName: brand,
+    primaryColor: primary,
+    logoUrl: params.content.branding?.logo_url ?? null,
+    subtitle: `${REPORT_TYPE_LABELS[params.report.type]} report`,
+  });
 
   const ensureSpace = (need: number) => {
     if (y + need > 780) {
@@ -26,7 +32,10 @@ export function buildReportPdfBuffer(params: {
     }
   };
 
-  const write = (text: string, opts?: { size?: number; color?: string; bold?: boolean }) => {
+  const write = (
+    text: string,
+    opts?: { size?: number; color?: string; bold?: boolean },
+  ) => {
     ensureSpace(18);
     doc.setFontSize(opts?.size ?? 11);
     doc.setTextColor(opts?.color ?? "#111111");
@@ -38,15 +47,6 @@ export function buildReportPdfBuffer(params: {
       y += opts?.size && opts.size > 14 ? 18 : 14;
     }
   };
-
-  // Header bar
-  doc.setFillColor(primary);
-  doc.rect(0, 0, 595, 36, "F");
-  doc.setTextColor("#ffffff");
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text(`${brand} · ${REPORT_TYPE_LABELS[params.report.type]} report`, margin, 22);
-  y = 56;
 
   write(params.report.title, { size: 18, bold: true, color: primary });
   write(
@@ -60,10 +60,16 @@ export function buildReportPdfBuffer(params: {
   write("Headline numbers", { size: 14, bold: true, color: primary });
   for (const h of params.content.headline_numbers ?? []) {
     const delta =
-      h.delta_pct == null ? "n/a" : `${h.delta_pct > 0 ? "+" : ""}${h.delta_pct}%`;
+      h.delta_pct == null
+        ? "n/a"
+        : `${h.delta_pct > 0 ? "+" : ""}${h.delta_pct}%`;
     const val =
-      h.unit === "£" ? money(h.value) : `${h.value}${h.unit ? ` ${h.unit}` : ""}`;
-    write(`• ${h.label}: ${val} (Δ ${delta}${h.target != null ? `, target ${h.target}` : ""})`);
+      h.unit === "£"
+        ? money(h.value)
+        : `${h.value}${h.unit ? ` ${h.unit}` : ""}`;
+    write(
+      `• ${h.label}: ${val} (Δ ${delta}${h.target != null ? `, target ${h.target}` : ""})`,
+    );
   }
   y += 8;
 
@@ -71,7 +77,10 @@ export function buildReportPdfBuffer(params: {
   for (const ch of params.content.channels ?? []) {
     write(ch.channel, { bold: true });
     write(ch.commentary);
-    write(`Metrics: ${JSON.stringify(ch.metrics)}`, { size: 9, color: "#555555" });
+    write(`Metrics: ${JSON.stringify(ch.metrics)}`, {
+      size: 9,
+      color: "#555555",
+    });
     y += 4;
   }
 
@@ -99,9 +108,11 @@ export function buildReportPdfBuffer(params: {
     y += 6;
     write("Plan retrospective", { size: 14, bold: true, color: primary });
     write("What worked:", { bold: true });
-    for (const x of params.content.plan_retrospective.what_worked) write(`• ${x}`);
+    for (const x of params.content.plan_retrospective.what_worked)
+      write(`• ${x}`);
     write("What missed:", { bold: true });
-    for (const x of params.content.plan_retrospective.what_missed) write(`• ${x}`);
+    for (const x of params.content.plan_retrospective.what_missed)
+      write(`• ${x}`);
     write("Lessons:", { bold: true });
     for (const x of params.content.plan_retrospective.lessons) write(`• ${x}`);
   }
@@ -109,7 +120,8 @@ export function buildReportPdfBuffer(params: {
   if ((params.content.next_quarter_proposals ?? []).length) {
     y += 6;
     write("Next quarter proposals", { size: 14, bold: true, color: primary });
-    for (const x of params.content.next_quarter_proposals ?? []) write(`• ${x}`);
+    for (const x of params.content.next_quarter_proposals ?? [])
+      write(`• ${x}`);
   }
 
   y += 16;
@@ -125,10 +137,12 @@ export async function uploadReportPdf(params: {
 }): Promise<string | null> {
   const supabase = createAdminClient();
   const path = `${params.organizationId}/${params.reportId}.pdf`;
-  const { error } = await supabase.storage.from("reports").upload(path, params.buffer, {
-    contentType: "application/pdf",
-    upsert: true,
-  });
+  const { error } = await supabase.storage
+    .from("reports")
+    .upload(path, params.buffer, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
   if (error) {
     console.error("PDF upload failed", error.message);
     return null;

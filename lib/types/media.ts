@@ -29,11 +29,20 @@ export type MediaAsset = {
   height: number | null;
   size_bytes: number;
   tags: string[];
+  description: string | null;
+  ai_subject: string | null;
+  ai_style: string | null;
+  ai_colors: string[];
+  suitable_for: string[];
+  ai_tagged_at: string | null;
   source: MediaAssetSource;
   created_by: string | null;
   created_at: string;
   updated_at: string;
 };
+
+/** Client-safe direct-upload limit (browser → Supabase Storage). */
+export const MAX_MEDIA_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export type ContentItemMedia = {
   id: string;

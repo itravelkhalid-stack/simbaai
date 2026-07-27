@@ -18,8 +18,31 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Simba AI",
-  description: "Your AI marketing team — research, content, ads, and ops in one workspace.",
+  title: {
+    default: "Simba AI",
+    template: "%s · Simba AI",
+  },
+  description:
+    "Your AI marketing team — research, content, ads, and ops in one workspace.",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://www.lowcostbeach.co.uk",
+  ),
+  openGraph: {
+    title: "Simba AI",
+    description:
+      "Your AI marketing team — research, content, ads, and ops in one workspace.",
+    type: "website",
+    siteName: "Simba AI",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Simba AI",
+    description:
+      "Your AI marketing team — research, content, ads, and ops in one workspace.",
+  },
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({

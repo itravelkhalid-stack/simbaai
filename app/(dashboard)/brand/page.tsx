@@ -1,11 +1,13 @@
 import Link from "next/link";
 
 import { BrandNav } from "@/components/brand/brand-nav";
+import { EmptyState } from "@/components/brand/empty-state";
 import { CreateBrandForm } from "@/components/brand/setup-wizard";
 import { setPrimaryBrand } from "@/lib/brand/actions";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { Brand } from "@/lib/types/research";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,42 +28,37 @@ export default async function BrandPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Brand</h1>
-          <p className="mt-2 text-muted-foreground">
-            Brand kit, voice, audiences, products, media, and AI extraction.
-          </p>
-        </div>
-        {list[0] ? (
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/brand/setup?brandId=${list[0].id}`}
-              className={cn(buttonVariants())}
-            >
-              Setup wizard
-            </Link>
-            <Link
-              href={`/brand/media?brandId=${list[0].id}`}
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              Media
-            </Link>
-            <Link
-              href="/brand/autonomy"
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              Autonomy
-            </Link>
-            <Link
-              href={`/brand/guidelines?brandId=${list[0].id}`}
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              Guidelines
-            </Link>
-          </div>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Brand"
+        description="Brand kit, voice, audiences, products, media, and AI extraction."
+        actions={
+          list[0] ? (
+            <>
+              <Link href={`/brand/setup?brandId=${list[0].id}`} className={cn(buttonVariants())}>
+                Setup wizard
+              </Link>
+              <Link
+                href={`/brand/media?brandId=${list[0].id}`}
+                className={cn(buttonVariants({ variant: "outline" }))}
+              >
+                Media
+              </Link>
+              <Link
+                href="/brand/autonomy"
+                className={cn(buttonVariants({ variant: "outline" }))}
+              >
+                Autonomy
+              </Link>
+              <Link
+                href={`/brand/guidelines?brandId=${list[0].id}`}
+                className={cn(buttonVariants({ variant: "outline" }))}
+              >
+                Guidelines
+              </Link>
+            </>
+          ) : null
+        }
+      />
 
       <BrandNav current="/brand" />
 
@@ -69,14 +66,17 @@ export default async function BrandPage() {
         canWrite ? (
           <CreateBrandForm />
         ) : (
-          <p className="text-muted-foreground">No brands yet.</p>
+          <EmptyState
+            title="Your brand kit starts here"
+            description="Ask an owner or admin to create your brand, then your AI marketing team can work from its voice, audience, and guidelines."
+          />
         )
       ) : (
         <ul className="space-y-3">
           {list.map((brand) => (
             <li
               key={brand.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card p-5 shadow-elevated ring-1 ring-border"
             >
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">

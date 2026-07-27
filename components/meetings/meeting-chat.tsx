@@ -7,8 +7,11 @@ import {
   type MeetingsActionResult,
 } from "@/lib/meetings/actions";
 import type { MeetingChatMessage } from "@/lib/types/meetings";
+import { SimbaBadge } from "@/components/brand/ai-content";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 const initial: MeetingsActionResult & { reply?: string } = {};
 
@@ -22,38 +25,45 @@ export function MeetingChat({
   const [state, action, pending] = useActionState(askAboutMeeting, initial);
 
   return (
-    <div className="space-y-3 rounded-xl border p-4">
-      <p className="text-sm font-medium">Ask about this meeting</p>
-      <div className="max-h-72 space-y-2 overflow-y-auto text-sm">
+    <div className="space-y-4 rounded-lg bg-card p-5 shadow-elevated ring-1 ring-border">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-heading text-base font-semibold text-ink">
+          Ask about this meeting
+        </h2>
+        <SimbaBadge />
+      </div>
+      <div className="max-h-80 space-y-3 overflow-y-auto">
         {messages.length === 0 ? (
-          <p className="text-muted-foreground">
-            Ask anything grounded in this meeting&apos;s minutes, decisions, and data.
+          <p className="text-sm text-ink-soft">
+            Ask anything grounded in this meeting&apos;s minutes, decisions, and
+            data.
           </p>
         ) : (
           messages.map((m) => (
             <div
               key={m.id}
-              className={
+              className={cn(
+                "rounded-lg px-3 py-2.5 text-sm",
                 m.role === "user"
-                  ? "rounded-lg bg-muted/60 px-3 py-2"
-                  : "rounded-lg border px-3 py-2"
-              }
+                  ? "ml-6 bg-muted text-ink"
+                  : "mr-6 bg-highlight text-ink",
+              )}
             >
-              <p className="mb-1 text-xs font-medium text-muted-foreground">
-                {m.role === "user" ? "You" : "Analyst"}
+              <p className="mb-1 text-[11px] font-medium tracking-wide text-ink-soft uppercase">
+                {m.role === "user" ? "You" : "Simba"}
               </p>
-              <p className="whitespace-pre-wrap">{m.content}</p>
+              <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
             </div>
           ))
         )}
       </div>
       <form action={action} className="flex gap-2">
         <input type="hidden" name="meetingId" value={meetingId} />
-        <input
+        <Input
           name="question"
           placeholder="What were the blockers?"
-          className="flex h-9 flex-1 rounded-md border bg-transparent px-3 text-sm"
           required
+          className="flex-1"
         />
         <Button type="submit" disabled={pending}>
           {pending ? "…" : "Ask"}

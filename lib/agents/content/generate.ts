@@ -73,10 +73,15 @@ export async function generateBatchPlan(input: {
   startDate: string;
   endDate: string;
   brief: string;
+  enabledPlatforms: ContentPlatform[];
   model?: string;
 }) {
+  const platforms =
+    input.enabledPlatforms.length > 0
+      ? input.enabledPlatforms
+      : (["facebook", "instagram"] as ContentPlatform[]);
   return runClaudeJson({
-    system: batchPlanPrompt.system,
+    system: batchPlanPrompt.systemForPlatforms(platforms),
     user: batchPlanPrompt.buildUserPrompt({
       brandContextMarkdown: input.brandContext.markdown,
       startDate: input.startDate,
@@ -86,6 +91,7 @@ export async function generateBatchPlan(input: {
         name: p.name,
         target_pct: Number(p.target_pct),
       })),
+      enabledPlatforms: platforms,
     }),
     schema: batchPlanResultSchema,
     model: input.model,

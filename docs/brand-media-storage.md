@@ -6,12 +6,24 @@
 
 | Who | How |
 |-----|-----|
-| Org members (dashboard) | Authenticated SELECT where the object path starts with their `organization_id` |
+| Org members (dashboard) | Authenticated SELECT/INSERT/UPDATE/DELETE where the object path starts with their `organization_id` |
 | Anonymous / Meta / Google | **No** blanket public read |
 | Instagram / Facebook publish | Service role mints a **long-lived signed URL** (48h) at publish time and passes that to Graph |
 | PDF ingest / server jobs | Service role `download()` by `storage_path` |
 
 Path layout: `{organization_id}/{brand_id}/{timestamp}-{filename}`
+
+## Browser → Storage uploads (required)
+
+Image/video (and brand-slot) uploads **must not** pass through Next.js Server Actions. The default Server Actions body limit is 1MB (`digest 345093329`).
+
+Flow:
+
+1. Browser validates type/size (images & videos ≤ 25MB).
+2. Browser uploads bytes with the user JWT to `brand-media` under `{orgId}/{brandId}/…` (Storage RLS).
+3. Server action `registerUploadedMediaAsset` receives **only** path + metadata, inserts `media_assets`, and queues vision tagging / guidelines PDF jobs.
+
+See `lib/media/client-upload.ts` and `components/media/direct-media-upload.tsx`.
 
 ## Why not a public bucket?
 

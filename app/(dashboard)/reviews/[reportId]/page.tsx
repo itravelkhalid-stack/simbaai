@@ -58,12 +58,16 @@ export default async function ReportDetailPage({
   return (
     <div className="space-y-6">
       <div
-        className="rounded-xl border p-5"
-        style={{ borderColor: `${primary}55` }}
+        className="overflow-hidden rounded-lg bg-card shadow-elevated ring-1 ring-border"
+        style={{ borderTop: `4px solid ${primary}` }}
       >
+        <div className="p-5 md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <Link href="/reviews" className="text-sm text-muted-foreground underline">
+            <Link
+              href="/reviews"
+              className="text-sm font-medium text-primary transition-colors duration-150 hover:underline"
+            >
               ← Reports
             </Link>
             <div className="mt-3 flex items-center gap-3">
@@ -71,27 +75,33 @@ export default async function ReportDetailPage({
                 <Image
                   src={logo}
                   alt=""
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 rounded object-contain"
+                  width={48}
+                  height={48}
+                  className="size-12 rounded-md bg-surface object-contain ring-1 ring-border"
                 />
               ) : null}
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight" style={{ color: primary }}>
+                <h1
+                  className="font-heading text-3xl font-bold tracking-tight"
+                  style={{ color: primary }}
+                >
                   {r.title}
                 </h1>
-                <p className="mt-1 text-muted-foreground">
+                <p className="mt-1 text-sm text-ink-soft">
                   {content.branding?.brand_name ?? "Brand"} ·{" "}
-                  {REPORT_TYPE_LABELS[r.type]} · {r.period_start} → {r.period_end} ·{" "}
-                  {r.status}
+                  {REPORT_TYPE_LABELS[r.type]} · {r.period_start} →{" "}
+                  {r.period_end} · {r.status}
                 </p>
               </div>
             </div>
           </div>
         </div>
         {content.summary ? (
-          <p className="mt-4 max-w-3xl text-sm leading-relaxed">{content.summary}</p>
+          <p className="mt-4 max-w-[65ch] text-sm leading-relaxed text-ink">
+            {content.summary}
+          </p>
         ) : null}
+        </div>
       </div>
 
       <ReviewsNav current="/reviews" />

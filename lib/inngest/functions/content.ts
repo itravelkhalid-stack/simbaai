@@ -1,4 +1,5 @@
 import { getBrandContext } from "@/lib/brand/context";
+import { getBrandEnabledContentPlatforms } from "@/lib/brand/channels";
 import {
   generateBatchPlan,
   generateRepurposeAdaptations,
@@ -10,21 +11,12 @@ import { appendAgentRunLog } from "@/lib/agents/research/persist";
 import { runEntityComplianceCheck } from "@/lib/compliance/check";
 import { inngest } from "@/lib/inngest/client";
 import { recordJobFailure } from "@/lib/inngest/functions/jobs";
+import { autoAttachLibraryImage } from "@/lib/media/select";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   ContentFormat,
   ContentPlatform,
 } from "@/lib/types/content";
-
-const ALL_PLATFORMS: ContentPlatform[] = [
-  "instagram",
-  "facebook",
-  "tiktok",
-  "x",
-  "linkedin",
-  "youtube",
-  "pinterest",
-];
 
 async function applyComplianceToItem(params: {
   organizationId: string;
@@ -52,6 +44,28 @@ async function applyComplianceToItem(params: {
     },
     syncContentFlags: true,
   });
+}
+
+async function maybeAutoAttachMedia(params: {
+  organizationId: string;
+  brandId: string;
+  itemId: string;
+  topic: string;
+  title?: string | null;
+  copy?: string | null;
+}) {
+  try {
+    await autoAttachLibraryImage({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      contentItemId: params.itemId,
+      topic: params.topic,
+      title: params.title,
+      copy: params.copy,
+    });
+  } catch {
+    // Suggestion only — generation must not fail if library is empty/misconfigured
+  }
 }
 
 export const runContentSingleGenerate = inngest.createFunction(
@@ -175,6 +189,14 @@ export const runContentSingleGenerate = inngest.createFunction(
             hashtags: generated.result.data.hashtags,
             structured: generated.result.data.structured,
           });
+          await maybeAutoAttachMedia({
+            organizationId,
+            brandId,
+            itemId: item.id,
+            topic,
+            title: generated.result.data.title ?? topic.slice(0, 80),
+            copy: generated.result.data.caption,
+          });
         } else {
           for (const variant of generated.result.data.variants) {
             const { data: item, error } = await supabase
@@ -213,6 +235,14 @@ export const runContentSingleGenerate = inngest.createFunction(
               copy: variant.copy,
               hashtags: variant.hashtags,
               structured: variant.structured,
+            });
+            await maybeAutoAttachMedia({
+              organizationId,
+              brandId,
+              itemId: item.id,
+              topic,
+              title: variant.title ?? topic,
+              copy: variant.copy,
             });
           }
         }
@@ -291,12 +321,21 @@ export const runContentBatchPropose = inngest.createFunction(
         return getBrandContext(organizationId, brandId, { admin: true });
       });
 
+      const enabledPlatforms = await step.run("enabled-platforms", async () => {
+        return getBrandEnabledContentPlatforms({
+          organizationId,
+          brandId,
+          admin: true,
+        });
+      });
+
       const proposal = await step.run("propose", async () => {
         return generateBatchPlan({
           brandContext,
           startDate: plan.start_date,
           endDate: plan.end_date,
           brief: String((plan.brief as { notes?: string }).notes ?? plan.title),
+          enabledPlatforms,
           model,
         });
       });
@@ -306,21 +345,30 @@ export const runContentBatchPropose = inngest.createFunction(
         const pillarByName = new Map(
           brandContext.pillars.map((p) => [p.name.toLowerCase(), p.id]),
         );
+        const allowed = new Set(enabledPlatforms);
 
-        const rows = proposal.data.slots.map((slot, index) => {
-          const scheduled = `${slot.date}T10:00:00.000Z`;
-          return {
-            organization_id: organizationId,
-            plan_id: planId,
-            pillar_id: pillarByName.get(slot.pillar_name.toLowerCase()) ?? null,
-            platform: slot.platform,
-            format: slot.format,
-            topic: slot.topic,
-            scheduled_at: scheduled,
-            status: "proposed" as const,
-            sort_order: index,
-          };
-        });
+        const rows = proposal.data.slots
+          .filter((slot) => allowed.has(slot.platform))
+          .map((slot, index) => {
+            const scheduled = `${slot.date}T10:00:00.000Z`;
+            return {
+              organization_id: organizationId,
+              plan_id: planId,
+              pillar_id: pillarByName.get(slot.pillar_name.toLowerCase()) ?? null,
+              platform: slot.platform,
+              format: slot.format,
+              topic: slot.topic,
+              scheduled_at: scheduled,
+              status: "proposed" as const,
+              sort_order: index,
+            };
+          });
+
+        if (rows.length === 0) {
+          throw new Error(
+            `No slots for enabled platforms (${enabledPlatforms.join(", ")})`,
+          );
+        }
 
         await supabase.from("content_plan_slots").delete().eq("plan_id", planId);
         const { error } = await supabase.from("content_plan_slots").insert(rows);
@@ -503,6 +551,15 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
             structured,
           });
 
+          await maybeAutoAttachMedia({
+            organizationId,
+            brandId,
+            itemId: item.id,
+            topic: slot.topic,
+            title,
+            copy,
+          });
+
           await supabase
             .from("content_plan_slots")
             .update({ status: "generated", content_item_id: item.id })
@@ -590,7 +647,17 @@ export const runContentRepurpose = inngest.createFunction(
 
       const adaptations = await step.run("adapt", async () => {
         await appendAgentRunLog(agentRunId, "Repurposing across platforms", 25);
-        const targets = ALL_PLATFORMS.filter((p) => p !== source.platform);
+        const enabled = await getBrandEnabledContentPlatforms({
+          organizationId,
+          brandId,
+          admin: true,
+        });
+        const targets = enabled.filter((p) => p !== source.platform);
+        if (targets.length === 0) {
+          throw new Error(
+            "No other enabled platforms to repurpose to. Update Brand → Channels.",
+          );
+        }
         return generateRepurposeAdaptations({
           brandContext,
           sourcePlatform: source.platform,
@@ -604,8 +671,15 @@ export const runContentRepurpose = inngest.createFunction(
       });
 
       await step.run("persist", async () => {
+        const enabled = await getBrandEnabledContentPlatforms({
+          organizationId,
+          brandId,
+          admin: true,
+        });
+        const allowed = new Set(enabled);
         const ids: string[] = [];
         for (const adaptation of adaptations.data.adaptations) {
+          if (!allowed.has(adaptation.platform)) continue;
           const { data: item, error } = await supabase
             .from("content_items")
             .insert({
@@ -640,6 +714,14 @@ export const runContentRepurpose = inngest.createFunction(
             copy: adaptation.copy,
             hashtags: adaptation.hashtags,
             structured: adaptation.structured,
+          });
+          await maybeAutoAttachMedia({
+            organizationId,
+            brandId,
+            itemId: item.id,
+            topic: adaptation.title ?? source.title ?? source.copy.slice(0, 80),
+            title: adaptation.title,
+            copy: adaptation.copy,
           });
         }
 

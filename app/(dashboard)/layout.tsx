@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
 import { AnnouncementBanners } from "@/components/dashboard/announcement-banners";
-import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { IntegrationHealthBanners } from "@/components/dashboard/integration-health-banners";
-import { Sidebar } from "@/components/dashboard/sidebar";
+import { loadWorkspaceTheme } from "@/lib/brand/load-workspace-theme";
 import {
   getCurrentProfile,
   resolveActiveOrganization,
@@ -36,45 +36,47 @@ export default async function DashboardLayout({
     );
   }
 
-  const [{ data: notifications }, { data: announcements }] = await Promise.all([
-    supabase
-      .from("notifications")
-      .select("id, title, body, link, read_at, created_at, category, organization_id")
-      .eq("user_id", user.id)
-      .eq("organization_id", active.organization_id)
-      .order("created_at", { ascending: false })
-      .limit(20),
-    supabase
-      .from("platform_announcements")
-      .select("id, title, body, severity")
-      .eq("active", true)
-      .order("starts_at", { ascending: false })
-      .limit(5),
-  ]);
+  const [{ data: notifications }, { data: announcements }, workspaceTheme] =
+    await Promise.all([
+      supabase
+        .from("notifications")
+        .select(
+          "id, title, body, link, read_at, created_at, category, organization_id",
+        )
+        .eq("user_id", user.id)
+        .eq("organization_id", active.organization_id)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
+        .from("platform_announcements")
+        .select("id, title, body, severity")
+        .eq("active", true)
+        .order("starts_at", { ascending: false })
+        .limit(5),
+      loadWorkspaceTheme(active.organization_id, active.organization.name),
+    ]);
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar
-        memberships={memberships}
-        activeOrganizationId={active.organization_id}
-        profile={profile}
-        email={user.email ?? ""}
-      />
-      <main className="flex-1 overflow-auto">
-        <div className="mx-auto w-full max-w-6xl p-6 md:p-8">
-          <DashboardHeader
-            userId={user.id}
-            organizationId={active.organization_id}
-            orgName={active.organization.name}
-            notifications={notifications ?? []}
-            impersonating={Boolean(active.impersonating)}
-            isPlatformAdmin={isPlatformAdmin}
-          />
+    <DashboardShell
+      memberships={memberships}
+      activeOrganizationId={active.organization_id}
+      profile={profile}
+      email={user.email ?? ""}
+      userId={user.id}
+      organizationId={active.organization_id}
+      orgName={active.organization.name}
+      notifications={notifications ?? []}
+      impersonating={Boolean(active.impersonating)}
+      isPlatformAdmin={isPlatformAdmin}
+      workspaceTheme={workspaceTheme}
+      banners={
+        <>
           <AnnouncementBanners items={announcements ?? []} />
           <IntegrationHealthBanners />
-          {children}
-        </div>
-      </main>
-    </div>
+        </>
+      }
+    >
+      {children}
+    </DashboardShell>
   );
 }

@@ -31,6 +31,8 @@ import type {
   AnalyticsChatMessage,
 } from "@/lib/types/analytics";
 import { ANALYTICS_CHANNEL_LABELS } from "@/lib/types/analytics";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { fieldInputClass, fieldSelectClass } from "@/lib/ui/field";
 
 export default async function DataDashboardPage({
   searchParams,
@@ -61,9 +63,8 @@ export default async function DataDashboardPage({
 
   if (!brandId) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Data</h1>
-        <p className="text-sm text-muted-foreground">Create a brand first.</p>
+      <div className="space-y-6">
+        <PageHeader title="Data" description="Create a brand first." />
       </div>
     );
   }
@@ -145,13 +146,15 @@ export default async function DataDashboardPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Data</h1>
-        <p className="mt-2 text-muted-foreground">
-          Unified analytics rollups, GA4 enrichment, ask-your-data, and anomaly
-          alerts.
-        </p>
-      </div>
+      <PageHeader
+        title="Data"
+        description={
+          <>
+            Unified analytics rollups, GA4 enrichment, ask-your-data, and anomaly
+            alerts.
+          </>
+        }
+      />
       <DataNav current="/data" />
 
       <div className="flex flex-wrap gap-2">
@@ -180,7 +183,7 @@ export default async function DataDashboardPage({
               type="date"
               name="from"
               defaultValue={from}
-              className="flex h-9 rounded-md border bg-transparent px-2"
+              className={fieldInputClass}
             />
           </label>
           <label className="space-y-1">
@@ -189,7 +192,7 @@ export default async function DataDashboardPage({
               type="date"
               name="to"
               defaultValue={to}
-              className="flex h-9 rounded-md border bg-transparent px-2"
+              className={fieldInputClass}
             />
           </label>
           <label className="space-y-1">
@@ -197,7 +200,7 @@ export default async function DataDashboardPage({
             <select
               name="compare"
               defaultValue={compare ? "1" : "0"}
-              className="flex h-9 rounded-md border bg-transparent px-2"
+              className={fieldSelectClass}
             >
               <option value="1">Prior period</option>
               <option value="0">Off</option>

@@ -7,6 +7,7 @@ import {
   researchFreshness,
   type ResearchProject,
 } from "@/lib/types/research";
+import { EmptyState } from "@/components/brand/empty-state";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -16,12 +17,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { fieldSelectClass } from "@/lib/ui/field";
+import { statusTone } from "@/lib/ui/status";
 
-function freshnessVariant(tone: ReturnType<typeof researchFreshness>["tone"]) {
-  if (tone === "fresh") return "default" as const;
-  if (tone === "aging") return "secondary" as const;
-  if (tone === "stale") return "destructive" as const;
-  return "outline" as const;
+function freshnessTone(tone: ReturnType<typeof researchFreshness>["tone"]) {
+  if (tone === "fresh") return "success" as const;
+  if (tone === "aging") return "warning" as const;
+  if (tone === "stale") return "danger" as const;
+  return "neutral" as const;
 }
 
 export function ResearchLibrary({
@@ -39,7 +42,7 @@ export function ResearchLibrary({
         <select
           name="type"
           defaultValue={typeFilter ?? ""}
-          className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+          className={fieldSelectClass}
           onChange={(e) => {
             const params = new URLSearchParams(window.location.search);
             if (e.target.value) params.set("type", e.target.value);
@@ -57,7 +60,7 @@ export function ResearchLibrary({
         <select
           name="status"
           defaultValue={statusFilter ?? ""}
-          className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+          className={fieldSelectClass}
           onChange={(e) => {
             const params = new URLSearchParams(window.location.search);
             if (e.target.value) params.set("status", e.target.value);
@@ -73,7 +76,15 @@ export function ResearchLibrary({
         </select>
       </form>
 
-      <div className="rounded-xl border">
+      {projects.length === 0 ? (
+        <EmptyState
+          title="Research that moves your marketing forward"
+          description="Run a brand audit or competitor scan to give Simba AI the context it needs to make sharper recommendations."
+          actionLabel="Start research"
+          actionHref="/research/new"
+        />
+      ) : (
+      <div className="rounded-lg bg-card shadow-elevated ring-1 ring-border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -85,14 +96,7 @@ export function ResearchLibrary({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {projects.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
-                  No research projects yet. Start a brand audit or competitor scan.
-                </TableCell>
-              </TableRow>
-            ) : (
-              projects.map((project) => {
+            {projects.map((project) => {
                 const freshness = researchFreshness(project.completed_at);
                 return (
                   <TableRow key={project.id}>
@@ -106,10 +110,10 @@ export function ResearchLibrary({
                     </TableCell>
                     <TableCell>{RESEARCH_TYPE_LABELS[project.type]}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{project.status}</Badge>
+                      <Badge variant={statusTone(project.status)}>{project.status}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={freshnessVariant(freshness.tone)}>
+                      <Badge variant={freshnessTone(freshness.tone)}>
                         {freshness.label}
                       </Badge>
                     </TableCell>
@@ -118,11 +122,11 @@ export function ResearchLibrary({
                     </TableCell>
                   </TableRow>
                 );
-              })
-            )}
+              })}
           </TableBody>
         </Table>
       </div>
+      )}
     </div>
   );
 }

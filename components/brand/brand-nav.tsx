@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/brand/setup", label: "Setup" },
   { href: "/brand/guidelines", label: "Guidelines" },
   { href: "/brand/media", label: "Media" },
+  { href: "/brand/channels", label: "Channels" },
   { href: "/brand/autonomy", label: "Autonomy" },
 ];
 

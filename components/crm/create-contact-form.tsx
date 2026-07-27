@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: CrmActionResult = {};
 
@@ -37,7 +38,7 @@ export function CreateContactForm({
           <Label>Brand</Label>
           <select
             name="brandId"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             defaultValue={brands[0]?.id ?? ""}
             required
           >
@@ -71,7 +72,7 @@ export function CreateContactForm({
             <Label>Lifecycle</Label>
             <select
               name="lifecycleStage"
-              className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+              className={fieldSelectClass}
               defaultValue="lead"
             >
               {LIFECYCLE_STAGES.map((s) => (
@@ -104,7 +105,7 @@ export function CreateContactForm({
         </p>
         <select
           name="brandId"
-          className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+          className={fieldSelectClass}
           defaultValue={brands[0]?.id ?? ""}
           required
         >

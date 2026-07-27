@@ -1,19 +1,59 @@
 "use client"
 
 import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import {
+  CircleCheckIcon,
+  InfoIcon,
+  TriangleAlertIcon,
+  OctagonXIcon,
+  Loader2Icon,
+} from "lucide-react"
+
+import { ICON } from "@/lib/ui/icons"
 
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme="light"
       className="toaster group"
+      position="top-right"
+      gap={10}
       icons={{
-        success: <CircleCheckIcon className="size-4 text-success" />,
-        info: <InfoIcon className="size-4 text-brand" />,
-        warning: <TriangleAlertIcon className="size-4 text-warning" />,
-        error: <OctagonXIcon className="size-4 text-danger" />,
-        loading: <Loader2Icon className="size-4 animate-spin text-ink-soft" />,
+        success: (
+          <CircleCheckIcon
+            size={ICON.size}
+            strokeWidth={ICON.strokeWidth}
+            className="text-success"
+          />
+        ),
+        info: (
+          <InfoIcon
+            size={ICON.size}
+            strokeWidth={ICON.strokeWidth}
+            className="text-brand"
+          />
+        ),
+        warning: (
+          <TriangleAlertIcon
+            size={ICON.size}
+            strokeWidth={ICON.strokeWidth}
+            className="text-warning"
+          />
+        ),
+        error: (
+          <OctagonXIcon
+            size={ICON.size}
+            strokeWidth={ICON.strokeWidth}
+            className="text-danger"
+          />
+        ),
+        loading: (
+          <Loader2Icon
+            size={ICON.size}
+            strokeWidth={ICON.strokeWidth}
+            className="animate-spin text-ink-soft"
+          />
+        ),
       }}
       style={
         {
@@ -34,7 +74,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast shadow-elevated font-sans text-sm",
+          toast:
+            "cn-toast shadow-elevated font-sans text-sm ring-1 ring-border",
+          title: "font-heading font-semibold text-ink",
+          description: "text-ink-soft",
         },
       }}
       {...props}

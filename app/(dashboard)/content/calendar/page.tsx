@@ -1,5 +1,6 @@
 import { ContentCalendar } from "@/components/content/content-calendar";
 import { ContentNav } from "@/components/content/content-nav";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { ContentItem } from "@/lib/types/content";
@@ -20,12 +21,10 @@ export default async function ContentCalendarPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Content calendar</h1>
-        <p className="mt-2 text-muted-foreground">
-          Week/month view · drag to reschedule · colour-coded by platform and status.
-        </p>
-      </div>
+      <PageHeader
+        title="Content calendar"
+        description="Week/month view · drag to reschedule · platform dots and status badges."
+      />
       <ContentNav current="/content/calendar" />
       <ContentCalendar
         items={(data ?? []) as ContentItem[]}

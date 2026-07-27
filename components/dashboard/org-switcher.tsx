@@ -15,11 +15,14 @@ export function OrgSwitcher({
 
   if (memberships.length <= 1) {
     return (
-      <div className="rounded-lg border px-3 py-2">
-        <p className="truncate text-sm font-medium">
+      <div className="rounded-lg bg-surface p-3 shadow-elevated ring-1 ring-border">
+        <p className="text-[11px] font-medium tracking-wide text-ink-soft uppercase">
+          Workspace
+        </p>
+        <p className="mt-1 truncate text-sm font-semibold text-ink">
           {active?.organization.name ?? "Organization"}
         </p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-xs text-ink-soft">
           {active?.organization.slug}
         </p>
       </div>
@@ -27,16 +30,19 @@ export function OrgSwitcher({
   }
 
   return (
-    <form action={switchOrganization} className="space-y-2">
-      <Label htmlFor="organizationId" className="text-xs text-muted-foreground">
-        Organization
+    <form
+      action={switchOrganization}
+      className="space-y-2 rounded-lg bg-surface p-3 shadow-elevated ring-1 ring-border"
+    >
+      <Label htmlFor="organizationId" className="text-[11px] font-medium tracking-wide text-ink-soft uppercase">
+        Workspace
       </Label>
       <select
         id="organizationId"
         name="organizationId"
         defaultValue={activeOrganizationId}
         onChange={(event) => event.currentTarget.form?.requestSubmit()}
-        className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-9 w-full rounded-md border border-input bg-surface px-2 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       >
         {memberships.map((membership) => (
           <option key={membership.id} value={membership.organization_id}>

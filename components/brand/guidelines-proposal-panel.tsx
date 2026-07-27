@@ -5,6 +5,7 @@ import {
 import type { BrandGuidelinesProposal } from "@/lib/types/media";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SimbaBadge } from "@/components/brand/ai-content";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -39,14 +40,18 @@ function DiffSection({
           : "—";
   if (beforeText === afterText) return null;
   return (
-    <div className="grid gap-2 rounded-lg border p-3 text-sm md:grid-cols-2">
+    <div className="grid gap-2 rounded-md bg-surface p-3 text-sm ring-1 ring-border md:grid-cols-2">
       <div>
-        <p className="text-xs font-medium text-muted-foreground">{label} (current)</p>
-        <p className="whitespace-pre-wrap">{beforeText}</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-ink-soft">
+          {label} · current
+        </p>
+        <p className="mt-1 whitespace-pre-wrap text-ink-soft">{beforeText}</p>
       </div>
       <div>
-        <p className="text-xs font-medium text-muted-foreground">{label} (proposed)</p>
-        <p className="whitespace-pre-wrap">{afterText}</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-primary">
+          {label} · proposed
+        </p>
+        <p className="mt-1 whitespace-pre-wrap text-ink">{afterText}</p>
       </div>
     </div>
   );
@@ -63,24 +68,30 @@ export function GuidelinesProposalPanel({
   if (pending.length === 0) return null;
 
   return (
-    <div className="space-y-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
-      <div>
-        <h2 className="text-lg font-medium">Guidelines extraction awaiting approval</h2>
-        <p className="text-sm text-muted-foreground">
-          Review the proposed changes from the uploaded PDF. Nothing is applied
-          until you approve.
-        </p>
+    <div className="space-y-4 rounded-lg bg-warning-soft p-5 ring-1 ring-warning/40">
+      <div className="flex flex-wrap items-center gap-2">
+        <SimbaBadge />
+        <h2 className="font-heading text-lg font-semibold text-ink">
+          Guidelines extraction awaiting approval
+        </h2>
       </div>
+      <p className="text-sm text-ink-soft">
+        Review the proposed changes from the uploaded PDF. Nothing is applied
+        until you approve.
+      </p>
       {pending.map((proposal) => {
         const current = asRecord(proposal.current_snapshot);
         const proposed = asRecord(proposal.proposed);
         const currentG = asRecord(current.guidelines);
         const proposedG = asRecord(proposed.guidelines);
         return (
-          <div key={proposal.id} className="space-y-3 rounded-xl border bg-background p-4">
+          <div
+            key={proposal.id}
+            className="space-y-3 rounded-lg bg-card p-5 shadow-elevated ring-1 ring-border"
+          >
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Pending</Badge>
-              <p className="text-sm text-muted-foreground">
+              <Badge variant="warning">Pending</Badge>
+              <p className="text-sm text-ink-soft">
                 {proposal.summary || "Extracted guidelines proposal"}
               </p>
             </div>
@@ -141,14 +152,14 @@ export function GuidelinesProposalPanel({
               after={proposedG.summary}
             />
             {canWrite ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 border-t border-border pt-4">
                 <form action={approveGuidelinesProposal}>
                   <input type="hidden" name="proposalId" value={proposal.id} />
                   <Button type="submit">Approve & apply</Button>
                 </form>
                 <form action={rejectGuidelinesProposal}>
                   <input type="hidden" name="proposalId" value={proposal.id} />
-                  <Button type="submit" variant="outline">
+                  <Button type="submit" variant="destructive">
                     Reject
                   </Button>
                 </form>

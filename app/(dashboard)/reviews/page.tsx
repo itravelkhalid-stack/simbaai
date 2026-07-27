@@ -4,6 +4,7 @@ import { GenerateReportForm } from "@/components/reviews/generate-report-form";
 import { ReviewsNav } from "@/components/reviews/reviews-nav";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
+import { PageHeader } from "@/components/dashboard/page-header";
 import {
   REPORT_TYPE_LABELS,
   type Report,
@@ -31,13 +32,15 @@ export default async function ReviewsFeedPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Reviews</h1>
-        <p className="mt-2 text-muted-foreground">
-          Daily, weekly, monthly, and quarterly performance reports against your brand
-          KPI targets.
-        </p>
-      </div>
+      <PageHeader
+        title="Reviews"
+        description={
+          <>
+            Daily, weekly, monthly, and quarterly performance reports against your brand
+            KPI targets.
+          </>
+        }
+      />
       <ReviewsNav current="/reviews" />
       <GenerateReportForm brands={brands ?? []} />
 

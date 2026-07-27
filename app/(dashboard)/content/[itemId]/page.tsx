@@ -58,6 +58,19 @@ export default async function ContentItemPage({
 
   const typed = item as ContentItem;
 
+  const library = (libraryAssets ?? []) as import("@/lib/types/media").MediaAsset[];
+  const { createBrandMediaSignedUrl } = await import("@/lib/media/storage");
+  const signedLibrary = await Promise.all(
+    library.map(async (asset) => {
+      try {
+        const url = await createBrandMediaSignedUrl(asset.storage_path);
+        return { ...asset, public_url: url };
+      } catch {
+        return asset;
+      }
+    }),
+  );
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -80,7 +93,8 @@ export default async function ContentItemPage({
         canOverride={
           active.role === "org_owner" || active.role === "org_admin"
         }
-        libraryAssets={(libraryAssets ?? []) as import("@/lib/types/media").MediaAsset[]}
+        libraryAssets={signedLibrary}
+        organizationId={active.organization_id}
       />
     </div>
   );

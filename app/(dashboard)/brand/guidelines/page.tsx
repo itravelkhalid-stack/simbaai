@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { BrandGuidelinesView } from "@/components/brand/guidelines-view";
 import { BrandNav } from "@/components/brand/brand-nav";
 import { GuidelinesProposalPanel } from "@/components/brand/guidelines-proposal-panel";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { Brand, BrandAudience, BrandProduct } from "@/lib/types/research";
@@ -68,30 +69,26 @@ export default async function BrandGuidelinesPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Guidelines — {brand.name}
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            The brand kit agents and humans share when creating work.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/brand/media?brandId=${brand.id}`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Media library
-          </Link>
-          <Link
-            href={`/brand/setup?brandId=${brand.id}`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Edit in wizard
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title={`Guidelines — ${brand.name}`}
+        description="The brand kit agents and humans share when creating work."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/brand/media?brandId=${brand.id}`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Media library
+            </Link>
+            <Link
+              href={`/brand/setup?brandId=${brand.id}`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Edit in wizard
+            </Link>
+          </div>
+        }
+      />
       <BrandNav current="/brand/guidelines" />
       <GuidelinesProposalPanel
         proposals={(proposals ?? []) as BrandGuidelinesProposal[]}

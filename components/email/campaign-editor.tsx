@@ -20,6 +20,7 @@ import type {
   EmailSegment,
   EmailSendingDomain,
 } from "@/lib/types/email";
+import { fieldCheckboxClass, fieldSelectClass } from "@/lib/ui/field";
 
 const initial: EmailActionResult = {};
 
@@ -67,7 +68,7 @@ export function CampaignEditor({
             defaultValue={(campaign.subject_variants ?? []).join("\n")}
           />
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="abTest" defaultChecked={campaign.ab_test} />
+            <input className={fieldCheckboxClass} type="checkbox" name="abTest" defaultChecked={campaign.ab_test} />
             Enable subject A/B split on send
           </label>
         </div>
@@ -83,6 +84,7 @@ export function CampaignEditor({
             {lists.map((list) => (
               <label key={list.id} className="flex items-center gap-2 text-sm">
                 <input
+                  className={fieldCheckboxClass}
                   type="checkbox"
                   checked={selectedLists.includes(list.id)}
                   onChange={(e) => {
@@ -106,7 +108,7 @@ export function CampaignEditor({
               id="segmentId"
               name="segmentId"
               defaultValue={campaign.segment_id ?? ""}
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+              className={fieldSelectClass}
             >
               <option value="">All selected list subscribers</option>
               {segments.map((segment) => (
@@ -122,7 +124,7 @@ export function CampaignEditor({
               id="sendingDomainId"
               name="sendingDomainId"
               defaultValue={campaign.sending_domain_id ?? ""}
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+              className={fieldSelectClass}
             >
               <option value="">Select domain</option>
               {domains.map((domain) => (

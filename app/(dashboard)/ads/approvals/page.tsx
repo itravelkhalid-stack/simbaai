@@ -1,20 +1,29 @@
 import Link from "next/link";
 
 import { AdsNav } from "@/components/ads/ads-nav";
-import { ComplianceFindingsPanel } from "@/components/compliance/findings-panel";
+import {
+  ApprovalCardShell,
+  PlatformChip,
+  SeverityCallout,
+  SimbaBadge,
+} from "@/components/approvals/approval-card";
+import { EmptyState } from "@/components/brand/empty-state";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { reviewCreative } from "@/lib/ads/actions";
 import {
   attachMediaAssetToAdCreative,
   setCampaignLive,
 } from "@/lib/ads/launch-actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { requireActiveOrg } from "@/lib/org/require";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { AdCampaign, AdCreative } from "@/lib/types/ads";
 import type { ComplianceCheck } from "@/lib/types/compliance";
 import type { MediaAsset } from "@/lib/types/media";
+import { cn } from "@/lib/utils";
 
 export default async function AdsApprovalsPage() {
   const { active } = await requireActiveOrg();
@@ -54,7 +63,10 @@ export default async function AdsApprovalsPage() {
   }
   const campaignIds = [...new Set(list.map((c) => c.campaign_id))];
   const { data: campaigns } = campaignIds.length
-    ? await supabase.from("ad_campaigns").select("id, name, platform").in("id", campaignIds)
+    ? await supabase
+        .from("ad_campaigns")
+        .select("id, name, platform")
+        .in("id", campaignIds)
     : { data: [] };
   const campaignMap = new Map(
     ((campaigns ?? []) as Pick<AdCampaign, "id" | "name" | "platform">[]).map(
@@ -87,168 +99,274 @@ export default async function AdsApprovalsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Creative approvals</h1>
-        <p className="mt-2 text-muted-foreground">
-          AI-generated ad copy enters this queue. Approve before any platform upload.
-        </p>
-      </div>
+      <PageHeader
+        title="Creative approvals"
+        description="AI-generated ad copy enters this queue. Approve before any platform upload."
+      />
       <AdsNav current="/ads/approvals" />
+
       <section className="space-y-3">
         <div>
-          <h2 className="text-lg font-medium">Campaign launch approvals</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="font-heading text-lg font-semibold text-ink">
+            Campaign launch approvals
+          </h2>
+          <p className="text-sm text-ink-soft">
             These hierarchies already exist PAUSED on the platform. Review IDs
             and budget before explicitly setting live.
           </p>
         </div>
         {launchCampaigns.length === 0 ? (
-          <p className="rounded-xl border p-4 text-sm text-muted-foreground">
+          <p className="rounded-lg bg-muted px-4 py-6 text-sm text-ink-soft">
             No campaigns awaiting launch.
           </p>
         ) : (
           <ul className="space-y-3">
             {launchCampaigns.map((campaign) => (
-              <li key={campaign.id} className="space-y-2 rounded-xl border p-4">
-                <p className="font-medium">
-                  {campaign.name} · {campaign.platform}
-                </p>
-                <p className="text-sm">
-                  {campaign.currency}{" "}
-                  {((campaign.daily_budget_pence ?? 0) / 100).toFixed(2)}/day
-                </p>
-                <div className="grid gap-1 text-xs text-muted-foreground md:grid-cols-2">
-                  <p>Campaign: {campaign.platform_campaign_id}</p>
-                  <p>
-                    {campaign.platform === "meta" ? "Ad set" : "Ad group"}:{" "}
-                    {campaign.platform_adset_id ?? "—"}
+              <li key={campaign.id}>
+                <ApprovalCardShell>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <PlatformChip
+                      platform={campaign.platform}
+                      label={campaign.platform}
+                    />
+                    <Badge variant="warning">Pending launch</Badge>
+                  </div>
+                  <p className="mt-3 font-heading text-lg font-semibold text-ink">
+                    {campaign.name}
                   </p>
-                  <p>Ad: {campaign.platform_ad_id ?? "—"}</p>
-                  <p>Budget: {campaign.platform_budget_id ?? "—"}</p>
-                </div>
-                <form action={setCampaignLive}>
-                  <input type="hidden" name="campaignId" value={campaign.id} />
-                  <Button type="submit">Approve & set live</Button>
-                </form>
-                <Link
-                  href={`/ads/campaigns/${campaign.id}`}
-                  className="text-sm underline"
-                >
-                  Review campaign and open platform link
-                </Link>
+                  <p className="text-sm text-ink-soft">
+                    {campaign.currency}{" "}
+                    {((campaign.daily_budget_pence ?? 0) / 100).toFixed(2)}
+                    /day
+                  </p>
+                  <div className="mt-3 grid gap-1 text-xs text-ink-soft md:grid-cols-2">
+                    <p>Campaign: {campaign.platform_campaign_id}</p>
+                    <p>
+                      {campaign.platform === "meta" ? "Ad set" : "Ad group"}:{" "}
+                      {campaign.platform_adset_id ?? "—"}
+                    </p>
+                    <p>Ad: {campaign.platform_ad_id ?? "—"}</p>
+                    <p>Budget: {campaign.platform_budget_id ?? "—"}</p>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+                    <form action={setCampaignLive}>
+                      <input
+                        type="hidden"
+                        name="campaignId"
+                        value={campaign.id}
+                      />
+                      <Button type="submit">Approve & set live</Button>
+                    </form>
+                    <Link
+                      href={`/ads/campaigns/${campaign.id}`}
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" }),
+                      )}
+                    >
+                      Review campaign
+                    </Link>
+                  </div>
+                </ApprovalCardShell>
               </li>
             ))}
           </ul>
         )}
       </section>
+
       <section className="space-y-3">
         <div>
-          <h2 className="text-lg font-medium">Creative approvals</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="font-heading text-lg font-semibold text-ink">
+            Creative approvals
+          </h2>
+          <p className="text-sm text-ink-soft">
             AI-generated copy must be approved before platform creation.
           </p>
         </div>
-      <ul className="space-y-4">
         {list.length === 0 ? (
-          <li className="rounded-xl border p-4 text-sm text-muted-foreground">
-            Queue is empty.
-          </li>
+          <EmptyState
+            title="Queue is empty"
+            description="Generated ad creatives will appear here for review."
+            actionLabel="Open ads"
+            actionHref="/ads"
+          />
         ) : (
-          list.map((cr) => {
-            const campaign = campaignMap.get(cr.campaign_id);
-            const check = checkByCreative.get(cr.id) ?? null;
-            const blocked = check?.status === "fail" && !check.override_by;
-            return (
-              <li key={cr.id} className="space-y-3 rounded-xl border p-4">
-                <p className="text-sm text-muted-foreground">
-                  {campaign?.name ?? cr.campaign_id} · {campaign?.platform} ·{" "}
-                  {cr.variant_label}
-                </p>
-                <p className="font-medium">{cr.headline}</p>
-                <p className="text-sm">{cr.primary_text}</p>
-                {cr.description ? (
-                  <p className="text-sm text-muted-foreground">{cr.description}</p>
-                ) : null}
-                {cr.hook ? <p className="text-sm">Hook: {cr.hook}</p> : null}
-                <p className="text-xs text-muted-foreground">CTA: {cr.cta}</p>
-                {cr.media_urls?.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {cr.media_urls.map((url) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={url}
-                        src={url}
-                        alt=""
-                        className="h-20 w-28 rounded border object-cover"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-destructive">
-                    No image attached. Meta platform creation will be blocked.
-                  </p>
-                )}
-                {(mediaByBrand.get(cr.brand_id) ?? []).length ? (
-                  <form action={attachMediaAssetToAdCreative} className="flex gap-2">
-                    <input type="hidden" name="creativeId" value={cr.id} />
-                    <select
-                      name="assetId"
-                      required
-                      className="h-9 min-w-56 rounded-lg border bg-background px-2 text-sm"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>
-                        Attach brand image…
-                      </option>
-                      {(mediaByBrand.get(cr.brand_id) ?? []).map((asset) => (
-                        <option key={asset.id} value={asset.id}>
-                          {asset.filename}
-                          {asset.tags.length ? ` · ${asset.tags.join(", ")}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <Button type="submit" size="sm" variant="outline">
-                      Attach
-                    </Button>
-                  </form>
-                ) : null}
-                <ComplianceFindingsPanel check={check} />
-                <div className="flex flex-wrap gap-2">
-                  <form action={reviewCreative} className="space-y-2">
-                    <input type="hidden" name="creativeId" value={cr.id} />
-                    <input type="hidden" name="decision" value="approve" />
-                    {blocked && canOverride ? (
-                      <Input
-                        name="overrideReason"
-                        placeholder="Admin override reason"
-                        className="w-64"
-                        required
-                      />
-                    ) : null}
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={Boolean(blocked && !canOverride)}
-                    >
-                      {blocked && !canOverride
-                        ? "Blocked — needs admin"
-                        : "Approve"}
-                    </Button>
-                  </form>
-                  <form action={reviewCreative} className="flex gap-2">
-                    <input type="hidden" name="creativeId" value={cr.id} />
-                    <input type="hidden" name="decision" value="reject" />
-                    <Input name="reason" placeholder="Reject reason" className="w-48" />
-                    <Button type="submit" size="sm" variant="outline">
-                      Reject
-                    </Button>
-                  </form>
-                </div>
-              </li>
-            );
-          })
+          <ul className="space-y-4">
+            {list.map((cr) => {
+              const campaign = campaignMap.get(cr.campaign_id);
+              const check = checkByCreative.get(cr.id) ?? null;
+              const blocked = check?.status === "fail" && !check.override_by;
+              const thumb = cr.media_urls?.[0];
+              const findings = check?.findings ?? [];
+              return (
+                <li key={cr.id}>
+                  <ApprovalCardShell>
+                    <div className="flex flex-wrap items-start gap-4">
+                      <div className="size-24 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-border">
+                        {thumb ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={thumb}
+                            alt=""
+                            className="size-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex size-full items-center justify-center px-2 text-center text-xs text-danger">
+                            No image
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {campaign?.platform ? (
+                            <PlatformChip
+                              platform={campaign.platform}
+                              label={campaign.platform}
+                            />
+                          ) : null}
+                          <Badge variant="neutral">
+                            {cr.variant_label || "Variant"}
+                          </Badge>
+                          <Badge variant="warning">Pending approval</Badge>
+                          <SimbaBadge />
+                        </div>
+                        <div>
+                          <p className="text-xs text-ink-soft">
+                            {campaign?.name ?? cr.campaign_id}
+                          </p>
+                          <p className="font-heading text-lg font-semibold text-ink">
+                            {cr.headline}
+                          </p>
+                          <p className="mt-1 text-sm text-ink-soft">
+                            {cr.primary_text}
+                          </p>
+                          {cr.description ? (
+                            <p className="mt-1 text-sm text-ink-soft">
+                              {cr.description}
+                            </p>
+                          ) : null}
+                          {cr.hook ? (
+                            <p className="mt-1 text-sm">Hook: {cr.hook}</p>
+                          ) : null}
+                          <p className="mt-1 text-xs text-ink-soft">
+                            CTA: {cr.cta}
+                          </p>
+                        </div>
+                        {findings.length > 0 ? (
+                          <div className="space-y-2">
+                            {findings.map((f, i) => (
+                              <SeverityCallout
+                                key={`${f.code}-${i}`}
+                                severity={f.severity}
+                                title={f.code}
+                                message={f.message}
+                              />
+                            ))}
+                          </div>
+                        ) : check ? (
+                          <p className="text-xs font-medium text-primary">
+                            Compliance · {check.status.toUpperCase()}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-ink-soft">
+                            No compliance check recorded yet.
+                          </p>
+                        )}
+                        {(mediaByBrand.get(cr.brand_id) ?? []).length ? (
+                          <form
+                            action={attachMediaAssetToAdCreative}
+                            className="flex flex-wrap gap-2"
+                          >
+                            <input
+                              type="hidden"
+                              name="creativeId"
+                              value={cr.id}
+                            />
+                            <select
+                              name="assetId"
+                              required
+                              className="h-9 min-w-56 rounded-md border border-border bg-surface px-2 text-sm"
+                              defaultValue=""
+                            >
+                              <option value="" disabled>
+                                Attach brand image…
+                              </option>
+                              {(mediaByBrand.get(cr.brand_id) ?? []).map(
+                                (asset) => (
+                                  <option key={asset.id} value={asset.id}>
+                                    {asset.filename}
+                                    {asset.tags.length
+                                      ? ` · ${asset.tags.join(", ")}`
+                                      : ""}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                            <Button type="submit" size="sm" variant="outline">
+                              Attach
+                            </Button>
+                          </form>
+                        ) : null}
+                        <div className="flex flex-wrap items-end gap-2 border-t border-border pt-4">
+                          <form action={reviewCreative} className="space-y-2">
+                            <input
+                              type="hidden"
+                              name="creativeId"
+                              value={cr.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="decision"
+                              value="approve"
+                            />
+                            {blocked && canOverride ? (
+                              <Input
+                                name="overrideReason"
+                                placeholder="Admin override reason"
+                                className="w-64"
+                                required
+                              />
+                            ) : null}
+                            <Button
+                              type="submit"
+                              disabled={Boolean(blocked && !canOverride)}
+                            >
+                              {blocked && !canOverride
+                                ? "Blocked — needs admin"
+                                : "Approve"}
+                            </Button>
+                          </form>
+                          <form
+                            action={reviewCreative}
+                            className="flex flex-wrap gap-2"
+                          >
+                            <input
+                              type="hidden"
+                              name="creativeId"
+                              value={cr.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="decision"
+                              value="reject"
+                            />
+                            <Input
+                              name="reason"
+                              placeholder="Reject reason"
+                              className="w-48"
+                            />
+                            <Button type="submit" variant="destructive">
+                              Reject
+                            </Button>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                  </ApprovalCardShell>
+                </li>
+              );
+            })}
+          </ul>
         )}
-      </ul>
       </section>
     </div>
   );

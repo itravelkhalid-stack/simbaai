@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CreateContactForm } from "@/components/crm/create-contact-form";
+import { EmptyState } from "@/components/brand/empty-state";
 import { CrmNav } from "@/components/crm/crm-nav";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
@@ -10,6 +11,7 @@ import {
   type CrmContact,
   type CrmLifecycleStage,
 } from "@/lib/types/crm";
+import { fieldInputClass, fieldSelectClass } from "@/lib/ui/field";
 
 export default async function CrmContactsPage({
   searchParams,
@@ -66,12 +68,12 @@ export default async function CrmContactsPage({
           name="q"
           defaultValue={params.q ?? ""}
           placeholder="Search email, name, company…"
-          className="h-9 min-w-[200px] flex-1 rounded-md border bg-transparent px-3 text-sm"
+          className={`${fieldInputClass} min-w-[200px] flex-1`}
         />
         <select
           name="stage"
           defaultValue={params.stage ?? ""}
-          className="h-9 rounded-md border bg-transparent px-3 text-sm"
+          className={fieldSelectClass}
         >
           <option value="">All stages</option>
           {LIFECYCLE_STAGES.map((s) => (
@@ -84,7 +86,7 @@ export default async function CrmContactsPage({
           name="tag"
           defaultValue={params.tag ?? ""}
           placeholder="Tag"
-          className="h-9 w-32 rounded-md border bg-transparent px-3 text-sm"
+          className={`${fieldInputClass} w-32`}
         />
         <button
           type="submit"
@@ -94,12 +96,15 @@ export default async function CrmContactsPage({
         </button>
       </form>
 
-      <div className="rounded-xl border">
-        <ul className="divide-y">
-          {((contacts ?? []) as CrmContact[]).length === 0 ? (
-            <li className="p-4 text-sm text-muted-foreground">No contacts yet.</li>
-          ) : (
-            ((contacts ?? []) as CrmContact[]).map((c) => (
+      {((contacts ?? []) as CrmContact[]).length === 0 ? (
+        <EmptyState
+          title="Build a healthier pipeline"
+          description="Add a contact or sync your email subscribers to begin tracking relationships, revenue, and follow-ups."
+        />
+      ) : (
+        <div className="rounded-lg bg-card shadow-elevated ring-1 ring-border">
+          <ul className="divide-y">
+            {((contacts ?? []) as CrmContact[]).map((c) => (
               <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
                 <div>
                   <Link
@@ -118,10 +123,10 @@ export default async function CrmContactsPage({
                   £{(c.total_revenue_pence / 100).toFixed(0)}
                 </p>
               </li>
-            ))
-          )}
-        </ul>
-      </div>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

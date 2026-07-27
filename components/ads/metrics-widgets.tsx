@@ -1,3 +1,5 @@
+import { MetricCard } from "@/components/brand/metric-card";
+import { CHART } from "@/lib/charts/colors";
 import { formatPence } from "@/lib/ads/format";
 
 export function MetricCards({
@@ -10,6 +12,7 @@ export function MetricCards({
   cpc,
   ctr,
   currency = "GBP",
+  spendDelta,
 }: {
   spend: number;
   impressions: number;
@@ -20,9 +23,23 @@ export function MetricCards({
   cpc: number;
   ctr: number;
   currency?: string;
+  spendDelta?: number | null;
 }) {
   const cards = [
-    { label: "Spend", value: formatPence(spend, currency) },
+    {
+      label: "Spend",
+      value: formatPence(spend, currency),
+      delta:
+        spendDelta == null
+          ? undefined
+          : `${spendDelta >= 0 ? "+" : ""}${spendDelta.toFixed(1)}%`,
+      deltaTone:
+        spendDelta == null
+          ? ("neutral" as const)
+          : spendDelta >= 0
+            ? ("up" as const)
+            : ("down" as const),
+    },
     { label: "Impressions", value: impressions.toLocaleString() },
     { label: "Clicks", value: clicks.toLocaleString() },
     { label: "Conversions", value: conversions.toFixed(1) },
@@ -35,10 +52,13 @@ export function MetricCards({
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {cards.map((card) => (
-        <div key={card.label} className="rounded-xl border p-4">
-          <p className="text-xs text-muted-foreground">{card.label}</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight">{card.value}</p>
-        </div>
+        <MetricCard
+          key={card.label}
+          label={card.label}
+          value={card.value}
+          delta={"delta" in card ? card.delta : undefined}
+          deltaTone={"deltaTone" in card ? card.deltaTone : undefined}
+        />
       ))}
     </div>
   );
@@ -51,9 +71,7 @@ export function SpendBars({
   days: Array<{ date: string; spend_pence: number }>;
 }) {
   if (days.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">No metric data in range.</p>
-    );
+    return <p className="text-sm text-ink-soft">No metric data in range.</p>;
   }
   const max = Math.max(...days.map((d) => d.spend_pence), 1);
   const height = 120;
@@ -77,16 +95,17 @@ export function SpendBars({
               x={x}
               y={y}
               width={barWidth}
-              height={h}
+              height={Math.max(h, 0)}
               rx={3}
-              className="fill-foreground/80"
+              fill={CHART.primary}
             />
             {i % Math.ceil(days.length / 7) === 0 ? (
               <text
                 x={x + barWidth / 2}
                 y={height + 14}
                 textAnchor="middle"
-                className="fill-muted-foreground text-[8px]"
+                fill={CHART.muted}
+                fontSize={8}
               >
                 {day.date.slice(5)}
               </text>
@@ -95,5 +114,43 @@ export function SpendBars({
         );
       })}
     </svg>
+  );
+}
+
+export function SpendPacingBar({
+  spentPence,
+  budgetPence,
+  days,
+}: {
+  spentPence: number;
+  budgetPence: number | null;
+  days: number;
+}) {
+  if (!budgetPence || budgetPence <= 0) {
+    return <span className="text-xs text-ink-soft">No daily budget</span>;
+  }
+  const expected = budgetPence * Math.max(days, 1);
+  const pct = Math.min(100, Math.round((spentPence / expected) * 100));
+  const over = spentPence > expected * 1.05;
+  const under = spentPence < expected * 0.7;
+
+  return (
+    <div className="min-w-28 space-y-1">
+      <div className="flex justify-between text-[11px] text-ink-soft">
+        <span>{pct}% of pace</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={
+            over
+              ? "h-full rounded-full bg-danger"
+              : under
+                ? "h-full rounded-full bg-warning"
+                : "h-full rounded-full bg-brand"
+          }
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }

@@ -1,7 +1,8 @@
-import Link from "next/link";
-
+import { PageHeader } from "@/components/dashboard/page-header";
+import { MeetingFeedCard } from "@/components/meetings/meeting-feed-card";
 import { MeetingsNav } from "@/components/meetings/meetings-nav";
 import { RunMeetingForm } from "@/components/meetings/run-meeting-form";
+import { Badge } from "@/components/ui/badge";
 import { previewUpcomingMeetings } from "@/lib/meetings/schedule";
 import { parseMeetingsSettings } from "@/lib/meetings/settings";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -44,87 +45,79 @@ export default async function MeetingsFeedPage() {
     hoursAhead: 24 * 21,
   }).slice(0, 24);
 
+  const list = (meetings ?? []) as Meeting[];
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Meetings</h1>
-        <p className="mt-2 text-muted-foreground">
-          AI standups, weekly panels, board packs, and annual reviews — with typed
-          actions and live KPI context ({settings.timezone}).
-        </p>
-      </div>
+      <PageHeader
+        title="Meetings"
+        description={
+          <>
+            AI standups, weekly panels, board packs, and annual reviews — with
+            typed actions and live KPI context ({settings.timezone}).
+          </>
+        }
+      />
       <MeetingsNav current="/meetings" />
       <RunMeetingForm brands={brands ?? []} />
 
-      <div className="rounded-xl border">
-        <div className="border-b p-3 text-sm font-medium">
-          Upcoming scheduled ({settings.timezone})
+      <section className="space-y-3">
+        <h2 className="font-heading text-lg font-semibold text-ink">
+          Upcoming scheduled
+        </h2>
+        <div className="rounded-lg bg-card shadow-elevated ring-1 ring-border">
+          <ul className="divide-y divide-border">
+            {upcoming.length === 0 ? (
+              <li className="p-5 text-sm text-ink-soft">
+                No upcoming slots in the next 3 weeks. Check Meetings → Schedule.
+              </li>
+            ) : (
+              upcoming.map((slot) => (
+                <li
+                  key={`${slot.brandId}-${slot.type}-${slot.dateKey}`}
+                  className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm"
+                >
+                  <div>
+                    <p className="font-medium text-ink">
+                      {MEETING_TYPE_LABELS[slot.type]}
+                    </p>
+                    <p className="text-ink-soft">
+                      {brandMap.get(slot.brandId) ?? "Brand"} ·{" "}
+                      {new Date(slot.at).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </p>
+                  </div>
+                  <Badge variant="warning">scheduled</Badge>
+                </li>
+              ))
+            )}
+          </ul>
         </div>
-        <ul className="divide-y">
-          {upcoming.length === 0 ? (
-            <li className="p-4 text-sm text-muted-foreground">
-              No upcoming slots in the next 3 weeks. Check Meetings → Schedule.
-            </li>
-          ) : (
-            upcoming.map((slot) => (
-              <li
-                key={`${slot.brandId}-${slot.type}-${slot.dateKey}`}
-                className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"
-              >
-                <div>
-                  <p className="font-medium">{MEETING_TYPE_LABELS[slot.type]}</p>
-                  <p className="text-muted-foreground">
-                    {brandMap.get(slot.brandId) ?? "Brand"} · {slot.dateKey} ·{" "}
-                    {new Date(slot.at).toLocaleString()}
-                  </p>
-                </div>
-                <span className="text-xs text-muted-foreground">scheduled</span>
-              </li>
-            ))
-          )}
-        </ul>
-      </div>
+      </section>
 
-      <div className="rounded-xl border">
-        <div className="border-b p-3 text-sm font-medium">Past &amp; recent meetings</div>
-        <ul className="divide-y">
-          {((meetings ?? []) as Meeting[]).length === 0 ? (
-            <li className="p-4 text-sm text-muted-foreground">
-              No meetings yet. They schedule automatically per brand, or queue one above.
-            </li>
-          ) : (
-            ((meetings ?? []) as Meeting[]).map((meeting) => (
-              <li
+      <section className="space-y-3">
+        <h2 className="font-heading text-lg font-semibold text-ink">
+          Past &amp; recent
+        </h2>
+        {list.length === 0 ? (
+          <p className="text-sm text-ink-soft">
+            No meetings yet. They schedule automatically per brand, or queue one
+            above.
+          </p>
+        ) : (
+          <div className="grid gap-3">
+            {list.map((meeting) => (
+              <MeetingFeedCard
                 key={meeting.id}
-                className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"
-              >
-                <div>
-                  <Link
-                    href={`/meetings/${meeting.id}`}
-                    className="font-medium underline"
-                  >
-                    {meeting.title}
-                  </Link>
-                  <p className="text-muted-foreground">
-                    {MEETING_TYPE_LABELS[meeting.type]} ·{" "}
-                    {brandMap.get(meeting.brand_id) ?? "Brand"} ·{" "}
-                    {new Date(meeting.scheduled_for).toLocaleString()} ·{" "}
-                    {meeting.status}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {meeting.escalation_flagged ? (
-                    <span className="text-destructive">Escalation</span>
-                  ) : null}
-                  {(meeting.blockers ?? []).some((b) => b.needs_human) ? (
-                    <span className="text-amber-700">Has blockers</span>
-                  ) : null}
-                </div>
-              </li>
-            ))
-          )}
-        </ul>
-      </div>
+                meeting={meeting}
+                brandName={brandMap.get(meeting.brand_id) ?? "Brand"}
+              />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

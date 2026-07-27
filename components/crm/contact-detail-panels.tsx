@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: CrmActionResult = {};
 
@@ -124,7 +125,7 @@ export function ContactDetailPanels({
               <select
                 name="stage"
                 defaultValue={contact.lifecycle_stage}
-                className="flex h-9 rounded-md border bg-transparent px-3 text-sm"
+                className={fieldSelectClass}
               >
                 {LIFECYCLE_STAGES.map((s) => (
                   <option key={s} value={s}>
@@ -161,7 +162,7 @@ export function ContactDetailPanels({
             <div className="flex gap-2">
               <select
                 name="type"
-                className="h-9 rounded-md border bg-transparent px-2 text-sm"
+                className={fieldSelectClass}
                 defaultValue="note"
               >
                 {(["note", "email", "call", "meeting", "task"] as const).map(
@@ -213,7 +214,7 @@ export function ContactDetailPanels({
             <Input name="value" type="number" step="0.01" placeholder="Value £" />
             <select
               name="stage"
-              className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+              className={fieldSelectClass}
               defaultValue={stages[0]?.id ?? "discovery"}
             >
               {stages.map((s) => (

@@ -5,10 +5,10 @@ import type { MediaAssetType } from "@/lib/types/media";
 
 export const BRAND_MEDIA_BUCKET = "brand-media";
 
-const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_DOC_BYTES = 25 * 1024 * 1024;
 const MAX_FONT_BYTES = 8 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 
 const IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -69,7 +69,7 @@ function assertAllowed(file: File, assetType: MediaAssetType) {
     if (!IMAGE_TYPES.has(mime)) {
       throw new Error("Only JPEG, PNG, WebP, GIF, or SVG images are allowed");
     }
-    if (file.size > MAX_IMAGE_BYTES) throw new Error("Image must be 12MB or smaller");
+    if (file.size > MAX_IMAGE_BYTES) throw new Error("Image must be 25MB or smaller");
     return;
   }
   if (assetType === "document") {
@@ -86,7 +86,7 @@ function assertAllowed(file: File, assetType: MediaAssetType) {
   }
   if (assetType === "video") {
     if (!VIDEO_TYPES.has(mime)) throw new Error("Only MP4, MOV, or WebM video is allowed");
-    if (file.size > MAX_VIDEO_BYTES) throw new Error("Video must be 50MB or smaller");
+    if (file.size > MAX_VIDEO_BYTES) throw new Error("Video must be 25MB or smaller");
   }
 }
 

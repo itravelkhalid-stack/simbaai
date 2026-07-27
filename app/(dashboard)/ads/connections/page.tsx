@@ -1,5 +1,6 @@
 import { AdsNav } from "@/components/ads/ads-nav";
 import { ConnectionsPanel } from "@/components/ads/connections-panel";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { consumeAdsOAuthFlashError } from "@/lib/ads/oauth-flash";
 import { AD_PLATFORMS, getAdsProvider } from "@/lib/ads/providers";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -28,21 +29,22 @@ export default async function AdsConnectionsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Ad connections</h1>
-        <p className="mt-2 text-muted-foreground">
-          Connect Meta, TikTok, Google, X, and Microsoft Advertising accounts.
-          Tokens are encrypted at rest.
-        </p>
-      </div>
+      <PageHeader
+        title="Ad connections"
+        description="Connect Meta, TikTok, Google, X, and Microsoft Advertising accounts. Tokens are encrypted at rest."
+      />
       <AdsNav current="/ads/connections" />
       {flashError ? (
-        <p className="text-sm text-destructive">{flashError}</p>
+        <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+          {flashError}
+        </p>
       ) : null}
       {q.connected ? (
-        <p className="text-sm text-muted-foreground">Connected {q.connected}.</p>
+        <p className="rounded-md bg-success-soft px-3 py-2 text-sm text-ink">
+          Connected {q.connected}.
+        </p>
       ) : null}
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-ink-soft">
         Setup requirements for each network are documented in{" "}
         <code className="text-xs">docs/ads-apis.md</code>.
       </p>

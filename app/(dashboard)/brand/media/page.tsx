@@ -77,11 +77,13 @@ export default async function BrandMediaPage({
       <BrandNav current="/brand/media" />
       <BrandAssetSlots
         brandId={typedBrand.id}
+        organizationId={active.organization_id}
         assets={signed}
         canWrite={canWrite}
       />
       <MediaLibraryPanel
         brandId={typedBrand.id}
+        organizationId={active.organization_id}
         assets={signed}
         canWrite={canWrite}
       />

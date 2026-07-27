@@ -17,6 +17,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: FinanceActionResult = {};
 
@@ -57,7 +58,7 @@ export function FinanceEntryForms({
   const BrandSelect = () => (
     <select
       name="brandId"
-      className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+      className={fieldSelectClass}
       defaultValue={brands[0]?.id ?? ""}
       required
     >
@@ -99,7 +100,7 @@ export function FinanceEntryForms({
           <Label>Channel</Label>
           <select
             name="channel"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             defaultValue="meta"
           >
             {FINANCE_CHANNELS.filter((c) => c !== "platform").map((c) => (
@@ -133,7 +134,7 @@ export function FinanceEntryForms({
           <Label>Channel</Label>
           <select
             name="channel"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             defaultValue="other"
           >
             {FINANCE_CHANNELS.map((c) => (

@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: CrmActionResult = {};
 
@@ -31,7 +32,7 @@ export function CreateDealForm({
           <Label>Contact</Label>
           <select
             name="contactId"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             required
             defaultValue={contacts[0]?.id ?? ""}
           >
@@ -54,7 +55,7 @@ export function CreateDealForm({
           <Label>Stage</Label>
           <select
             name="stage"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             defaultValue={stages[0]?.id ?? "discovery"}
           >
             {stages.map((s) => (

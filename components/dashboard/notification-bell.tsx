@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { Bell } from "lucide-react";
 
 import {
   markAllNotificationsRead,
@@ -33,10 +34,12 @@ export function NotificationBell({
   userId,
   organizationId,
   initial,
+  iconOnly = false,
 }: {
   userId: string;
   organizationId: string;
   initial: NotificationRow[];
+  iconOnly?: boolean;
 }) {
   const [items, setItems] = useState(initial);
   const [pending, startTransition] = useTransition();
@@ -85,11 +88,24 @@ export function NotificationBell({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className={cn(buttonVariants({ variant: "outline", size: "sm" }), "relative")}
+        className={cn(
+          buttonVariants({
+            variant: iconOnly ? "outline" : "outline",
+            size: iconOnly ? "icon-sm" : "sm",
+          }),
+          "relative",
+        )}
+        aria-label={
+          unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
+        }
       >
-        Notifications
+        {iconOnly ? (
+          <Bell size={20} strokeWidth={1.5} className="size-5" />
+        ) : (
+          "Notifications"
+        )}
         {unread > 0 ? (
-          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-primary-foreground">
+          <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-ink">
             {unread > 9 ? "9+" : unread}
           </span>
         ) : null}
@@ -99,7 +115,7 @@ export function NotificationBell({
           <span>Inbox</span>
           <button
             type="button"
-            className="text-xs font-normal text-muted-foreground hover:underline disabled:opacity-50"
+            className="text-xs font-normal text-ink-soft hover:underline disabled:opacity-50"
             disabled={pending || unread === 0}
             onClick={() => {
               startTransition(async () => {
@@ -118,7 +134,7 @@ export function NotificationBell({
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {items.length === 0 ? (
-          <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+          <div className="px-2 py-6 text-center text-sm text-ink-soft">
             No notifications yet.
           </div>
         ) : (
@@ -142,9 +158,7 @@ export function NotificationBell({
                 {n.title}
               </p>
               {n.body ? (
-                <p className="line-clamp-2 text-xs text-muted-foreground">
-                  {n.body}
-                </p>
+                <p className="line-clamp-2 text-xs text-ink-soft">{n.body}</p>
               ) : null}
             </DropdownMenuItem>
           ))

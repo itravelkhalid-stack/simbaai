@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: MeetingsActionResult = {};
 
@@ -39,7 +40,7 @@ export function RunMeetingForm({
           <select
             id="brandId"
             name="brandId"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             required
             defaultValue={brands[0]?.id ?? ""}
           >
@@ -55,7 +56,7 @@ export function RunMeetingForm({
           <select
             id="type"
             name="type"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             defaultValue="daily_standup"
           >
             {TYPES.map((t) => (

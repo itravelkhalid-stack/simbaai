@@ -1,10 +1,12 @@
 import Link from "next/link";
 
 import { AutomationsNav } from "@/components/automations/automations-nav";
+import { EmptyState } from "@/components/brand/empty-state";
 import { Button } from "@/components/ui/button";
 import { createBlankAutomation } from "@/lib/automations/actions";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
+import { PageHeader } from "@/components/dashboard/page-header";
 import type { Automation } from "@/lib/types/automations";
 import {
   AUTOMATION_STATUS_LABELS,
@@ -30,9 +32,8 @@ export default async function AutomationsPage({
 
   if (!brandId) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Automations</h1>
-        <p className="text-sm text-muted-foreground">Create a brand first.</p>
+      <div className="space-y-6">
+        <PageHeader title="Automations" description="Create a brand first." />
       </div>
     );
   }
@@ -48,12 +49,14 @@ export default async function AutomationsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Automations</h1>
-        <p className="mt-2 text-muted-foreground">
-          Trigger → conditions → actions, with approval and budget safety rails.
-        </p>
-      </div>
+      <PageHeader
+        title="Automations"
+        description={
+          <>
+            Trigger → conditions → actions, with approval and budget safety rails.
+          </>
+        }
+      />
       <AutomationsNav current="/automations" />
 
       <div className="flex flex-wrap gap-2">
@@ -84,13 +87,16 @@ export default async function AutomationsPage({
         </Link>
       </div>
 
-      <ul className="divide-y rounded-xl border">
-        {list.length === 0 ? (
-          <li className="p-4 text-sm text-muted-foreground">
-            No automations yet. Start from a recipe or create a blank flow.
-          </li>
-        ) : (
-          list.map((a) => (
+      {list.length === 0 ? (
+        <EmptyState
+          title="Put your best work on autopilot"
+          description="Start with a recipe or create a blank flow to turn repeatable marketing work into a safe automation."
+          actionLabel="Browse recipes"
+          actionHref={`/automations/recipes?brandId=${brandId}`}
+        />
+      ) : (
+        <ul className="divide-y rounded-lg bg-card shadow-elevated ring-1 ring-border">
+          {list.map((a) => (
             <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
               <div>
                 <Link
@@ -114,9 +120,9 @@ export default async function AutomationsPage({
                 Edit
               </Link>
             </li>
-          ))
-        )}
-      </ul>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import {
   brandAudienceSchema,
   brandAutonomySchema,
   brandBasicsSchema,
+  brandEnabledChannelsSchema,
   brandExtractSchema,
   brandProductSchema,
   brandVisualSchema,
@@ -541,4 +542,41 @@ export async function saveBrandAutonomy(
   revalidatePath("/brand");
   revalidatePath("/brand/autonomy");
   return { success: "Autonomy settings saved" };
+}
+
+export async function saveBrandEnabledChannels(
+  _prev: BrandActionResult,
+  formData: FormData,
+): Promise<BrandActionResult> {
+  const channels = formData.getAll("channels").map(String);
+  const parsed = brandEnabledChannelsSchema.safeParse({
+    brandId: formData.get("brandId"),
+    channels,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid channels" };
+  }
+
+  try {
+    const { active } = await assertCanWrite();
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("brands")
+      .update({
+        enabled_channels: parsed.data.channels,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", parsed.data.brandId)
+      .eq("organization_id", active.organization_id);
+    if (error) return { error: error.message };
+
+    revalidatePath("/brand");
+    revalidatePath("/brand/channels");
+    revalidatePath("/content/generate");
+    return { success: "Enabled channels saved" };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Failed to save channels",
+    };
+  }
 }

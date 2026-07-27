@@ -24,6 +24,8 @@ function SmileyMark({ className }: { className?: string }) {
   );
 }
 
+export { SmileyMark };
+
 /**
  * Simba AI wordmark. Pass `src` to swap the placeholder smiley for the real logo.
  */

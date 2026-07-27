@@ -114,7 +114,7 @@ export async function runReport(reportId: string) {
       series: bundle.series,
     };
 
-    const pdfBuffer = buildReportPdfBuffer({ report: r, content });
+    const pdfBuffer = await buildReportPdfBuffer({ report: r, content });
     const pdfUrl = await uploadReportPdf({
       organizationId: r.organization_id,
       reportId,

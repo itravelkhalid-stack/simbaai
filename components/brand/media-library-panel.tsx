@@ -3,12 +3,18 @@
 import { useActionState, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { DirectMediaUpload } from "@/components/media/direct-media-upload";
 import {
   deleteMediaAsset,
+  registerUploadedMediaAsset,
   updateMediaAssetTags,
-  uploadMediaAsset,
   type MediaActionResult,
 } from "@/lib/media/actions";
+import { uploadBrandMediaFromBrowser } from "@/lib/media/client-upload";
+import {
+  validateDirectUploadFile,
+  type DirectUploadKind,
+} from "@/lib/media/upload-constants";
 import {
   MEDIA_TYPE_LABELS,
   type MediaAsset,
@@ -39,12 +45,25 @@ function isPreviewable(asset: MediaAsset) {
   );
 }
 
+function kindForFile(file: File): DirectUploadKind {
+  if (file.type === "application/pdf") return "document";
+  if (
+    file.type.includes("font") ||
+    /\.(ttf|otf|woff2?)$/i.test(file.name)
+  ) {
+    return "font";
+  }
+  return "media";
+}
+
 export function MediaLibraryPanel({
   brandId,
+  organizationId,
   assets,
   canWrite,
 }: {
   brandId: string;
+  organizationId: string;
   assets: MediaAsset[];
   canWrite: boolean;
 }) {
@@ -52,10 +71,8 @@ export function MediaLibraryPanel({
   const [typeFilter, setTypeFilter] = useState<MediaAssetType | "all">("all");
   const [tagQuery, setTagQuery] = useState("");
   const [dragOver, setDragOver] = useState(false);
-  const [uploadState, uploadAction, uploadPending] = useActionState(
-    uploadMediaAsset,
-    initial,
-  );
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<string | null>(null);
   const [tagState, tagAction, tagPending] = useActionState(
     updateMediaAssetTags,
     initial,
@@ -69,7 +86,10 @@ export function MediaLibraryPanel({
       if (!q) return true;
       return (
         a.filename.toLowerCase().includes(q) ||
-        (a.tags ?? []).some((t) => t.toLowerCase().includes(q))
+        (a.description ?? "").toLowerCase().includes(q) ||
+        (a.ai_subject ?? "").toLowerCase().includes(q) ||
+        (a.tags ?? []).some((t) => t.toLowerCase().includes(q)) ||
+        (a.suitable_for ?? []).some((t) => t.toLowerCase().includes(q))
       );
     });
   }, [assets, typeFilter, tagQuery]);
@@ -77,13 +97,40 @@ export function MediaLibraryPanel({
   function uploadFiles(files: FileList | File[]) {
     if (!canWrite) return;
     const list = Array.from(files);
+    setBulkError(null);
     startTransition(async () => {
-      for (const file of list) {
-        const fd = new FormData();
-        fd.set("brandId", brandId);
-        fd.set("file", file);
-        await uploadMediaAsset({}, fd);
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i];
+        const kind = kindForFile(file);
+        const validation = validateDirectUploadFile(file, kind);
+        if (validation) {
+          setBulkError(`${file.name}: ${validation}`);
+          continue;
+        }
+        setBulkProgress(`Uploading ${i + 1}/${list.length}: ${file.name}`);
+        try {
+          const uploaded = await uploadBrandMediaFromBrowser({
+            organizationId,
+            brandId,
+            file,
+            kind,
+          });
+          const fd = new FormData();
+          fd.set("brandId", brandId);
+          fd.set("storagePath", uploaded.storagePath);
+          fd.set("filename", uploaded.filename);
+          fd.set("mimeType", uploaded.mimeType);
+          fd.set("sizeBytes", String(uploaded.sizeBytes));
+          fd.set("type", uploaded.assetType);
+          const result = await registerUploadedMediaAsset({}, fd);
+          if (result.error) setBulkError(`${file.name}: ${result.error}`);
+        } catch (error) {
+          setBulkError(
+            `${file.name}: ${error instanceof Error ? error.message : "Upload failed"}`,
+          );
+        }
       }
+      setBulkProgress(null);
       router.refresh();
     });
   }
@@ -91,8 +138,7 @@ export function MediaLibraryPanel({
   return (
     <div className="space-y-6">
       {canWrite ? (
-        <form
-          action={uploadAction}
+        <div
           className={`space-y-3 rounded-xl border border-dashed p-6 transition-colors ${
             dragOver ? "border-foreground bg-muted/40" : ""
           }`}
@@ -107,42 +153,34 @@ export function MediaLibraryPanel({
             if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
           }}
         >
-          <input type="hidden" name="brandId" value={brandId} />
           <div>
             <h2 className="font-medium">Upload media</h2>
             <p className="text-sm text-muted-foreground">
-              Drag and drop multiple files, or choose files. Images, logos, PDFs,
-              fonts, and short videos are supported.
+              Drag and drop, or choose files. Uploads go directly to private
+              storage (max 25MB for images/videos).
             </p>
           </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="file">Files</Label>
-              <Input
-                id="file"
-                name="file"
-                type="file"
-                multiple
-                accept="image/*,video/mp4,video/webm,application/pdf,.ttf,.otf,.woff,.woff2"
-                disabled={uploadPending || pending}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tags">Tags (comma-separated)</Label>
-              <Input id="tags" name="tags" placeholder="campaign, summer" />
-            </div>
-            <Button type="submit" disabled={uploadPending || pending}>
-              {uploadPending || pending ? "Uploading…" : "Upload"}
-            </Button>
-          </div>
-          {uploadState.error || uploadState.success ? (
-            <Alert variant={uploadState.error ? "destructive" : "default"}>
-              <AlertDescription>
-                {uploadState.error || uploadState.success}
-              </AlertDescription>
+          <DirectMediaUpload
+            organizationId={organizationId}
+            brandId={brandId}
+            kind="media"
+            accept="image/*,video/*"
+            label="Choose image or video"
+            disabled={pending}
+            onComplete={(result) => {
+              if (result.error) setBulkError(result.error);
+              else router.refresh();
+            }}
+          />
+          {bulkProgress ? (
+            <p className="text-sm text-muted-foreground">{bulkProgress}</p>
+          ) : null}
+          {bulkError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{bulkError}</AlertDescription>
             </Alert>
           ) : null}
-        </form>
+        </div>
       ) : null}
 
       <div className="flex flex-wrap items-end gap-3">
@@ -195,6 +233,15 @@ export function MediaLibraryPanel({
               </div>
               <div className="space-y-1">
                 <p className="truncate text-sm font-medium">{asset.filename}</p>
+                {asset.description ? (
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {asset.description}
+                  </p>
+                ) : asset.ai_tagged_at ? null : (
+                  <p className="text-xs text-muted-foreground">
+                    AI tagging pending…
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1">
                   <Badge variant="outline">{MEDIA_TYPE_LABELS[asset.type]}</Badge>
                   {(asset.tags ?? []).map((tag) => (
@@ -226,7 +273,6 @@ export function MediaLibraryPanel({
                       Save
                     </Button>
                   </form>
-                  {tagState.error && tagState.assetId === undefined ? null : null}
                   <div className="flex gap-2">
                     <a
                       href={asset.public_url}

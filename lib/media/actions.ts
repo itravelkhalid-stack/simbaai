@@ -6,9 +6,13 @@ import { writeAuditEvent } from "@/lib/compliance/audit";
 import { inngest } from "@/lib/inngest/client";
 import {
   deleteBrandMediaFile,
-  uploadBrandMediaFile,
+  BRAND_MEDIA_BUCKET,
 } from "@/lib/media/storage";
+import { syncContentItemMediaUrls } from "@/lib/media/sync";
+import { queueMediaVisionTag } from "@/lib/media/tag";
+import { MAX_DIRECT_UPLOAD_BYTES } from "@/lib/media/upload-constants";
 import { requireActiveOrg } from "@/lib/org/require";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { BRAND_ASSET_TAGS } from "@/lib/types/media";
 import {
@@ -17,7 +21,8 @@ import {
   guidelinesProposalActionSchema,
   mediaDeleteSchema,
   mediaUpdateTagsSchema,
-  mediaUploadMetaSchema,
+  registerUploadedMediaSchema,
+  replaceContentMediaSchema,
 } from "@/lib/validations/media";
 
 export type MediaActionResult = {
@@ -43,72 +48,20 @@ function parseTags(raw?: string | null): string[] {
     .slice(0, 20);
 }
 
-async function syncContentItemMediaUrls(
-  organizationId: string,
-  contentItemId: string,
-) {
-  const supabase = await createClient();
-  const { data: rows } = await supabase
-    .from("content_item_media")
-    .select("sort_order, media_asset_id")
-    .eq("organization_id", organizationId)
-    .eq("content_item_id", contentItemId)
-    .order("sort_order");
-
-  const assetIds = (rows ?? []).map((r) => r.media_asset_id);
-  if (assetIds.length === 0) {
-    await supabase
-      .from("content_items")
-      .update({ media_urls: [] })
-      .eq("id", contentItemId)
-      .eq("organization_id", organizationId);
-    return;
-  }
-
-  const { data: assets } = await supabase
-    .from("media_assets")
-    .select("id, storage_path, public_url")
-    .eq("organization_id", organizationId)
-    .in("id", assetIds);
-
-  const byId = new Map(
-    (assets ?? []).map((a) => [
-      a.id,
-      { storage_path: a.storage_path as string, public_url: a.public_url as string },
-    ]),
-  );
-
-  // Mint long-lived signed URLs so Meta/Facebook Graph can fetch private brand-media.
-  const { mintPublishableBrandMediaUrl } = await import("@/lib/media/storage");
-  const urls: string[] = [];
-  for (const id of assetIds) {
-    const row = byId.get(id);
-    if (!row) continue;
-    try {
-      urls.push(await mintPublishableBrandMediaUrl(row.storage_path));
-    } catch {
-      if (row.public_url) urls.push(row.public_url);
-    }
-  }
-
-  await supabase
-    .from("content_items")
-    .update({ media_urls: urls })
-    .eq("id", contentItemId)
-    .eq("organization_id", organizationId);
-}
-
-export async function uploadMediaAsset(
+/**
+ * Register a media_assets row for a file already in brand-media.
+ * The browser uploads the bytes directly to Storage; this action never receives a File.
+ */
+export async function registerUploadedMediaAsset(
   _prev: MediaActionResult,
   formData: FormData,
 ): Promise<MediaActionResult> {
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choose a file to upload" };
-  }
-
-  const parsed = mediaUploadMetaSchema.safeParse({
+  const parsed = registerUploadedMediaSchema.safeParse({
     brandId: formData.get("brandId"),
+    storagePath: formData.get("storagePath"),
+    filename: formData.get("filename"),
+    mimeType: formData.get("mimeType"),
+    sizeBytes: formData.get("sizeBytes"),
     tags: formData.get("tags") || "",
     reservedTag: formData.get("reservedTag") || undefined,
     type: formData.get("type") || undefined,
@@ -119,26 +72,68 @@ export async function uploadMediaAsset(
 
   try {
     const { user, active } = await assertCanWrite();
+    const orgId = active.organization_id;
+    const path = parsed.data.storagePath;
+
+    if (!path.startsWith(`${orgId}/${parsed.data.brandId}/`)) {
+      return { error: "Storage path is not under this organization" };
+    }
+    if (path.includes("..")) {
+      return { error: "Invalid storage path" };
+    }
+    if (parsed.data.sizeBytes > MAX_DIRECT_UPLOAD_BYTES) {
+      return { error: "File must be 25MB or smaller" };
+    }
+
+    const supabase = await createClient();
+    const { data: brand } = await supabase
+      .from("brands")
+      .select("id")
+      .eq("id", parsed.data.brandId)
+      .eq("organization_id", orgId)
+      .maybeSingle();
+    if (!brand) return { error: "Brand not found" };
+
+    // Confirm the object exists (client upload completed) without trusting the client alone.
+    const admin = createAdminClient();
+    const { data: listed, error: listError } = await admin.storage
+      .from(BRAND_MEDIA_BUCKET)
+      .list(`${orgId}/${parsed.data.brandId}`, {
+        search: path.split("/").pop() ?? "",
+        limit: 5,
+      });
+    if (listError) return { error: listError.message };
+    const objectName = path.split("/").pop();
+    const found = (listed ?? []).some((o) => o.name === objectName);
+    if (!found) {
+      return { error: "Uploaded file not found in storage — try again" };
+    }
+
     const tags = parseTags(parsed.data.tags);
     const reserved = parsed.data.reservedTag?.trim();
     if (reserved && !tags.includes(reserved)) tags.push(reserved);
 
-    const uploaded = await uploadBrandMediaFile({
-      organizationId: active.organization_id,
-      brandId: parsed.data.brandId,
-      file,
-      assetType: parsed.data.type,
-      reservedTag: reserved,
-    });
+    const assetType =
+      parsed.data.type ??
+      (reserved?.startsWith("logo-")
+        ? "logo"
+        : reserved?.startsWith("font-")
+          ? "font"
+          : reserved === "guidelines-doc"
+            ? "document"
+            : parsed.data.mimeType.startsWith("video/")
+              ? "video"
+              : "image");
 
-    const supabase = await createClient();
+    const { data: publicUrlData } = admin.storage
+      .from(BRAND_MEDIA_BUCKET)
+      .getPublicUrl(path);
 
-    // Reserved logo/guidelines slots: clear previous tag on same brand
     if (reserved) {
       const { data: existing } = await supabase
         .from("media_assets")
         .select("id, tags")
-        .eq("organization_id", active.organization_id)
+        .eq("organization_id", orgId)
         .eq("brand_id", parsed.data.brandId)
         .contains("tags", [reserved]);
       for (const row of existing ?? []) {
@@ -153,66 +148,73 @@ export async function uploadMediaAsset(
     const { data: asset, error } = await supabase
       .from("media_assets")
       .insert({
-        organization_id: active.organization_id,
+        organization_id: orgId,
         brand_id: parsed.data.brandId,
-        type: uploaded.assetType,
-        storage_path: uploaded.path,
-        public_url: uploaded.publicUrl,
-        filename: file.name,
-        mime_type: uploaded.mimeType,
-        size_bytes: uploaded.sizeBytes,
+        type: assetType,
+        storage_path: path,
+        public_url: publicUrlData.publicUrl,
+        filename: parsed.data.filename,
+        mime_type: parsed.data.mimeType,
+        size_bytes: parsed.data.sizeBytes,
         tags,
         source: "upload",
         created_by: user.id,
       })
       .select("id")
       .single();
-    if (error || !asset) return { error: error?.message ?? "Failed to save asset" };
+    if (error || !asset) {
+      return { error: error?.message ?? "Failed to save asset" };
+    }
 
-    // Keep brands.logo_url in sync for primary logo
     if (reserved === BRAND_ASSET_TAGS.logoPrimary) {
       await supabase
         .from("brands")
-        .update({ logo_url: uploaded.publicUrl })
+        .update({ logo_url: publicUrlData.publicUrl })
         .eq("id", parsed.data.brandId)
-        .eq("organization_id", active.organization_id);
+        .eq("organization_id", orgId);
     }
 
-    // Queue guidelines PDF ingestion (never auto-applies)
-    if (reserved === BRAND_ASSET_TAGS.guidelinesDoc || uploaded.assetType === "document") {
-      if (
-        reserved === BRAND_ASSET_TAGS.guidelinesDoc ||
-        file.type === "application/pdf"
-      ) {
-        const { data: run } = await supabase
-          .from("agent_runs")
-          .insert({
-            organization_id: active.organization_id,
-            module: "brand",
-            agent_name: "brand_guidelines_pdf",
-            status: "queued",
-            input: {
-              brandId: parsed.data.brandId,
-              mediaAssetId: asset.id,
-            },
-            progress: 0,
-          })
-          .select("id")
-          .single();
+    if (
+      (reserved === BRAND_ASSET_TAGS.guidelinesDoc || assetType === "document") &&
+      parsed.data.mimeType === "application/pdf"
+    ) {
+      const { data: run } = await supabase
+        .from("agent_runs")
+        .insert({
+          organization_id: orgId,
+          module: "brand",
+          agent_name: "brand_guidelines_pdf",
+          status: "queued",
+          input: {
+            brandId: parsed.data.brandId,
+            mediaAssetId: asset.id,
+          },
+          progress: 0,
+        })
+        .select("id")
+        .single();
 
-        if (run) {
-          await inngest.send({
-            name: "brand/guidelines.pdf.ingest",
-            data: {
-              organizationId: active.organization_id,
-              brandId: parsed.data.brandId,
-              mediaAssetId: asset.id,
-              agentRunId: run.id,
-              userId: user.id,
-            },
-          });
-        }
+      if (run) {
+        await inngest.send({
+          name: "brand/guidelines.pdf.ingest",
+          data: {
+            organizationId: orgId,
+            brandId: parsed.data.brandId,
+            mediaAssetId: asset.id,
+            agentRunId: run.id,
+            userId: user.id,
+          },
+        });
       }
+    }
+
+    if (assetType === "image" || assetType === "logo") {
+      await queueMediaVisionTag({
+        organizationId: orgId,
+        brandId: parsed.data.brandId,
+        mediaAssetId: asset.id,
+        userId: user.id,
+      });
     }
 
     revalidatePath("/brand/media");
@@ -225,6 +227,18 @@ export async function uploadMediaAsset(
     };
   }
 }
+
+/** @deprecated File bytes must not transit the server — use browser upload + registerUploadedMediaAsset. */
+export async function uploadMediaAsset(
+  _prev: MediaActionResult,
+  _formData: FormData,
+): Promise<MediaActionResult> {
+  return {
+    error:
+      "Direct server upload is disabled. Refresh the page and upload again (browser → storage).",
+  };
+}
+
 
 export async function updateMediaAssetTags(
   _prev: MediaActionResult,
@@ -330,6 +344,15 @@ export async function attachMediaToContentItem(
       return { error: "Only images, logos, or videos can attach to content items" };
     }
 
+    const replace = formData.get("replace") === "1" || formData.get("replace") === "true";
+    if (replace) {
+      await supabase
+        .from("content_item_media")
+        .delete()
+        .eq("organization_id", active.organization_id)
+        .eq("content_item_id", item.id);
+    }
+
     const { count } = await supabase
       .from("content_item_media")
       .select("id", { count: "exact", head: true })
@@ -339,7 +362,7 @@ export async function attachMediaToContentItem(
       organization_id: active.organization_id,
       content_item_id: item.id,
       media_asset_id: asset.id,
-      sort_order: count ?? 0,
+      sort_order: replace ? 0 : (count ?? 0),
     });
     if (error) {
       if (error.code === "23505") return { error: "Already attached" };
@@ -356,6 +379,63 @@ export async function attachMediaToContentItem(
       error: error instanceof Error ? error.message : "Attach failed",
     };
   }
+}
+
+/**
+ * Register a client-uploaded file into the library, then attach to a content item.
+ * Expects storage path metadata — never a File body.
+ */
+export async function registerAndAttachMediaToContentItem(
+  _prev: MediaActionResult,
+  formData: FormData,
+): Promise<MediaActionResult> {
+  const itemId = String(formData.get("itemId") ?? "");
+  if (!itemId) return { error: "Missing content item" };
+
+  const registered = await registerUploadedMediaAsset({}, formData);
+  if (registered.error || !registered.assetId) {
+    return { error: registered.error ?? "Upload failed" };
+  }
+
+  const attachFd = new FormData();
+  attachFd.set("itemId", itemId);
+  attachFd.set("assetId", registered.assetId);
+  attachFd.set("replace", formData.get("replace") === "1" ? "1" : "0");
+  const attached = await attachMediaToContentItem({}, attachFd);
+  if (attached.error) return attached;
+  return {
+    success: "Uploaded to library and attached",
+    assetId: registered.assetId,
+  };
+}
+
+/** @deprecated Use browser upload + registerAndAttachMediaToContentItem. */
+export async function uploadAndAttachMediaToContentItem(
+  _prev: MediaActionResult,
+  _formData: FormData,
+): Promise<MediaActionResult> {
+  return {
+    error:
+      "Direct server upload is disabled. Refresh the page and upload again (browser → storage).",
+  };
+}
+
+export async function replaceContentItemMedia(
+  _prev: MediaActionResult,
+  formData: FormData,
+): Promise<MediaActionResult> {
+  const parsed = replaceContentMediaSchema.safeParse({
+    itemId: formData.get("itemId"),
+    assetId: formData.get("assetId"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const fd = new FormData();
+  fd.set("itemId", parsed.data.itemId);
+  fd.set("assetId", parsed.data.assetId);
+  fd.set("replace", "1");
+  return attachMediaToContentItem({}, fd);
 }
 
 export async function detachMediaFromContentItem(formData: FormData) {

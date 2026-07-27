@@ -70,6 +70,24 @@ export const brandAutonomySchema = z.object({
   autonomy_max_cpa_major: z.coerce.number().min(0).max(1_000_000).default(50),
 });
 
+export const brandEnabledChannelsSchema = z.object({
+  brandId: z.string().uuid(),
+  channels: z
+    .array(
+      z.enum([
+        "instagram",
+        "facebook",
+        "tiktok",
+        "x",
+        "linkedin",
+        "youtube",
+        "pinterest",
+        "google",
+      ]),
+    )
+    .default([]),
+});
+
 export const brandExtractionResultSchema = z.object({
   name: z.string().min(1),
   tagline: z.string().optional().nullable(),

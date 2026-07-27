@@ -1,4 +1,5 @@
 import { extractGuidelinesFromPdfAsset } from "@/lib/media/guidelines-ingest";
+import { tagMediaAssetWithVision } from "@/lib/media/tag";
 import { inngest } from "@/lib/inngest/client";
 import { recordJobFailure } from "@/lib/inngest/functions/jobs";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -59,4 +60,52 @@ export const runBrandGuidelinesPdfIngest = inngest.createFunction(
   },
 );
 
-export const brandFunctions = [runBrandGuidelinesPdfIngest];
+export const runBrandMediaVisionTag = inngest.createFunction(
+  {
+    id: "brand/media-vision-tag",
+    retries: 1,
+    triggers: [{ event: "brand/media.tag" }],
+  },
+  async ({ event, step }) => {
+    const { organizationId, mediaAssetId, agentRunId } = event.data as {
+      organizationId: string;
+      brandId: string;
+      mediaAssetId: string;
+      agentRunId: string;
+      userId?: string;
+    };
+
+    try {
+      return await step.run("tag-image", async () =>
+        tagMediaAssetWithVision({
+          organizationId,
+          mediaAssetId,
+          agentRunId,
+        }),
+      );
+    } catch (error) {
+      const supabase = createAdminClient();
+      const message =
+        error instanceof Error ? error.message : "Media tagging failed";
+      await supabase
+        .from("agent_runs")
+        .update({ status: "failed", error: message, progress: 100 })
+        .eq("id", agentRunId);
+      await recordJobFailure({
+        organizationId,
+        provider: "brand",
+        jobName: "brand/media-vision-tag",
+        eventName: "brand/media.tag",
+        payload: { mediaAssetId, agentRunId },
+        error: message,
+        agentRunId,
+      });
+      throw error;
+    }
+  },
+);
+
+export const brandFunctions = [
+  runBrandGuidelinesPdfIngest,
+  runBrandMediaVisionTag,
+];

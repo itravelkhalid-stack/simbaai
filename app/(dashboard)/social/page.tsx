@@ -16,6 +16,7 @@ import {
   metaInstagramUiStatus,
 } from "@/lib/social/meta-capabilities";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/dashboard/page-header";
 
 export default async function SocialPage({
   searchParams,
@@ -127,16 +128,18 @@ export default async function SocialPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Social</h1>
-        <p className="mt-2 text-muted-foreground">
-          Connect publishing accounts and review per-platform status.{" "}
-          <Link href="/settings/connections" className="underline">
+      <PageHeader
+        title="Social"
+        description={
+          <>
+            Connect publishing accounts and review per-platform status.{" "}
+            <Link href="/settings/connections" className="underline">
             Also in Settings
-          </Link>
-          .
-        </p>
-      </div>
+            </Link>
+            .
+          </>
+        }
+      />
 
       <div className="flex flex-wrap gap-2">
         <Badge

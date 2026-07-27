@@ -1,4 +1,5 @@
 "use client";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 import { useActionState, useState } from "react";
 
@@ -21,10 +22,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const initial: ContentActionResult = {};
-const platforms = Object.keys(PLATFORM_LABELS) as ContentPlatform[];
 const formats = Object.keys(FORMAT_LABELS) as ContentFormat[];
 
-export function GenerateForms({ pillars }: { pillars: ContentPillar[] }) {
+export function GenerateForms({
+  pillars,
+  enabledPlatforms,
+}: {
+  pillars: ContentPillar[];
+  enabledPlatforms: ContentPlatform[];
+}) {
+  const platforms =
+    enabledPlatforms.length > 0
+      ? enabledPlatforms
+      : (["facebook", "instagram"] as ContentPlatform[]);
   const [tab, setTab] = useState<"single" | "batch">("single");
   const [singleState, singleAction, singlePending] = useActionState(
     queueSingleGenerate,
@@ -59,6 +69,14 @@ export function GenerateForms({ pillars }: { pillars: ContentPillar[] }) {
         </Button>
       </div>
 
+      <p className="text-sm text-muted-foreground">
+        Platforms limited to this brand&apos;s enabled channels:{" "}
+        {platforms.map((p) => PLATFORM_LABELS[p]).join(", ")}.{" "}
+        <a href="/brand/channels" className="underline">
+          Manage channels
+        </a>
+      </p>
+
       {tab === "single" ? (
         <form action={singleAction} className="space-y-4 rounded-xl border p-4">
           <div className="grid gap-4 md:grid-cols-2">
@@ -67,8 +85,8 @@ export function GenerateForms({ pillars }: { pillars: ContentPillar[] }) {
               <select
                 id="platform"
                 name="platform"
-                className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
-                defaultValue="instagram"
+                className={fieldSelectClass}
+                defaultValue={platforms[0]}
               >
                 {platforms.map((p) => (
                   <option key={p} value={p}>
@@ -82,7 +100,7 @@ export function GenerateForms({ pillars }: { pillars: ContentPillar[] }) {
               <select
                 id="format"
                 name="format"
-                className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                className={fieldSelectClass}
                 defaultValue="post"
               >
                 {formats.map((f) => (
@@ -98,7 +116,7 @@ export function GenerateForms({ pillars }: { pillars: ContentPillar[] }) {
             <select
               id="pillarId"
               name="pillarId"
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+              className={fieldSelectClass}
               defaultValue=""
             >
               <option value="">None</option>
@@ -122,8 +140,8 @@ export function GenerateForms({ pillars }: { pillars: ContentPillar[] }) {
             {singlePending ? "Queuing…" : "Generate (injects brand context)"}
           </Button>
           <p className="text-xs text-muted-foreground">
-            Posts return 3 variants. Carousel / reel / short scripts return structured
-            slide or shot breakdowns. Compliance runs automatically.
+            Posts return 3 variants. Fitting library images are auto-attached as
+            suggestions when tags match.
           </p>
         </form>
       ) : (

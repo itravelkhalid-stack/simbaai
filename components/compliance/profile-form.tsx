@@ -1,4 +1,5 @@
 "use client";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 import { useActionState } from "react";
 
@@ -68,7 +69,7 @@ export function ComplianceProfileForm({
             id="industry"
             name="industry"
             defaultValue={profile.industry}
-            className="flex h-9 w-full rounded-md border bg-transparent px-2 text-sm"
+            className={fieldSelectClass}
           >
             {(
               Object.keys(COMPLIANCE_INDUSTRY_LABELS) as ComplianceIndustryPreset[]

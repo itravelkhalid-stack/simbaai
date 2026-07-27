@@ -1,4 +1,7 @@
 import { ComplianceNav } from "@/components/compliance/compliance-nav";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { fieldSelectClass } from "@/lib/ui/field";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { AuditEvent } from "@/lib/types/compliance";
@@ -54,7 +57,7 @@ export default async function ComplianceAuditPage({
         <select
           name="action"
           defaultValue={params.action ?? ""}
-          className="h-9 rounded-md border bg-transparent px-2"
+          className={fieldSelectClass}
         >
           <option value="">All actions</option>
           {Object.entries(AUDIT_ACTION_LABELS).map(([k, label]) => (
@@ -63,24 +66,20 @@ export default async function ComplianceAuditPage({
             </option>
           ))}
         </select>
-        <input
+        <Input
           name="entityType"
           placeholder="Entity type"
           defaultValue={params.entityType ?? ""}
-          className="h-9 rounded-md border bg-transparent px-2"
         />
-        <input
+        <Input
           name="q"
           placeholder="Search summary"
           defaultValue={params.q ?? ""}
-          className="h-9 flex-1 rounded-md border bg-transparent px-2"
+          className="flex-1"
         />
-        <button
-          type="submit"
-          className="rounded-md border px-3 py-1.5 text-sm"
-        >
+        <Button type="submit" variant="outline">
           Filter
-        </button>
+        </Button>
       </form>
 
       <ul className="divide-y rounded-xl border text-sm">

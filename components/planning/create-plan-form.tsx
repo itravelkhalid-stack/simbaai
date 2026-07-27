@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: PlanningActionResult = {};
 
@@ -35,7 +36,7 @@ export function CreatePlanForm() {
           <select
             id="periodType"
             name="periodType"
-            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+            className={fieldSelectClass}
             defaultValue="quarter"
           >
             <option value="quarter">Quarter</option>

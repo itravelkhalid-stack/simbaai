@@ -140,6 +140,11 @@
   --color-grid: var(--grid-line);
   --color-primary-hover: var(--sem-primary-hover);
 
+  /* Client workspace theming defaults (overridden on DashboardShell) */
+  --client-primary: var(--sem-primary);
+  --client-secondary: var(--gold);
+  --client-accent: var(--sem-accent);
+
   --shadow-elevated: var(--shadow-elevated);
   --radius-sm: calc(var(--radius) * 0.75);
   --radius-md: var(--radius);
@@ -178,5 +183,19 @@
   h6 {
     @apply font-heading;
     line-height: 1.2;
+  }
+
+  a,
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea,
+  summary,
+  label {
+    transition-property: color, background-color, border-color, outline-color,
+      text-decoration-color, fill, stroke, opacity, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 }

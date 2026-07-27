@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: EmailActionResult = {};
 
@@ -47,7 +48,7 @@ export function FlowProposeForm({ lists }: { lists: EmailList[] }) {
           <select
             id="listId"
             name="listId"
-            className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+            className={fieldSelectClass}
             defaultValue=""
           >
             <option value="">None</option>

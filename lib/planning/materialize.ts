@@ -65,6 +65,16 @@ export async function linkTaskToModule(params: {
 
   switch (params.task.module) {
     case "content": {
+      const { getBrandEnabledContentPlatforms } = await import(
+        "@/lib/brand/channels"
+      );
+      const platforms = await getBrandEnabledContentPlatforms({
+        organizationId: params.organizationId,
+        brandId: params.brandId,
+        admin: true,
+      });
+      const platform = platforms[0] ?? "facebook";
+
       const { data: run } = await supabase
         .from("agent_runs")
         .insert({
@@ -76,12 +86,12 @@ export async function linkTaskToModule(params: {
             brief,
             from_planning_task: params.task.id,
             campaign_id: params.campaignId,
-            platform: "linkedin",
+            platform,
           },
           logs: [
             {
               at: new Date().toISOString(),
-              message: "Queued from planning task",
+              message: `Queued from planning task (${platform})`,
             },
           ],
           progress: 0,

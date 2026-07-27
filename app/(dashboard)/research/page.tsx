@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { PageHeader } from "@/components/dashboard/page-header";
 import { ResearchLibrary } from "@/components/research/research-library";
 import { buttonVariants } from "@/components/ui/button";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -40,18 +41,20 @@ export default async function ResearchPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Research</h1>
-          <p className="mt-2 text-muted-foreground">
+      <PageHeader
+        title="Research"
+        description={
+          <>
             Brand, competitor, market, and audience intelligence for{" "}
             {active.organization.name}.
-          </p>
-        </div>
-        <Link href="/research/new" className={cn(buttonVariants())}>
-          New research
-        </Link>
-      </div>
+          </>
+        }
+        actions={
+          <Link href="/research/new" className={cn(buttonVariants())}>
+            New research
+          </Link>
+        }
+      />
 
       <ResearchLibrary
         projects={(data ?? []) as ResearchProject[]}

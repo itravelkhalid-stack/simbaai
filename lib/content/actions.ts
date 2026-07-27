@@ -176,6 +176,18 @@ export async function queueSingleGenerate(
     const { user, active } = await assertCanWrite();
     await assertPlanAllows(active.organization_id, "ai_runs_month");
     const brandId = await getPrimaryBrandId(active.organization_id);
+    const { getBrandEnabledContentPlatforms } = await import(
+      "@/lib/brand/channels"
+    );
+    const enabled = await getBrandEnabledContentPlatforms({
+      organizationId: active.organization_id,
+      brandId,
+    });
+    if (!enabled.includes(parsed.data.platform)) {
+      return {
+        error: `${parsed.data.platform} is not an enabled channel for this brand. Update Brand → Channels.`,
+      };
+    }
     const supabase = await createClient();
 
     let rejectionReason: string | undefined;
@@ -704,85 +716,12 @@ export async function regenerateRejectedItem(formData: FormData) {
 
 export async function uploadContentItemMedia(
   _prev: ContentActionResult,
-  formData: FormData,
+  _formData: FormData,
 ): Promise<ContentActionResult> {
-  const itemId = String(formData.get("itemId") ?? "");
-  const file = formData.get("file");
-  if (!itemId || !(file instanceof File) || file.size === 0) {
-    return { error: "Choose an image file to upload" };
-  }
-
-  try {
-    const { user, active } = await assertCanWrite();
-    const supabase = await createClient();
-    const { data: item } = await supabase
-      .from("content_items")
-      .select("id, brand_id, media_urls")
-      .eq("id", itemId)
-      .eq("organization_id", active.organization_id)
-      .single();
-    if (!item) return { error: "Item not found" };
-
-    // Prefer brand-media library so assets are reusable
-    const { uploadBrandMediaFile } = await import("@/lib/media/storage");
-    const uploaded = await uploadBrandMediaFile({
-      organizationId: active.organization_id,
-      brandId: item.brand_id,
-      file,
-      assetType: "image",
-    });
-
-    const { data: asset, error: assetError } = await supabase
-      .from("media_assets")
-      .insert({
-        organization_id: active.organization_id,
-        brand_id: item.brand_id,
-        type: "image",
-        storage_path: uploaded.path,
-        public_url: uploaded.publicUrl,
-        filename: file.name,
-        mime_type: uploaded.mimeType,
-        size_bytes: uploaded.sizeBytes,
-        tags: ["content"],
-        source: "upload",
-        created_by: user.id,
-      })
-      .select("id")
-      .single();
-    if (assetError || !asset) {
-      return { error: assetError?.message ?? "Failed to save media asset" };
-    }
-
-    const { count } = await supabase
-      .from("content_item_media")
-      .select("id", { count: "exact", head: true })
-      .eq("content_item_id", item.id);
-
-    await supabase.from("content_item_media").insert({
-      organization_id: active.organization_id,
-      content_item_id: item.id,
-      media_asset_id: asset.id,
-      sort_order: count ?? 0,
-    });
-
-    const existing = (item.media_urls as string[] | null) ?? [];
-    const { error } = await supabase
-      .from("content_items")
-      .update({ media_urls: [...existing, uploaded.publicUrl] })
-      .eq("id", itemId)
-      .eq("organization_id", active.organization_id);
-    if (error) return { error: error.message };
-
-    revalidatePath(`/content/${itemId}`);
-    revalidatePath("/content/queue");
-    revalidatePath("/content/calendar");
-    revalidatePath("/brand/media");
-    return { success: "Image uploaded" };
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "Upload failed",
-    };
-  }
+  return {
+    error:
+      "Direct server upload is disabled. Use Choose from library — files upload to storage in the browser.",
+  };
 }
 
 export async function removeContentItemMedia(formData: FormData) {

@@ -11,12 +11,63 @@ import { AD_PLATFORMS } from "@/lib/ads/providers";
 import type { AdConnection, AdPlatform } from "@/lib/types/ads";
 import { AD_PLATFORM_LABELS } from "@/lib/types/ads";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: AdsActionResult = {};
+
+function connectionHealth(c: AdConnection): {
+  label: string;
+  tone: "success" | "warning" | "danger" | "neutral";
+  detail: string;
+} {
+  const expires = c.token_expires_at
+    ? new Date(c.token_expires_at).getTime() - Date.now()
+    : null;
+  if (c.status === "error" || c.status === "revoked") {
+    return {
+      label: "Needs reconnect",
+      tone: "danger",
+      detail: c.last_error ?? c.status,
+    };
+  }
+  if (c.status === "expired" || (expires != null && expires <= 0)) {
+    return {
+      label: "Expired",
+      tone: "danger",
+      detail: "Token expired — reconnect to resume sync",
+    };
+  }
+  if (c.status === "pending") {
+    return {
+      label: "Pending",
+      tone: "warning",
+      detail: "Connection not fully verified",
+    };
+  }
+  if (expires != null && expires < 7 * 86_400_000) {
+    const days = Math.max(1, Math.floor(expires / 86_400_000));
+    return {
+      label: "Expiring soon",
+      tone: "warning",
+      detail: `Token expires in ${days}d`,
+    };
+  }
+  if (c.status === "active") {
+    return {
+      label: "Healthy",
+      tone: "success",
+      detail: expires
+        ? `Expires ${new Date(c.token_expires_at!).toLocaleDateString()}`
+        : "Active",
+    };
+  }
+  return { label: c.status, tone: "neutral", detail: "" };
+}
 
 export function ConnectionsPanel({
   connections,
@@ -34,21 +85,48 @@ export function ConnectionsPanel({
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {AD_PLATFORMS.map((platform) => {
           const canOAuth = oauthSet.has(platform);
+          const connected = connections.filter((c) => c.platform === platform);
+          const best = connected[0];
+          const health = best ? connectionHealth(best) : null;
+
           return (
-            <div key={platform} className="rounded-xl border p-4">
-              <p className="font-medium">{AD_PLATFORM_LABELS[platform]}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Campaign writes require ADS_WRITES_ENABLED (see docs/ads-apis.md).
-              </p>
+            <div
+              key={platform}
+              className="rounded-lg bg-card p-5 shadow-elevated ring-1 ring-border"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-heading font-semibold text-ink">
+                    {AD_PLATFORM_LABELS[platform]}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-soft">
+                    {connected.length
+                      ? `${connected.length} account${connected.length === 1 ? "" : "s"}`
+                      : "Not connected"}
+                  </p>
+                </div>
+                {health ? (
+                  <Badge variant={health.tone}>{health.label}</Badge>
+                ) : (
+                  <Badge variant="neutral">Offline</Badge>
+                )}
+              </div>
+              {health ? (
+                <p className="mt-2 text-xs text-ink-soft">{health.detail}</p>
+              ) : (
+                <p className="mt-2 text-xs text-ink-soft">
+                  Campaign writes require ADS_WRITES_ENABLED.
+                </p>
+              )}
               {canOAuth ? (
                 <a
                   href={`/api/ads/oauth/${platform}/start`}
-                  className={cn(buttonVariants({ size: "sm" }), "mt-3")}
+                  className={cn(buttonVariants({ size: "sm" }), "mt-4")}
                 >
-                  Connect OAuth
+                  {connected.length ? "Reconnect OAuth" : "Connect OAuth"}
                 </a>
               ) : (
-                <p className="mt-2 text-xs text-muted-foreground">
+                <p className="mt-3 text-xs text-ink-soft">
                   OAuth not configured — use token form below.
                 </p>
               )}
@@ -57,15 +135,20 @@ export function ConnectionsPanel({
         })}
       </div>
 
-      <form action={action} className="space-y-3 rounded-xl border p-4">
-        <p className="text-sm font-medium">Connect with access token</p>
+      <form
+        action={action}
+        className="space-y-3 rounded-lg bg-card p-5 shadow-elevated ring-1 ring-border"
+      >
+        <p className="font-heading text-sm font-semibold text-ink">
+          Connect with access token
+        </p>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="platform">Platform</Label>
             <select
               id="platform"
               name="platform"
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+              className={fieldSelectClass}
               defaultValue="meta"
             >
               {AD_PLATFORMS.map((p) => (
@@ -102,30 +185,41 @@ export function ConnectionsPanel({
         </Button>
       </form>
 
-      <ul className="divide-y rounded-xl border">
-        {connections.length === 0 ? (
-          <li className="p-4 text-sm text-muted-foreground">No ad accounts connected.</li>
-        ) : (
-          connections.map((c) => (
-            <li key={c.id} className="flex items-center justify-between gap-3 p-4">
-              <div>
-                <p className="font-medium">
-                  {AD_PLATFORM_LABELS[c.platform]} · {c.account_name}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {c.account_id} · {c.status}
-                </p>
-              </div>
-              <form action={disconnectAdAccount}>
-                <input type="hidden" name="connectionId" value={c.id} />
-                <Button type="submit" variant="outline" size="sm">
-                  Disconnect
-                </Button>
-              </form>
-            </li>
-          ))
-        )}
-      </ul>
+      {connections.length > 0 ? (
+        <ul className="space-y-3">
+          {connections.map((c) => {
+            const health = connectionHealth(c);
+            return (
+              <li
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card p-4 shadow-elevated ring-1 ring-border"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-ink">
+                      {AD_PLATFORM_LABELS[c.platform]} · {c.account_name}
+                    </p>
+                    <Badge variant={health.tone}>{health.label}</Badge>
+                  </div>
+                  <p className="text-sm text-ink-soft">
+                    {c.account_id}
+                    {health.detail ? ` · ${health.detail}` : ""}
+                  </p>
+                  {c.last_error ? (
+                    <p className="text-xs text-danger">{c.last_error}</p>
+                  ) : null}
+                </div>
+                <form action={disconnectAdAccount}>
+                  <input type="hidden" name="connectionId" value={c.id} />
+                  <Button type="submit" variant="outline" size="sm">
+                    Disconnect
+                  </Button>
+                </form>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </div>
   );
 }

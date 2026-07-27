@@ -1,4 +1,5 @@
 "use client";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 import { useActionState } from "react";
 
@@ -30,7 +31,7 @@ export function GenerateReportForm({
           <select
             id="brandId"
             name="brandId"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             required
             defaultValue={brands[0]?.id ?? ""}
           >
@@ -46,7 +47,7 @@ export function GenerateReportForm({
           <select
             id="type"
             name="type"
-            className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+            className={fieldSelectClass}
             defaultValue="weekly"
           >
             {TYPES.map((t) => (

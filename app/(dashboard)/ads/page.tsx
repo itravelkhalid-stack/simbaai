@@ -1,11 +1,15 @@
 import { AdsNav } from "@/components/ads/ads-nav";
+import { CampaignsTable } from "@/components/ads/campaigns-table";
 import { MetricCards, SpendBars } from "@/components/ads/metrics-widgets";
+import { PageHeader } from "@/components/dashboard/page-header";
 import { aggregateMetrics } from "@/lib/ads/metrics";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { AdCampaign, AdMetricDaily, AdPlatform } from "@/lib/types/ads";
 import { AD_PLATFORM_LABELS } from "@/lib/types/ads";
+import { formatPence } from "@/lib/ads/format";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 export default async function AdsDashboardPage({
   searchParams,
@@ -59,9 +63,8 @@ export default async function AdsDashboardPage({
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, spend_pence]) => ({ date, spend_pence }));
 
-  const campaignMap = new Map(
-    ((campaigns ?? []) as AdCampaign[]).map((c) => [c.id, c]),
-  );
+  const campaignList = (campaigns ?? []) as AdCampaign[];
+  const campaignMap = new Map(campaignList.map((c) => [c.id, c]));
 
   const platformSpend = new Map<AdPlatform, AdMetricDaily[]>();
   for (const row of current) {
@@ -79,27 +82,32 @@ export default async function AdsDashboardPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Ads</h1>
-          <p className="mt-2 text-muted-foreground">
+      <PageHeader
+        title="Ads"
+        description={
+          <>
             Cross-platform spend and performance for {active.organization.name}.
-          </p>
-        </div>
-        <div className="flex gap-2 text-sm">
-          {[7, 14, 30].map((d) => (
-            <Link
-              key={d}
-              href={`/ads?days=${d}`}
-              className={
-                days === d ? "font-medium underline" : "text-muted-foreground"
-              }
-            >
-              {d}d
-            </Link>
-          ))}
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <div className="flex gap-2 text-sm">
+            {[7, 14, 30].map((d) => (
+              <Link
+                key={d}
+                href={`/ads?days=${d}`}
+                className={cn(
+                  "rounded-full px-3 py-1.5",
+                  days === d
+                    ? "bg-brand-soft font-medium text-primary"
+                    : "text-ink-soft hover:bg-surface-soft",
+                )}
+              >
+                {d}d
+              </Link>
+            ))}
+          </div>
+        }
+      />
       <AdsNav current="/ads" />
 
       <MetricCards
@@ -111,84 +119,72 @@ export default async function AdsDashboardPage({
         cpm={agg.cpm}
         cpc={agg.cpcPence}
         ctr={agg.ctr}
+        spendDelta={spendDelta}
       />
-      {spendDelta != null ? (
-        <p className="text-sm text-muted-foreground">
-          Spend vs prior {days}d: {spendDelta >= 0 ? "+" : ""}
-          {spendDelta.toFixed(1)}%
-        </p>
-      ) : null}
 
-      <div className="rounded-xl border p-4">
-        <p className="mb-3 text-sm font-medium">Daily spend</p>
+      <div className="rounded-lg bg-card p-5 shadow-elevated ring-1 ring-border">
+        <p className="mb-3 font-heading text-sm font-semibold text-ink">
+          Daily spend
+        </p>
         <SpendBars days={daySeries} />
       </div>
 
-      <div className="rounded-xl border">
-        <div className="border-b p-3 text-sm font-medium">By platform</div>
+      <div className="overflow-hidden rounded-lg bg-card shadow-elevated ring-1 ring-border">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="font-heading text-sm font-semibold text-ink">
+            By platform
+          </h2>
+        </div>
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b text-muted-foreground">
-              <th className="p-3">Platform</th>
-              <th className="p-3">Spend</th>
-              <th className="p-3">ROAS</th>
-              <th className="p-3">CTR</th>
-              <th className="p-3">Conv.</th>
+            <tr className="border-b border-border text-[11px] uppercase tracking-wide text-ink-soft">
+              <th className="px-4 py-3 font-medium">Platform</th>
+              <th className="px-4 py-3 font-medium">Spend</th>
+              <th className="px-4 py-3 font-medium">ROAS</th>
+              <th className="px-4 py-3 font-medium">CTR</th>
+              <th className="px-4 py-3 font-medium">Conv.</th>
             </tr>
           </thead>
           <tbody>
-            {[...platformSpend.entries()].map(([platform, rows]) => {
-              const a = aggregateMetrics(rows);
-              return (
-                <tr key={platform} className="border-b">
-                  <td className="p-3">{AD_PLATFORM_LABELS[platform]}</td>
-                  <td className="p-3">
-                    {(a.spend_pence / 100).toLocaleString("en-GB", {
-                      style: "currency",
-                      currency: "GBP",
-                    })}
-                  </td>
-                  <td className="p-3">{a.roas.toFixed(2)}x</td>
-                  <td className="p-3">{(a.ctr * 100).toFixed(2)}%</td>
-                  <td className="p-3">{a.conversions.toFixed(1)}</td>
-                </tr>
-              );
-            })}
+            {[...platformSpend.entries()].length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-ink-soft">
+                  No platform spend in this range.
+                </td>
+              </tr>
+            ) : (
+              [...platformSpend.entries()].map(([platform, rows]) => {
+                const a = aggregateMetrics(rows);
+                return (
+                  <tr key={platform} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3 font-medium text-ink">
+                      {AD_PLATFORM_LABELS[platform]}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {formatPence(a.spend_pence, "GBP")}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {a.roas.toFixed(2)}x
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {(a.ctr * 100).toFixed(2)}%
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {a.conversions.toFixed(1)}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
 
-      <div className="rounded-xl border">
-        <div className="border-b p-3 text-sm font-medium">Campaigns</div>
-        <ul className="divide-y">
-          {((campaigns ?? []) as AdCampaign[]).slice(0, 20).map((c) => {
-            const a = aggregateMetrics(
-              current.filter((m) => m.campaign_id === c.id),
-            );
-            return (
-              <li key={c.id} className="flex justify-between gap-3 p-3 text-sm">
-                <div>
-                  <Link href={`/ads/campaigns/${c.id}`} className="font-medium underline">
-                    {c.name}
-                  </Link>
-                  <p className="text-muted-foreground">
-                    {AD_PLATFORM_LABELS[c.platform]} · {c.status}
-                  </p>
-                </div>
-                <div className="text-right text-muted-foreground">
-                  <p>
-                    {(a.spend_pence / 100).toLocaleString("en-GB", {
-                      style: "currency",
-                      currency: c.currency,
-                    })}
-                  </p>
-                  <p>ROAS {a.roas.toFixed(2)}x</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      <CampaignsTable
+        campaigns={campaignList}
+        metrics={current}
+        days={days}
+      />
     </div>
   );
 }

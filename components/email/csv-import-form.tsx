@@ -1,4 +1,5 @@
 "use client";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 import { useMemo, useState } from "react";
 import { useActionState } from "react";
@@ -53,7 +54,7 @@ export function CsvImportForm({ lists }: { lists: EmailList[] }) {
           id="listId"
           name="listId"
           required
-          className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+          className={fieldSelectClass}
         >
           <option value="">Select list</option>
           {lists.map((list) => (
@@ -102,7 +103,7 @@ export function CsvImportForm({ lists }: { lists: EmailList[] }) {
             <div key={field} className="space-y-2">
               <Label>{field}</Label>
               <select
-                className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                className={fieldSelectClass}
                 value={mapping[field] ?? ""}
                 onChange={(e) =>
                   setMapping((prev) => ({ ...prev, [field]: e.target.value }))

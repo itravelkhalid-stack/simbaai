@@ -1,13 +1,9 @@
 import Link from "next/link";
 
+import { PageHeader } from "@/components/dashboard/page-header";
 import { EmailNav } from "@/components/email/email-nav";
+import { MetricCard } from "@/components/brand/metric-card";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -43,52 +39,34 @@ export default async function EmailHomePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Email</h1>
-          <p className="mt-2 text-muted-foreground">
+      <PageHeader
+        title="Email"
+        description={
+          <>
             Lists, campaigns, automations, and Resend sending for{" "}
             {active.organization.name}.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/email/campaigns/new" className={cn(buttonVariants())}>
-            New campaign
-          </Link>
-          <Link
-            href="/email/flows"
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Flows
-          </Link>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Link href="/email/campaigns/new" className={cn(buttonVariants())}>
+              New campaign
+            </Link>
+            <Link
+              href="/email/flows"
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Flows
+            </Link>
+          </>
+        }
+      />
       <EmailNav current="/email" />
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>{lists ?? 0}</CardTitle>
-            <CardDescription>Lists</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{subscribers ?? 0}</CardTitle>
-            <CardDescription>Subscribed contacts</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{campaigns ?? 0}</CardTitle>
-            <CardDescription>Campaigns</CardDescription>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{flows ?? 0}</CardTitle>
-            <CardDescription>Flows</CardDescription>
-          </CardHeader>
-        </Card>
+        <MetricCard label="Lists" value={String(lists ?? 0)} />
+        <MetricCard label="Subscribed contacts" value={String(subscribers ?? 0)} />
+        <MetricCard label="Campaigns" value={String(campaigns ?? 0)} />
+        <MetricCard label="Flows" value={String(flows ?? 0)} />
       </div>
     </div>
   );

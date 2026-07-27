@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { fieldCheckboxClass, fieldSelectClass } from "@/lib/ui/field";
 
 const initial: AutomationsActionResult = {};
 
@@ -92,7 +93,7 @@ export function AutomationBuilder({
               id="status"
               name="status"
               defaultValue={automation.status}
-              className="flex h-9 w-full rounded-md border bg-transparent px-2 text-sm"
+              className={fieldSelectClass}
             >
               {Object.entries(AUTOMATION_STATUS_LABELS).map(([k, label]) => (
                 <option key={k} value={k}>
@@ -182,7 +183,7 @@ export function AutomationBuilder({
           )}
         />
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="dryRun" defaultChecked />
+          <input className={fieldCheckboxClass} type="checkbox" name="dryRun" defaultChecked />
           Dry-run (skip side effects)
         </label>
         {testState.error || testState.success ? (

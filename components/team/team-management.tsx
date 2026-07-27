@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: OrgActionResult = {};
 
@@ -92,7 +93,7 @@ export function TeamManagement({
               id="role"
               name="role"
               defaultValue="org_member"
-              className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+              className={fieldSelectClass}
             >
               {INVITE_ROLES.map((role) => (
                 <option key={role} value={role}>
@@ -141,7 +142,7 @@ export function TeamManagement({
                         <select
                           name="role"
                           defaultValue={member.role}
-                          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                          className={fieldSelectClass}
                           onChange={(event) => event.currentTarget.form?.requestSubmit()}
                         >
                           <option value="org_owner">owner</option>

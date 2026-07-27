@@ -26,6 +26,7 @@ import {
   type NotificationCategory,
 } from "@/lib/types/platform";
 import { cn } from "@/lib/utils";
+import { fieldSelectClass } from "@/lib/ui/field";
 
 export default async function NotificationSettingsPage() {
   const { user, active } = await requireActiveOrg();
@@ -88,7 +89,7 @@ export default async function NotificationSettingsPage() {
                   id={`email_${category}`}
                   name={`email_${category}`}
                   defaultValue={prefMap.get(category) ?? "immediate"}
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  className={fieldSelectClass}
                 >
                   <option value="immediate">Immediate</option>
                   <option value="daily">Daily digest</option>

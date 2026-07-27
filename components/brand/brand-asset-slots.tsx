@@ -1,21 +1,17 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
 
-import { uploadMediaAsset, type MediaActionResult } from "@/lib/media/actions";
+import { DirectMediaUpload } from "@/components/media/direct-media-upload";
 import { BRAND_ASSET_TAGS, type MediaAsset } from "@/lib/types/media";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-
-const initial: MediaActionResult = {};
+import type { DirectUploadKind } from "@/lib/media/upload-constants";
 
 const SLOTS: Array<{
   tag: string;
   label: string;
   accept: string;
   type: "logo" | "font" | "document";
+  kind: DirectUploadKind;
   hint: string;
 }> = [
   {
@@ -23,6 +19,7 @@ const SLOTS: Array<{
     label: "Primary logo",
     accept: "image/*",
     type: "logo",
+    kind: "logo",
     hint: "Main logo used in posts and reports",
   },
   {
@@ -30,6 +27,7 @@ const SLOTS: Array<{
     label: "Secondary logo",
     accept: "image/*",
     type: "logo",
+    kind: "logo",
     hint: "Alternate mark / lockup",
   },
   {
@@ -37,6 +35,7 @@ const SLOTS: Array<{
     label: "Logo (dark)",
     accept: "image/*",
     type: "logo",
+    kind: "logo",
     hint: "For light backgrounds",
   },
   {
@@ -44,6 +43,7 @@ const SLOTS: Array<{
     label: "Logo (light)",
     accept: "image/*",
     type: "logo",
+    kind: "logo",
     hint: "For dark backgrounds",
   },
   {
@@ -51,6 +51,7 @@ const SLOTS: Array<{
     label: "Heading font file",
     accept: ".ttf,.otf,.woff,.woff2",
     type: "font",
+    kind: "font",
     hint: "Optional font file upload",
   },
   {
@@ -58,6 +59,7 @@ const SLOTS: Array<{
     label: "Body font file",
     accept: ".ttf,.otf,.woff,.woff2",
     type: "font",
+    kind: "font",
     hint: "Optional font file upload",
   },
   {
@@ -65,22 +67,25 @@ const SLOTS: Array<{
     label: "Brand guidelines PDF",
     accept: "application/pdf",
     type: "document",
+    kind: "document",
     hint: "Uploading queues AI extraction as a reviewable diff",
   },
 ];
 
 function SlotCard({
   brandId,
+  organizationId,
   slot,
   asset,
   canWrite,
 }: {
   brandId: string;
+  organizationId: string;
   slot: (typeof SLOTS)[number];
   asset: MediaAsset | null;
   canWrite: boolean;
 }) {
-  const [state, action, pending] = useActionState(uploadMediaAsset, initial);
+  const router = useRouter();
 
   return (
     <div className="space-y-3 rounded-xl border p-4">
@@ -112,30 +117,24 @@ function SlotCard({
         <p className="text-sm text-muted-foreground">Not uploaded</p>
       )}
       {canWrite ? (
-        <form action={action} className="space-y-2">
-          <input type="hidden" name="brandId" value={brandId} />
-          <input type="hidden" name="reservedTag" value={slot.tag} />
-          <input type="hidden" name="type" value={slot.type} />
-          <input type="hidden" name="tags" value={slot.tag} />
-          <Label htmlFor={`slot-${slot.tag}`} className="sr-only">
-            Upload {slot.label}
-          </Label>
-          <Input
-            id={`slot-${slot.tag}`}
-            name="file"
-            type="file"
-            accept={slot.accept}
-            required
-          />
-          <Button type="submit" size="sm" disabled={pending}>
-            {pending ? "Uploading…" : asset ? "Replace" : "Upload"}
-          </Button>
-          {state.error || state.success ? (
-            <Alert variant={state.error ? "destructive" : "default"}>
-              <AlertDescription>{state.error || state.success}</AlertDescription>
-            </Alert>
-          ) : null}
-        </form>
+        <DirectMediaUpload
+          organizationId={organizationId}
+          brandId={brandId}
+          kind={slot.kind}
+          reservedTag={slot.tag}
+          type={slot.type}
+          tags={slot.tag}
+          accept={slot.accept}
+          label={asset ? "Replace" : "Upload"}
+          hint={
+            slot.kind === "font"
+              ? "Max 8MB. Uploads go directly to storage."
+              : "Max 25MB. Uploads go directly to storage."
+          }
+          onComplete={(result) => {
+            if (!result.error) router.refresh();
+          }}
+        />
       ) : null}
     </div>
   );
@@ -143,10 +142,12 @@ function SlotCard({
 
 export function BrandAssetSlots({
   brandId,
+  organizationId,
   assets,
   canWrite,
 }: {
   brandId: string;
+  organizationId: string;
   assets: MediaAsset[];
   canWrite: boolean;
 }) {
@@ -166,6 +167,7 @@ export function BrandAssetSlots({
             <SlotCard
               key={slot.tag}
               brandId={brandId}
+              organizationId={organizationId}
               slot={slot}
               asset={asset}
               canWrite={canWrite}

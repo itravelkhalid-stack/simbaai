@@ -1,10 +1,12 @@
 import Link from "next/link";
 
 import { CreateProjectForm } from "@/components/seo/create-project-form";
+import { EmptyState } from "@/components/brand/empty-state";
 import { SeoNav } from "@/components/seo/seo-nav";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { SeoProject } from "@/lib/types/seo";
+import { PageHeader } from "@/components/dashboard/page-header";
 
 export default async function SeoHomePage({
   searchParams,
@@ -19,24 +21,30 @@ export default async function SeoHomePage({
     .select("*")
     .eq("organization_id", active.organization_id)
     .order("created_at", { ascending: false });
+  const projects = (data ?? []) as SeoProject[];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">SEO</h1>
-        <p className="mt-2 text-muted-foreground">
-          Projects, GSC sync, technical audits, keyword maps, and content pipeline for{" "}
-          {active.organization.name}.
-        </p>
-      </div>
+      <PageHeader
+        title="SEO"
+        description={
+          <>
+            Projects, GSC sync, technical audits, keyword maps, and content pipeline for{" "}
+            {active.organization.name}.
+          </>
+        }
+      />
       <SeoNav current="/seo" />
       {q.error ? <p className="text-sm text-destructive">{q.error}</p> : null}
       <CreateProjectForm />
-      <ul className="divide-y rounded-xl border">
-        {((data ?? []) as SeoProject[]).length === 0 ? (
-          <li className="p-4 text-sm text-muted-foreground">No SEO projects yet.</li>
-        ) : (
-          ((data ?? []) as SeoProject[]).map((project) => (
+      {projects.length === 0 ? (
+        <EmptyState
+          title="Start your search growth engine"
+          description="Create an SEO project to map keywords, surface technical fixes, and build an effective content pipeline."
+        />
+      ) : (
+        <ul className="divide-y rounded-lg bg-card shadow-elevated ring-1 ring-border">
+          {projects.map((project) => (
             <li key={project.id} className="flex justify-between gap-3 p-4">
               <div>
                 <Link
@@ -51,9 +59,9 @@ export default async function SeoHomePage({
                 </p>
               </div>
             </li>
-          ))
-        )}
-      </ul>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
