@@ -164,6 +164,7 @@ ${criticalPages
           input: { projectId: project.id, weekStart, weekEnd },
           logs: [{ at: new Date().toISOString(), message: "Generating weekly summary" }],
           progress: 10,
+        metered: false,
         })
         .select("id")
         .single();

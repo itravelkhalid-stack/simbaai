@@ -3,7 +3,7 @@ import {
   createCheckoutSession,
 } from "@/lib/finance/actions";
 import { FinanceNav } from "@/components/finance/finance-nav";
-import { getUsageSnapshot } from "@/lib/billing/plans";
+import { getUsageSnapshot, formatPlanLimit } from "@/lib/billing/plans";
 import { stripeConfigured, BILLABLE_PLANS } from "@/lib/billing/stripe";
 import { PLAN_LIMITS } from "@/lib/types/finance";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -91,11 +91,14 @@ export default async function BillingPage({
       <section className="rounded-xl border p-4">
         <p className="text-sm font-medium">
           Current plan: {PLAN_LIMITS[usage.plan].label}
+          {usage.plan === "internal" ? " (platform)" : ""}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {org?.plan_period_end
-            ? `Period ends ${new Date(org.plan_period_end).toLocaleDateString()}`
-            : "No active paid subscription period"}
+          {usage.plan === "internal"
+            ? "Internal plan — unlimited quotas, not billed via Stripe."
+            : org?.plan_period_end
+              ? `Period ends ${new Date(org.plan_period_end).toLocaleDateString()}`
+              : "No active paid subscription period"}
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(
@@ -111,20 +114,26 @@ export default async function BillingPage({
                 {key.replaceAll("_", " ")}
               </p>
               <p className="font-semibold">
-                {usage.usage[key]} / {usage.limits[key]}
+                {usage.usage[key]} / {formatPlanLimit(usage.limits[key])}
               </p>
             </div>
           ))}
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
           AI spend this month (agent_runs): £
-          {(usage.ai_spend_pence / 100).toFixed(2)}
+          {(usage.ai_spend_pence / 100).toFixed(2)}. AI run quotas count
+          metered, non-failed runs only (see docs/finance.md).
         </p>
       </section>
 
       {!configured ? (
         <p className="text-sm text-muted-foreground">
           Set <code>STRIPE_SECRET_KEY</code> and price IDs to enable upgrades.
+        </p>
+      ) : usage.plan === "internal" ? (
+        <p className="rounded-xl border p-4 text-sm text-muted-foreground">
+          This organization is on the Internal plan. Stripe upgrades are
+          disabled; change the plan in the Admin Portal if needed.
         </p>
       ) : canManage ? (
         <section className="grid gap-3 md:grid-cols-3">
@@ -146,10 +155,10 @@ export default async function BillingPage({
                   </span>
                 </p>
                 <ul className="text-xs text-muted-foreground">
-                  <li>{limits.brands} brands</li>
-                  <li>{limits.ai_runs_month} AI runs/mo</li>
-                  <li>{limits.connected_channels} channels</li>
-                  <li>{limits.team_members} members</li>
+                  <li>{formatPlanLimit(limits.brands)} brands</li>
+                  <li>{formatPlanLimit(limits.ai_runs_month)} AI runs/mo</li>
+                  <li>{formatPlanLimit(limits.connected_channels)} channels</li>
+                  <li>{formatPlanLimit(limits.team_members)} members</li>
                 </ul>
                 <Button type="submit" disabled={isCurrent} className="w-full">
                   {isCurrent ? "Current plan" : `Upgrade to ${limits.label}`}

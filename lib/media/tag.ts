@@ -202,6 +202,7 @@ export async function queueMediaVisionTag(params: {
         mediaAssetId: params.mediaAssetId,
       },
       progress: 0,
+      metered: false,
     })
     .select("id")
     .single();

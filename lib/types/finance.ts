@@ -157,6 +157,17 @@ export type PlanLimits = {
   monthly_price_pence: number;
 };
 
+/** Sentinel for unlimited plan quotas (internal tier). */
+export const PLAN_UNLIMITED = 1_000_000;
+
+export function isUnlimitedLimit(limit: number): boolean {
+  return limit >= PLAN_UNLIMITED;
+}
+
+export function formatPlanLimit(limit: number): string {
+  return isUnlimitedLimit(limit) ? "Unlimited" : String(limit);
+}
+
 export const PLAN_LIMITS: Record<OrgPlan, PlanLimits> = {
   free: {
     label: "Free",
@@ -189,6 +200,15 @@ export const PLAN_LIMITS: Record<OrgPlan, PlanLimits> = {
     connected_channels: 100,
     team_members: 100,
     monthly_price_pence: 49900,
+  },
+  /** Platform-owned / demo orgs — not purchasable via Stripe. */
+  internal: {
+    label: "Internal",
+    brands: PLAN_UNLIMITED,
+    ai_runs_month: PLAN_UNLIMITED,
+    connected_channels: PLAN_UNLIMITED,
+    team_members: PLAN_UNLIMITED,
+    monthly_price_pence: 0,
   },
 };
 

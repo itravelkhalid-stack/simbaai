@@ -82,9 +82,19 @@ export function AskChat({
         ) : null}
 
         {state.error ? (
-          <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-            {state.error}
-          </p>
+          <div className="space-y-2">
+            <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+              {state.error}
+            </p>
+            {state.upgradeHref ? (
+              <a
+                href={state.upgradeHref}
+                className="text-sm font-medium underline"
+              >
+                View plans & upgrade
+              </a>
+            ) : null}
+          </div>
         ) : null}
         <div ref={bottomRef} />
       </div>

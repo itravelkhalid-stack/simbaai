@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { assertPlanAllows } from "@/lib/billing/plans";
+import { actionErrorFromUnknown } from "@/lib/billing/action-error";
 import { requireActiveOrg } from "@/lib/org/require";
 import { assertAskRateLimit, runTeamAsk } from "@/lib/team/ask/runner";
 import { createClient } from "@/lib/supabase/server";
 
 export type AskActionResult = {
   error?: string;
+  upgradeHref?: string;
   conversationId?: string;
   answer?: string;
   department?: string;
@@ -150,7 +152,7 @@ export async function sendAskMessage(
     };
   } catch (error) {
     return {
-      error: error instanceof Error ? error.message : "Ask failed",
+      ...actionErrorFromUnknown(error, "Ask failed"),
     };
   }
 }

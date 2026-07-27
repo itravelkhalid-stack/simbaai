@@ -5,7 +5,9 @@ import {
   setOrgPlan,
   startImpersonation,
 } from "@/lib/admin/actions";
+import { ALL_ORG_PLANS, formatPlanLimit, getUsageSnapshot } from "@/lib/billing/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { PLAN_LIMITS } from "@/lib/types/finance";
 import { KNOWN_FEATURE_FLAGS } from "@/lib/types/platform";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +17,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default async function AdminOrgDetailPage({
@@ -32,6 +33,7 @@ export default async function AdminOrgDetailPage({
     .maybeSingle();
   if (!org) notFound();
 
+  const usage = await getUsageSnapshot(org.id);
   const { data: flags } = await admin
     .from("org_feature_flags")
     .select("*")
@@ -57,20 +59,50 @@ export default async function AdminOrgDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Plan</CardTitle>
-          <CardDescription>Override billing plan for support.</CardDescription>
+          <CardTitle>Plan override</CardTitle>
+          <CardDescription>
+            Set any org plan without Stripe. Use{" "}
+            <span className="font-medium">internal</span> for platform-owned /
+            demo orgs (unlimited limits, not purchasable).
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            {(
+              [
+                "brands",
+                "ai_runs_month",
+                "connected_channels",
+                "team_members",
+              ] as const
+            ).map((key) => (
+              <div key={key} className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">
+                  {key.replaceAll("_", " ")}
+                </p>
+                <p className="font-semibold">
+                  {usage.usage[key]} / {formatPlanLimit(usage.limits[key])}
+                </p>
+              </div>
+            ))}
+          </div>
           <form action={setOrgPlan} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="organizationId" value={org.id} />
             <div className="space-y-2">
               <Label htmlFor="plan">Plan</Label>
-              <Input
+              <select
                 id="plan"
                 name="plan"
                 defaultValue={org.plan}
-                placeholder="free | starter | growth | agency"
-              />
+                className="flex h-9 w-48 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              >
+                {ALL_ORG_PLANS.map((plan) => (
+                  <option key={plan} value={plan}>
+                    {PLAN_LIMITS[plan].label}
+                    {plan === "internal" ? " (not Stripe)" : ""}
+                  </option>
+                ))}
+              </select>
             </div>
             <Button type="submit">Save plan</Button>
           </form>

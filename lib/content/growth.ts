@@ -170,6 +170,7 @@ export async function runWeeklyGrowthReviewForBrand(params: {
         },
       ],
       progress: 10,
+      metered: false,
     })
     .select("id")
     .single();

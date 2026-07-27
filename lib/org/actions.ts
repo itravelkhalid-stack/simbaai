@@ -11,6 +11,7 @@ import {
 } from "@/lib/org/session";
 import { createClient } from "@/lib/supabase/server";
 import { assertPlanAllows } from "@/lib/billing/plans";
+import { actionErrorFromUnknown } from "@/lib/billing/action-error";
 import {
   createOrganizationSchema,
   inviteMemberSchema,
@@ -21,6 +22,7 @@ import {
 
 export type OrgActionResult = {
   error?: string;
+  upgradeHref?: string;
   success?: string;
 };
 
@@ -130,7 +132,7 @@ export async function inviteMember(
   try {
     await assertPlanAllows(active.organization_id, "team_members");
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Plan limit reached" };
+    return actionErrorFromUnknown(error, "Plan limit reached");
   }
 
   const email = parsed.data.email.toLowerCase();

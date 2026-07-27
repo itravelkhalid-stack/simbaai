@@ -15,7 +15,7 @@ import {
   type ContentPillar,
   type ContentPlatform,
 } from "@/lib/types/content";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ActionErrorAlert } from "@/components/billing/action-error-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -132,9 +132,10 @@ export function GenerateForms({
             <Textarea id="topic" name="topic" required rows={4} />
           </div>
           {singleState.error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{singleState.error}</AlertDescription>
-            </Alert>
+            <ActionErrorAlert
+              error={singleState.error}
+              upgradeHref={singleState.upgradeHref}
+            />
           ) : null}
           <Button type="submit" disabled={singlePending}>
             {singlePending ? "Queuing…" : "Generate (injects brand context)"}
@@ -171,9 +172,10 @@ export function GenerateForms({
             />
           </div>
           {batchState.error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{batchState.error}</AlertDescription>
-            </Alert>
+            <ActionErrorAlert
+              error={batchState.error}
+              upgradeHref={batchState.upgradeHref}
+            />
           ) : null}
           <Button type="submit" disabled={batchPending}>
             {batchPending ? "Queuing…" : "Propose 2-week mix"}

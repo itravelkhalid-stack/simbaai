@@ -202,6 +202,7 @@ export async function runDailyOptimisationForOrg(organizationId: string) {
       },
       logs: [{ at: new Date().toISOString(), message: "Running daily optimisation" }],
       progress: 10,
+      metered: false,
     })
     .select("id")
     .single();

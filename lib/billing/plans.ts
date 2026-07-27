@@ -5,6 +5,11 @@ import {
   type PlanLimits,
 } from "@/lib/types/finance";
 import type { OrgPlan } from "@/lib/types/database";
+import {
+  formatPlanLimit,
+  isUnlimitedLimit,
+  PlanLimitError,
+} from "@/lib/billing/plan-limit-error";
 
 export type PlanLimitResult =
   | { ok: true; plan: OrgPlan; limits: PlanLimits; usage: number; limit: number }
@@ -15,7 +20,19 @@ export type PlanLimitResult =
       usage: number;
       limit: number;
       message: string;
+      upgradeHref: string;
     };
+
+export {
+  ALL_ORG_PLANS,
+  formatPlanLimit,
+  isUnlimitedLimit,
+  PlanLimitError,
+  isPlanLimitError,
+  planLimitActionFields,
+  PLAN_UNLIMITED,
+} from "@/lib/billing/plan-limit-error";
+export { isMeteredAgentName, UNMETERED_AGENT_NAMES } from "@/lib/billing/metering";
 
 /** Pure plan-limit evaluation (unit-testable). */
 export function evaluatePlanLimit(params: {
@@ -24,18 +41,26 @@ export function evaluatePlanLimit(params: {
   usage: number;
   increment?: number;
 }): PlanLimitResult {
-  const limits = PLAN_LIMITS[params.plan];
+  const limits = PLAN_LIMITS[params.plan] ?? PLAN_LIMITS.free;
   const limit = limits[params.key];
   const next = params.usage + (params.increment ?? 0);
 
-  if (next > limit) {
+  if (!isUnlimitedLimit(limit) && next > limit) {
+    const err = new PlanLimitError({
+      plan: params.plan,
+      key: params.key,
+      usage: params.usage,
+      limit,
+      planLabel: limits.label,
+    });
     return {
       ok: false,
       plan: params.plan,
       limits,
       usage: params.usage,
       limit,
-      message: `${limits.label} plan allows ${limit} ${params.key.replaceAll("_", " ")} (currently ${params.usage}). Upgrade to continue.`,
+      message: err.message,
+      upgradeHref: err.upgradeHref,
     };
   }
 
@@ -87,10 +112,13 @@ export async function getPlanUsage(
   }
 
   if (key === "ai_runs_month") {
+    // Metered runs only; failed never count. See lib/billing/metering.ts.
     const { count } = await supabase
       .from("agent_runs")
       .select("id", { count: "exact", head: true })
       .eq("organization_id", organizationId)
+      .eq("metered", true)
+      .neq("status", "failed")
       .gte("created_at", startIso)
       .lt("created_at", endIso);
     return count ?? 0;
@@ -160,7 +188,7 @@ export async function checkPlanLimit(
   });
 }
 
-/** Throws when the org would exceed the plan limit. */
+/** Throws PlanLimitError when the org would exceed the plan limit. */
 export async function assertPlanAllows(
   organizationId: string,
   key: PlanLimitKey,
@@ -169,13 +197,21 @@ export async function assertPlanAllows(
   const result = await checkPlanLimit(organizationId, key, {
     increment: options?.increment ?? 1,
   });
-  if (!result.ok) throw new Error(result.message);
+  if (!result.ok) {
+    throw new PlanLimitError({
+      plan: result.plan,
+      key,
+      usage: result.usage,
+      limit: result.limit,
+      planLabel: result.limits.label,
+    });
+  }
   return result;
 }
 
 export async function getUsageSnapshot(organizationId: string) {
   const plan = await getOrgPlan(organizationId);
-  const limits = PLAN_LIMITS[plan];
+  const limits = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
   const [brands, ai_runs_month, connected_channels, team_members, ai_spend_pence] =
     await Promise.all([
       getPlanUsage(organizationId, "brands"),
@@ -191,4 +227,8 @@ export async function getUsageSnapshot(organizationId: string) {
     usage: { brands, ai_runs_month, connected_channels, team_members },
     ai_spend_pence,
   };
+}
+
+export function formatUsageQuota(usage: number, limit: number): string {
+  return `${usage} / ${formatPlanLimit(limit)}`;
 }

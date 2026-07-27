@@ -7,6 +7,7 @@ import { getAgentById } from "@/lib/agents/registry";
 import { runDailyOptimisationForOrg } from "@/lib/ads/optimisation";
 import { syncAllManagedCampaignMetrics } from "@/lib/ads/metrics";
 import { assertPlanAllows } from "@/lib/billing/plans";
+import { actionErrorFromUnknown } from "@/lib/billing/action-error";
 import { runWeeklyGrowthReviewForBrand } from "@/lib/content/growth";
 import { runWeeklyPipelineReviews } from "@/lib/crm/pipeline-review";
 import { buildAnalyticsDailyRollups } from "@/lib/data/rollups";
@@ -19,7 +20,11 @@ import { createAndQueueReport } from "@/lib/reviews/run";
 import { generateWeeklySummariesForAll } from "@/lib/seo/jobs";
 import { createClient } from "@/lib/supabase/server";
 
-export type TeamActionResult = { error?: string; success?: string };
+export type TeamActionResult = {
+  error?: string;
+  upgradeHref?: string;
+  success?: string;
+};
 
 async function assertCanWrite() {
   const ctx = await requireActiveOrg();
@@ -177,8 +182,6 @@ export async function runAgentNow(
 
     return { error: "Unsupported run kind" };
   } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "Failed to run agent",
-    };
+    return actionErrorFromUnknown(error, "Failed to run agent");
   }
 }

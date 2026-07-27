@@ -18,7 +18,7 @@ export type OrgMemberRole =
 export type MembershipStatus = "active" | "invited" | "removed";
 export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
 export type AgentRunStatus = "queued" | "running" | "complete" | "failed";
-export type OrgPlan = "free" | "starter" | "growth" | "agency";
+export type OrgPlan = "free" | "starter" | "growth" | "agency" | "internal";
 
 export type Organization = {
   id: string;
@@ -86,6 +86,8 @@ export type AgentRun = {
   progress: number;
   model: string | null;
   research_project_id: string | null;
+  /** Counts toward ai_runs_month when true and status is not failed. */
+  metered: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -180,6 +182,7 @@ export type Database = {
           progress?: number;
           model?: string | null;
           research_project_id?: string | null;
+          metered?: boolean;
           created_at?: string;
           updated_at?: string;
         },

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { assertPlanAllows } from "@/lib/billing/plans";
+import { actionErrorFromUnknown } from "@/lib/billing/action-error";
 import { inngest } from "@/lib/inngest/client";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
@@ -20,6 +21,7 @@ import type { ContentPlatform } from "@/lib/types/content";
 
 export type ContentActionResult = {
   error?: string;
+  upgradeHref?: string;
   success?: string;
 };
 
@@ -236,7 +238,7 @@ export async function queueSingleGenerate(
     redirect(`/content/queue?run=${run.id}`);
   } catch (error) {
     if (error && typeof error === "object" && "digest" in error) throw error;
-    return { error: error instanceof Error ? error.message : "Failed to generate" };
+    return actionErrorFromUnknown(error, "Failed to generate");
   }
 }
 
@@ -307,7 +309,7 @@ export async function queueBatchPropose(
     redirect(`/content/plans/${plan.id}`);
   } catch (error) {
     if (error && typeof error === "object" && "digest" in error) throw error;
-    return { error: error instanceof Error ? error.message : "Failed to start batch" };
+    return actionErrorFromUnknown(error, "Failed to start batch");
   }
 }
 

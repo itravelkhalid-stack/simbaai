@@ -72,11 +72,12 @@ export async function runWeeklyPipelineReviews() {
         status: "running",
         input: { brand_id: brand.id, week_start: weekStart },
         progress: 10,
-      })
-      .select("id")
-      .single();
+      metered: false,
+    })
+    .select("id")
+    .single();
 
-    try {
+  try {
       const generated = await generatePipelineReview({
         brandContext,
         deals: enriched,

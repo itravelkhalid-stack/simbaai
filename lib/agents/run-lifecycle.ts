@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isMeteredAgentName } from "@/lib/billing/metering";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -11,6 +12,8 @@ export async function withAgentRun<T>(params: {
   agentName: string;
   input?: Record<string, unknown>;
   model?: string;
+  /** Override metering; default from isMeteredAgentName(agentName). */
+  metered?: boolean;
   work: () => Promise<{
     data: T;
     model?: string;
@@ -22,6 +25,7 @@ export async function withAgentRun<T>(params: {
 }): Promise<{ data: T; agentRunId: string }> {
   const supabase = createAdminClient();
   const started = Date.now();
+  const metered = params.metered ?? isMeteredAgentName(params.agentName);
   const { data: run, error } = await supabase
     .from("agent_runs")
     .insert({
@@ -32,6 +36,7 @@ export async function withAgentRun<T>(params: {
       input: params.input ?? {},
       progress: 5,
       model: params.model ?? null,
+      metered,
     })
     .select("id")
     .single();

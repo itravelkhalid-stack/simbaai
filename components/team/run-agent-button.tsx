@@ -48,7 +48,17 @@ export function RunAgentButton({
         {pending ? "Running…" : "Run now"}
       </Button>
       {state.error ? (
-        <span className="text-xs text-danger">{state.error}</span>
+        <span className="text-xs text-danger">
+          {state.error}
+          {state.upgradeHref ? (
+            <>
+              {" "}
+              <a href={state.upgradeHref} className="underline">
+                Upgrade
+              </a>
+            </>
+          ) : null}
+        </span>
       ) : null}
       {state.success ? (
         <span className="text-xs text-ink-soft">{state.success}</span>

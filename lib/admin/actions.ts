@@ -14,9 +14,10 @@ import {
 import { requireUser } from "@/lib/org/require";
 import { parseFormData, uuidSchema } from "@/lib/security/validate";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ALL_ORG_PLANS } from "@/lib/billing/plan-limit-error";
 import type { OrgPlan } from "@/lib/types/database";
 
-const PLANS: OrgPlan[] = ["free", "starter", "growth", "agency"];
+const PLANS: OrgPlan[] = ALL_ORG_PLANS;
 
 async function assertPlatformAdmin() {
   const { user } = await requireUser();

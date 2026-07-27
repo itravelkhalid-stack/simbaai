@@ -77,7 +77,17 @@ export function TeamManagement({
     <div className="space-y-8">
       {feedback ? (
         <Alert variant={feedbackIsError ? "destructive" : "default"}>
-          <AlertDescription>{feedback}</AlertDescription>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>{feedback}</span>
+            {inviteState.upgradeHref ? (
+              <a
+                href={inviteState.upgradeHref}
+                className="font-medium underline"
+              >
+                View plans & upgrade
+              </a>
+            ) : null}
+          </AlertDescription>
         </Alert>
       ) : null}
 
