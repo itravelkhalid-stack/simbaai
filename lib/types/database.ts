@@ -2024,6 +2024,62 @@ export type Database = {
           meta: Record<string, unknown>;
         }>
       >;
+      team_ask_conversations: TableDef<
+        {
+          id: string;
+          organization_id: string;
+          user_id: string;
+          brand_id: string | null;
+          title: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          organization_id: string;
+          user_id: string;
+          brand_id?: string | null;
+          title?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<{
+          brand_id: string | null;
+          title: string | null;
+          updated_at: string;
+        }>
+      >;
+      team_ask_messages: TableDef<
+        {
+          id: string;
+          organization_id: string;
+          conversation_id: string;
+          role: "user" | "assistant" | "tool";
+          content: string;
+          department: string | null;
+          tool_name: string | null;
+          tool_payload: Record<string, unknown>;
+          agent_run_id: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          organization_id: string;
+          conversation_id: string;
+          role: "user" | "assistant" | "tool";
+          content: string;
+          department?: string | null;
+          tool_name?: string | null;
+          tool_payload?: Record<string, unknown>;
+          agent_run_id?: string | null;
+          created_at?: string;
+        },
+        Partial<{
+          content: string;
+          department: string | null;
+          tool_payload: Record<string, unknown>;
+        }>
+      >;
     };
     Views: Record<string, never>;
     Functions: {

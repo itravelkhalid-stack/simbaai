@@ -3,6 +3,8 @@ export const IMPERSONATE_ORG_COOKIE = "growthos_impersonate_org";
 
 export const MODULE_NAV = [
   { href: "/", label: "Dashboard", module: "dashboard" },
+  { href: "/team", label: "AI Team", module: "team" },
+  { href: "/ask", label: "Ask", module: "ask" },
   { href: "/brand", label: "Brand", module: "brand" },
   { href: "/research", label: "Research", module: "research" },
   { href: "/content", label: "Content", module: "content" },
