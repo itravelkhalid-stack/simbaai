@@ -261,7 +261,20 @@ export const runContentSingleGenerate = inngest.createFunction(
           })
           .eq("id", agentRunId);
 
+        if (ids.length > 0) {
+          const { notifyApprovalsNeeded } = await import(
+            "@/lib/notifications/notify"
+          );
+          await notifyApprovalsNeeded({
+            organizationId,
+            title: `${ids.length} content draft${ids.length === 1 ? "" : "s"} need approval`,
+            body: topic.slice(0, 160),
+            link: "/content/queue",
+          });
+        }
+
         return ids;
+
       });
 
       return { ok: true, itemIds };
@@ -579,6 +592,23 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
           .update({ status: "complete", progress: 100 })
           .eq("id", agentRunId);
         await appendAgentRunLog(agentRunId, "Batch generation complete", 100);
+
+        const { count } = await supabase
+          .from("content_items")
+          .select("id", { count: "exact", head: true })
+          .eq("plan_id", planId)
+          .eq("status", "pending_approval");
+        if ((count ?? 0) > 0) {
+          const { notifyApprovalsNeeded } = await import(
+            "@/lib/notifications/notify"
+          );
+          await notifyApprovalsNeeded({
+            organizationId,
+            title: `${count} planned posts need approval`,
+            body: "Batch generation finished — review the queue.",
+            link: "/content/queue",
+          });
+        }
       });
 
       return { ok: true };
@@ -737,6 +767,17 @@ export const runContentRepurpose = inngest.createFunction(
             output: { itemIds: ids },
           })
           .eq("id", agentRunId);
+
+        if (ids.length > 0) {
+          const { notifyApprovalsNeeded } = await import(
+            "@/lib/notifications/notify"
+          );
+          await notifyApprovalsNeeded({
+            organizationId,
+            title: `${ids.length} repurposed draft${ids.length === 1 ? "" : "s"} need approval`,
+            link: "/content/queue",
+          });
+        }
       });
 
       return { ok: true };

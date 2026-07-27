@@ -299,6 +299,15 @@ export async function createCampaignsPaused(formData: FormData) {
       daily_budget_pence: campaign.daily_budget_pence,
     },
   });
+
+  const { notifyApprovalsNeeded } = await import("@/lib/notifications/notify");
+  await notifyApprovalsNeeded({
+    organizationId: active.organization_id,
+    title: "Ad campaign ready for approval",
+    body: campaign.name,
+    link: "/ads/approvals",
+  });
+
   revalidatePath(`/ads/campaigns/${campaign.id}`);
   revalidatePath("/ads/campaigns");
   revalidatePath("/ads/approvals");

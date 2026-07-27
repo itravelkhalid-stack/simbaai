@@ -349,6 +349,13 @@ export async function runMeeting(meetingId: string): Promise<{
       });
     }
 
+    await notifyOrgAdmins({
+      organizationId: m.organization_id,
+      title: `${MEETING_TYPE_LABELS[m.type]} ready`,
+      body: `${common.decisions.length} decisions, ${taken.length} actions taken, ${awaiting.length} awaiting approval`,
+      link: `/meetings/${meetingId}`,
+    });
+
     return {
       meetingId,
       skipped: false as const,

@@ -88,7 +88,7 @@ export async function notifyUser(params: {
   const category = params.category ?? "general";
   const supabase = createAdminClient();
 
-  await supabase.from("notifications").insert({
+  const { error } = await supabase.from("notifications").insert({
     organization_id: params.organizationId,
     user_id: params.userId,
     title: params.title,
@@ -96,6 +96,14 @@ export async function notifyUser(params: {
     link: params.link ?? null,
     category,
   });
+  if (error) {
+    console.error("[notifyUser] insert failed", error.message, {
+      organizationId: params.organizationId,
+      userId: params.userId,
+      category,
+    });
+    throw new Error(error.message);
+  }
 
   if (!params.skipSlack) {
     await postOrgSlack(params.organizationId, params.title, params.body);
@@ -145,6 +153,26 @@ export async function notifyOrgAdmins(params: {
   }
   // One Slack post for the org
   await postOrgSlack(params.organizationId, params.title, params.body);
+}
+
+/** Notify org admins that items need human approval. */
+export async function notifyApprovalsNeeded(params: {
+  organizationId: string;
+  title: string;
+  body?: string;
+  link?: string;
+}) {
+  try {
+    await notifyOrgAdmins({
+      organizationId: params.organizationId,
+      title: params.title,
+      body: params.body,
+      link: params.link ?? "/content/queue",
+      category: "approvals",
+    });
+  } catch (error) {
+    console.error("[notifyApprovalsNeeded]", error);
+  }
 }
 
 export async function ensureDefaultNotificationPreferences(userId: string) {
