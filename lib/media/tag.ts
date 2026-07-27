@@ -8,10 +8,19 @@ import { downloadBrandMediaBytes } from "@/lib/media/storage";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const mediaVisionTagSchema = z.object({
-  subject: z.string().min(1).max(120),
-  style: z.string().min(1).max(120),
+  subject: z.preprocess(
+    (v) => (typeof v === "string" ? v.slice(0, 200) : v),
+    z.string().min(1).max(200),
+  ),
+  style: z.preprocess(
+    (v) => (typeof v === "string" ? v.slice(0, 300) : v),
+    z.string().min(1).max(300),
+  ),
   colors: z.array(z.string()).max(8).default([]),
-  description: z.string().min(1).max(400),
+  description: z.preprocess(
+    (v) => (typeof v === "string" ? v.slice(0, 800) : v),
+    z.string().min(1).max(800),
+  ),
   tags: z.array(z.string()).max(20).default([]),
   suitable_for: z.array(z.string()).max(12).default([]),
 });
