@@ -38,6 +38,7 @@ Build GrowthOS as a multi-tenant SaaS AI marketing agency. Each client organizat
 - Keep components under approximately 200 lines and extract logic to `/lib`.
 - After each feature, summarize what was built and what requires manual testing.
 - A fix is not done until it is merged to `main`, deployed, and verified on production. Never report a fix as complete while it exists only on a feature branch. At the end of any task, state which branch the work is on and whether production has it.
+- A fix involving migrations is not done until the migrations are applied to production and verified by querying prod — deploying app code without its migrations is a broken deploy. The merge-deploy-verify checklist includes the database.
 
 ## AI Agents
 
