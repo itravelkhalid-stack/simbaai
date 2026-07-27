@@ -1,0 +1,48 @@
+---
+description: GrowthOS architecture, stack, security, and AI agent conventions
+alwaysApply: true
+---
+
+# GrowthOS
+
+Build GrowthOS as a multi-tenant SaaS AI marketing agency. Each client organization has an isolated workspace and must never access another organization's data.
+
+## Required Stack
+
+- Next.js 15 App Router, TypeScript, Tailwind CSS, and shadcn/ui
+- Supabase Postgres, Auth, Storage, Row Level Security, and Realtime
+- Anthropic Claude API for all agent work; default to `claude-sonnet-4-6` and allow per-task model overrides
+- Trigger.dev or Inngest for background, scheduled, and long-running work
+- Resend for transactional email; connected ESPs for client campaigns
+- Stripe for billing and Vercel for deployment
+- Do not deviate from this stack without asking
+
+## Architecture
+
+- Multi-tenancy is mandatory. Every tenant-owned table must have `organization_id` and Postgres RLS policies in the same migration that creates it.
+- All Supabase queries must run through RLS and must never return cross-tenant data.
+- Roles are `platform_admin`, `org_owner`, `org_admin`, `org_member`, and `org_viewer`.
+- Run all AI work as background jobs with `queued`, `running`, `complete`, and `failed` states, streamed logs, and persisted results.
+- Send every externally publishable AI output to an approvals queue. Publish only after explicit approval or when the organization has enabled auto-publish for that channel.
+- Store external API credentials encrypted per organization, never in code or environment variables for client accounts.
+- Put each module in a separate route group under `/app/(dashboard)/[module]`.
+- Prefer Server Components; use Client Components only when interactivity requires them.
+- Store money as integer minor units with a currency column.
+
+## Code Quality
+
+- Enable TypeScript strict mode. Avoid `any`; comment the reason when unavoidable.
+- Validate every API input and structured AI output with Zod.
+- Put every database change in a numbered SQL file under `/supabase/migrations`.
+- Create RLS policies in the same migration as their table.
+- Keep components under approximately 200 lines and extract logic to `/lib`.
+- After each feature, summarize what was built and what requires manual testing.
+- A fix is not done until it is merged to `main`, deployed, and verified on production. Never report a fix as complete while it exists only on a feature branch. At the end of any task, state which branch the work is on and whether production has it.
+
+## AI Agents
+
+- Keep versioned agent prompts in `/lib/agents/prompts`; never define prompts inline.
+- Give agents the organization's brand guidelines, brand voice, target audience, and relevant research documents.
+- Require structured JSON output, validate it with Zod, and only then persist it.
+- Log every run to `agent_runs`, including organization, input/output tokens, cost, duration, and model.
+- Agents cover brand and competitor research, brand identity, social, email, paid ads, SEO, planning, CRM, finance, operations, compliance, analytics, workflows, and AI-run meetings and reviews.

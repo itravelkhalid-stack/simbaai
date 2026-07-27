@@ -1,0 +1,52 @@
+---
+description: Simba AI design system — tokens, a11y, components, product naming
+alwaysApply: true
+---
+
+# Simba AI Design System
+
+Product name: **Simba AI** (never "GrowthOS" in user-facing UI). Friendly, confident, modern — an AI marketing team that feels alive but professional. Rounded, warm, generous whitespace.
+
+## Token architecture (three layers — never skip a layer)
+
+Primitive (raw values) → Semantic (`--sem-*`) → Component (shadcn / usage).
+Components NEVER use raw hex or Tailwind default palette colors (`bg-blue-600`, `#00A99D` inline). Only semantic/component tokens.
+
+## Primitive colors (Madyen + functional)
+
+`--teal` `#00A99D`, `--teal-dark` `#0F6F68`, `--gold` `#E3B341`, `--orange` `#FCC44B`, `--orange-light` `#FBE7BB`, `--cream` `#FCF1D7`, `--turquoise-light` `#CCEEE6`, `--crimson-pastel` `#FE8B9F`, `--red-light` `#FDDADE`, `--green` `#60BE67`, `--red-error` `#C43D4B`, `--ink` `#1A2422`, `--ink-soft` `#5A6E6B`, `--surface` `#FFFFFF`, `--surface-soft` `#F7FAF9`.
+
+## Semantic mapping
+
+- `--sem-primary` / hover → teal-dark (buttons, links, interactive text)
+- `--sem-accent` → teal (logo, focus rings, charts, large display text)
+- `--sem-accent-soft` → turquoise-light (selected / active tab / info)
+- success / warning / danger + soft surfaces; `--sem-highlight` → cream (AI content)
+
+## Accessibility (non-negotiable)
+
+Teal `#00A99D` fails WCAG AA for normal white text. Primary buttons/links = teal-dark + white. Never white body text on `#00A99D`; never `#00A99D` body text on white.
+
+## Typography
+
+Headings: Poppins 600/700 (`font-heading`). Body/UI: Inter (`font-sans`). Metrics: tabular-nums. Scale 12 / 13 / 14 / 16 / 18 / 22 / 28 / 36. Line-height 1.5 body, 1.2 headings.
+
+## Shape & depth
+
+Radius: 12px cards, 8px inputs/buttons, 999px pills. Shadows: subtle two-layer (`shadow-elevated`). Borders: 1px `--sem-border`. Spacing: 4px grid.
+
+## Component rules
+
+- Button primary: teal-dark bg, white text, hover darkens, radius 8
+- Button secondary/outline: white, border, ink; ghost tertiary; destructive red-error + white
+- Active nav: accent-soft pill + teal-dark text + 3px teal left indicator
+- Status badges: success / warning / danger / neutral / ai variants
+- Tables: no vertical rules, 1px row dividers, ~44px rows, 12px uppercase header ink-soft
+- Charts: teal, gold, crimson-pastel, green, teal-dark; grid `--grid-line`
+- AI content: cream or accent-soft + `✦ Simba` badge
+- Focus: 2px teal ring, 2px offset
+- Dark mode: out of scope — do not add
+
+## Product naming
+
+User-facing strings → **Simba AI**. Keep code identifiers, DB names, package names, and migration comments as-is unless renaming is explicitly requested.
