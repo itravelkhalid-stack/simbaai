@@ -125,6 +125,7 @@ function SlotCard({
           type={slot.type}
           tags={slot.tag}
           accept={slot.accept}
+          multiple={false}
           label={asset ? "Replace" : "Upload"}
           hint={
             slot.kind === "font"

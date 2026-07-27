@@ -133,16 +133,17 @@ export function MediaLibraryPicker({
               replace={replace}
               tags="content"
               kind="media"
+              multiple
               accept="image/*,video/*"
               label="Upload new"
-              hint="Images & videos, max 25MB. Saved to Brand → Media, then attached."
+              hint="Images & videos, max 25MB each. Multi-select supported. Saved to Brand → Media, then attached."
               disabled={pending}
+              onBatchComplete={() => {
+                setOpen(false);
+                router.refresh();
+              }}
               onComplete={(result) => {
                 setMessage(result);
-                if (!result.error) {
-                  setOpen(false);
-                  router.refresh();
-                }
               }}
             />
           </div>
