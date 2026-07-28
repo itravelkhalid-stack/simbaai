@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { getInviteTokenCookie } from "@/lib/org/invite-cookie";
 import {
   getCurrentProfile,
   resolveActiveOrganization,
@@ -32,6 +33,10 @@ export async function requireActiveOrg(): Promise<{
   const { memberships, active } = await resolveActiveOrganization(user.id);
 
   if (!active) {
+    const inviteToken = await getInviteTokenCookie();
+    if (inviteToken) {
+      redirect(`/accept-invite?token=${encodeURIComponent(inviteToken)}`);
+    }
     redirect("/onboarding");
   }
 

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { INVITE_TOKEN_COOKIE } from "@/lib/constants";
 import { assertSameOrigin } from "@/lib/security/csrf";
 import { clientIp, rateLimit, RATE_LIMITS } from "@/lib/security/rate-limit";
 import { updateSession } from "@/lib/supabase/middleware";
@@ -13,9 +14,14 @@ const PUBLIC_ROUTES = new Set([
   "/accept-invite",
 ]);
 
+function isSafeRelativeNext(next: string | null): next is string {
+  return Boolean(next && next.startsWith("/") && !next.startsWith("//"));
+}
+
 function isPublicPath(pathname: string) {
   return (
     PUBLIC_ROUTES.has(pathname) ||
+    pathname.startsWith("/accept-invite") ||
     pathname.startsWith("/api/inngest") ||
     pathname.startsWith("/api/email/unsubscribe") ||
     pathname.startsWith("/api/email/webhooks") ||
@@ -100,13 +106,29 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", pathname);
+    const next = `${pathname}${request.nextUrl.search}`;
+    url.search = "";
+    url.searchParams.set("next", next);
     return NextResponse.redirect(url);
   }
 
   if (user && (pathname === "/login" || pathname === "/signup")) {
+    const next = request.nextUrl.searchParams.get("next");
+    if (isSafeRelativeNext(next)) {
+      return NextResponse.redirect(new URL(next, request.url));
+    }
+    const inviteToken = request.cookies.get(INVITE_TOKEN_COOKIE)?.value;
+    if (inviteToken) {
+      return NextResponse.redirect(
+        new URL(
+          `/accept-invite?token=${encodeURIComponent(inviteToken)}`,
+          request.url,
+        ),
+      );
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

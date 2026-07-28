@@ -1,5 +1,6 @@
 export const ACTIVE_ORG_COOKIE = "growthos_active_org";
 export const IMPERSONATE_ORG_COOKIE = "growthos_impersonate_org";
+export const INVITE_TOKEN_COOKIE = "growthos_invite_token";
 
 export const MODULE_NAV = [
   { href: "/", label: "Dashboard", module: "dashboard" },

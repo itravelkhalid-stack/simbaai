@@ -11,12 +11,16 @@ import { Label } from "@/components/ui/label";
 
 const initial: ActionResult = {};
 
-export function SignupForm() {
+export function SignupForm({ next }: { next?: string }) {
   const [state, formAction, pending] = useActionState(signUpWithEmail, initial);
+  const loginHref = next
+    ? `/login?next=${encodeURIComponent(next)}`
+    : "/login";
 
   return (
     <div className="space-y-6">
       <form action={formAction} className="space-y-4">
+        <input type="hidden" name="next" value={next ?? ""} />
         <div className="space-y-2">
           <Label htmlFor="fullName">Full name</Label>
           <Input id="fullName" name="fullName" autoComplete="name" required />
@@ -52,7 +56,7 @@ export function SignupForm() {
       </form>
 
       <form action={signInWithGoogle}>
-        <input type="hidden" name="next" value="/" />
+        <input type="hidden" name="next" value={next ?? "/"} />
         <Button type="submit" variant="outline" className="w-full">
           Continue with Google
         </Button>
@@ -60,7 +64,7 @@ export function SignupForm() {
 
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/login" className="underline">
+        <Link href={loginHref} className="underline">
           Sign in
         </Link>
       </p>
