@@ -24,9 +24,13 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  const profile = await getCurrentProfile(user.id);
+  if (profile?.must_change_password) {
+    redirect("/change-password");
+  }
+
   const { memberships, active, isPlatformAdmin } =
     await resolveActiveOrganization(user.id);
-  const profile = await getCurrentProfile(user.id);
 
   if (!active) {
     return (

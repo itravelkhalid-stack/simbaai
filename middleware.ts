@@ -10,6 +10,7 @@ const PUBLIC_ROUTES = new Set([
   "/signup",
   "/forgot-password",
   "/reset-password",
+  "/change-password",
   "/callback",
   "/accept-invite",
 ]);
@@ -99,7 +100,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
   }
 
-  const { user, supabaseResponse } = await updateSession(request);
+  const { user, supabase, supabaseResponse } = await updateSession(request);
   const { pathname } = request.nextUrl;
   const isPublic = isPublicPath(pathname);
 
@@ -144,6 +145,28 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/";
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  // Admin-created / admin-reset accounts must change password before using the app.
+  if (
+    user &&
+    pathname !== "/change-password" &&
+    pathname !== "/callback" &&
+    pathname !== "/login" &&
+    !pathname.startsWith("/api/")
+  ) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("must_change_password")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile?.must_change_password) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/change-password";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

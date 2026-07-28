@@ -4,22 +4,30 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { sendInvitationEmail } from "@/lib/email/resend";
+import { writeAuditEvent } from "@/lib/compliance/audit";
 import {
   clearInviteTokenCookie,
   setInviteTokenCookie,
 } from "@/lib/org/invite-cookie";
 import {
+  findAuthUserIdByEmail,
+  generateTemporaryPassword,
+} from "@/lib/org/passwords";
+import {
   canManageTeam,
   resolveActiveOrganization,
   setActiveOrganizationId,
 } from "@/lib/org/session";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { assertPlanAllows } from "@/lib/billing/plans";
 import { actionErrorFromUnknown } from "@/lib/billing/action-error";
 import {
   createOrganizationSchema,
+  createTeamUserSchema,
   inviteMemberSchema,
   removeMemberSchema,
+  resetTeamMemberPasswordSchema,
   switchOrgSchema,
   updateMemberRoleSchema,
 } from "@/lib/validations/auth";
@@ -28,6 +36,9 @@ export type OrgActionResult = {
   error?: string;
   upgradeHref?: string;
   success?: string;
+  /** Shown once in the UI after create/reset — never stored. */
+  temporaryPassword?: string;
+  createdEmail?: string;
 };
 
 function siteUrl() {
@@ -526,4 +537,239 @@ export async function revokeInvitation(
 
   revalidatePath("/settings/team");
   return { success: "Invitation revoked" };
+}
+
+/**
+ * Create (or link) a team member account with email already confirmed.
+ * Returns a one-time temporary password — never persisted in app tables.
+ */
+export async function createTeamUser(
+  _prev: OrgActionResult,
+  formData: FormData,
+): Promise<OrgActionResult> {
+  const parsed = createTeamUserSchema.safeParse({
+    fullName: formData.get("fullName"),
+    email: formData.get("email"),
+    role: formData.get("role"),
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in" };
+  }
+
+  const { active } = await resolveActiveOrganization(user.id);
+  if (!active || !canManageTeam(active.role)) {
+    return { error: "Only owners and admins can create user accounts" };
+  }
+
+  try {
+    await assertPlanAllows(active.organization_id, "team_members");
+  } catch (error) {
+    return actionErrorFromUnknown(error, "Plan limit reached");
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const fullName = parsed.data.fullName;
+  const role = parsed.data.role;
+  const password = generateTemporaryPassword();
+  const admin = createAdminClient();
+
+  let userId = await findAuthUserIdByEmail(email);
+  let createdNew = false;
+
+  if (userId) {
+    const { data: existingMembership } = await admin
+      .from("organization_members")
+      .select("id")
+      .eq("organization_id", active.organization_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existingMembership) {
+      return {
+        error: `${email} is already a member of this organization`,
+      };
+    }
+  }
+
+  if (!userId) {
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+
+    if (createError || !created.user) {
+      return {
+        error: createError?.message ?? "Could not create auth user",
+      };
+    }
+
+    userId = created.user.id;
+    createdNew = true;
+  } else {
+    const { error: passwordError } = await admin.auth.admin.updateUserById(
+      userId,
+      { password, email_confirm: true },
+    );
+    if (passwordError) {
+      return { error: passwordError.message };
+    }
+  }
+
+  const { error: profileError } = await admin.from("profiles").upsert(
+    {
+      id: userId,
+      full_name: fullName,
+      must_change_password: true,
+    },
+    { onConflict: "id" },
+  );
+
+  if (profileError) {
+    return { error: `User created but profile failed: ${profileError.message}` };
+  }
+
+  const { error: memberError } = await admin.from("organization_members").insert({
+    organization_id: active.organization_id,
+    user_id: userId,
+    role,
+    invited_by: user.id,
+    status: "active",
+  });
+
+  if (memberError) {
+    return {
+      error: `User ready but membership failed: ${memberError.message}`,
+    };
+  }
+
+  await writeAuditEvent({
+    organizationId: active.organization_id,
+    actorUserId: user.id,
+    action: createdNew ? "team.user_created" : "team.user_linked",
+    entityType: "organization_member",
+    entityId: userId,
+    summary: createdNew
+      ? `Created account for ${email} as ${role}`
+      : `Linked existing account ${email} as ${role}`,
+    after: {
+      email,
+      role,
+      full_name: fullName,
+      must_change_password: true,
+      created_new: createdNew,
+    },
+    meta: { email },
+  });
+
+  revalidatePath("/settings/team");
+  return {
+    success: createdNew
+      ? `Account created for ${email}. Share the temporary password now — it is shown only once.`
+      : `Existing account ${email} was added to this org. Temporary password shown only once.`,
+    temporaryPassword: password,
+    createdEmail: email,
+  };
+}
+
+export async function resetTeamMemberPassword(
+  _prev: OrgActionResult,
+  formData: FormData,
+): Promise<OrgActionResult> {
+  const parsed = resetTeamMemberPasswordSchema.safeParse({
+    memberId: formData.get("memberId"),
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in" };
+  }
+
+  const { active } = await resolveActiveOrganization(user.id);
+  if (!active || !canManageTeam(active.role)) {
+    return { error: "Only owners and admins can reset passwords" };
+  }
+
+  const admin = createAdminClient();
+  const { data: member, error: memberError } = await admin
+    .from("organization_members")
+    .select("id, user_id, role")
+    .eq("id", parsed.data.memberId)
+    .eq("organization_id", active.organization_id)
+    .single();
+
+  if (memberError || !member) {
+    return { error: "Member not found in this organization" };
+  }
+
+  if (member.user_id === user.id) {
+    return { error: "Use Change password for your own account" };
+  }
+
+  const { data: authUser, error: authLookupError } =
+    await admin.auth.admin.getUserById(member.user_id);
+
+  if (authLookupError || !authUser.user) {
+    return { error: "Could not load member auth record" };
+  }
+
+  const password = generateTemporaryPassword();
+  const { error: passwordError } = await admin.auth.admin.updateUserById(
+    member.user_id,
+    { password },
+  );
+
+  if (passwordError) {
+    return { error: passwordError.message };
+  }
+
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update({ must_change_password: true })
+    .eq("id", member.user_id);
+
+  if (profileError) {
+    return {
+      error: `Password reset but could not set force-change flag: ${profileError.message}`,
+    };
+  }
+
+  const email = authUser.user.email ?? member.user_id;
+
+  await writeAuditEvent({
+    organizationId: active.organization_id,
+    actorUserId: user.id,
+    action: "team.password_reset",
+    entityType: "organization_member",
+    entityId: member.user_id,
+    summary: `Reset password for ${email}`,
+    after: { must_change_password: true },
+    meta: { email },
+  });
+
+  revalidatePath("/settings/team");
+  return {
+    success: `Password reset for ${email}. Share it now — shown only once. They must change it on next login.`,
+    temporaryPassword: password,
+    createdEmail: email,
+  };
 }

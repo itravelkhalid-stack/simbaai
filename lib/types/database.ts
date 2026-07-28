@@ -43,6 +43,8 @@ export type Profile = {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
+  /** True until the user sets their own password (admin-created / admin-reset). */
+  must_change_password: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -130,6 +132,7 @@ export type Database = {
           id: string;
           full_name?: string | null;
           avatar_url?: string | null;
+          must_change_password?: boolean;
           created_at?: string;
           updated_at?: string;
         },
