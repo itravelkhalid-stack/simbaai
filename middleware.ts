@@ -103,6 +103,20 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic = isPublicPath(pathname);
 
+  // Persist invite token across auth redirects (cannot set cookies from RSC pages).
+  if (pathname === "/accept-invite" || pathname.startsWith("/accept-invite/")) {
+    const token = request.nextUrl.searchParams.get("token");
+    if (token && token.length > 10) {
+      supabaseResponse.cookies.set(INVITE_TOKEN_COOKIE, token, {
+        path: "/",
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 60 * 60 * 24 * 7,
+      });
+    }
+  }
+
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
