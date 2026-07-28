@@ -14,6 +14,8 @@ export type SocialConnection = {
   token_expires_at: string | null;
   scopes: string[];
   status: SocialConnectionStatus;
+  /** Soft pause — tokens kept; publish/metrics/gen skip while true. */
+  paused: boolean;
   metadata: Record<string, unknown>;
   last_error: string | null;
   created_at: string;

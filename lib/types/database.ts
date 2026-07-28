@@ -516,6 +516,7 @@ export type Database = {
           token_expires_at?: string | null;
           scopes?: string[];
           status?: import("@/lib/social/types").SocialConnectionStatus;
+          paused?: boolean;
           metadata?: Record<string, unknown>;
           last_error?: string | null;
           created_at?: string;
@@ -874,6 +875,7 @@ export type Database = {
           token_expires_at?: string | null;
           scopes?: string[];
           status?: import("@/lib/types/ads").AdConnectionStatus;
+          paused?: boolean;
           metadata?: Record<string, unknown>;
           last_error?: string | null;
           created_at?: string;

@@ -28,6 +28,7 @@ export async function upsertAdConnection(params: {
         token_expires_at: params.tokens.expiresAt?.toISOString() ?? null,
         scopes: params.tokens.scopes ?? [],
         status: "active",
+        paused: false,
         metadata: params.tokens.metadata ?? {},
         last_error: null,
       },

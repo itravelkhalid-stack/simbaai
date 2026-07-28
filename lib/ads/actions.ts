@@ -110,6 +110,26 @@ export async function disconnectAdAccount(formData: FormData) {
   revalidatePath("/ads/connections");
 }
 
+export async function setAdConnectionPaused(formData: FormData) {
+  const { active } = await assertCanWrite();
+  if (active.role !== "org_owner" && active.role !== "org_admin") {
+    throw new Error("Only owners/admins can pause connections");
+  }
+  const id = String(formData.get("connectionId") ?? "");
+  const pausedRaw = String(formData.get("paused") ?? "");
+  const paused = pausedRaw === "true" || pausedRaw === "1" || pausedRaw === "on";
+  if (!id) throw new Error("Missing connection");
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("ad_connections")
+    .update({ paused })
+    .eq("id", id)
+    .eq("organization_id", active.organization_id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/ads/connections");
+}
+
 export async function startAdOAuth(formData: FormData) {
   // Kept for compatibility; UI now uses GET /api/ads/oauth/[platform]/start
   // because redirect() to an external URL from a fetch-based server action

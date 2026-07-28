@@ -27,15 +27,16 @@ export async function ingestMetricsForPublishedItems(limit = 100) {
         .eq("organization_id", item.organization_id)
         .eq("brand_id", item.brand_id)
         .eq("platform", item.platform)
-        .eq("status", "active")
-        .limit(1)
-        .maybeSingle();
+.eq("status", "active")
+      .eq("paused", false)
+      .limit(1)
+      .maybeSingle();
 
       if (!connection) {
         results.push({
           itemId: item.id,
           ok: false,
-          error: "missing connection",
+          error: "missing or paused connection",
         });
         continue;
       }
@@ -97,6 +98,7 @@ export async function ingestAccountFollowerMetrics() {
     .from("social_connections")
     .select("*")
     .eq("status", "active")
+    .eq("paused", false)
     .in("platform", ["instagram", "facebook"]);
 
   if (error) throw new Error(error.message);

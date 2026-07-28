@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 
-import { disconnectSocialConnection } from "@/lib/social/actions";
+import {
+  disconnectSocialConnection,
+  setSocialConnectionPaused,
+  unscheduleOrphanedScheduledPosts,
+} from "@/lib/social/actions";
 import {
   metaInstagramUiStatus,
   type MetaInstagramUiStatus,
@@ -36,6 +40,46 @@ function igStatusLabel(status: MetaInstagramUiStatus) {
   if (status === "connected") return "connected";
   if (status === "needs_reconnect") return "needs reconnect";
   return "not connected";
+}
+
+function PauseToggle({
+  connectionId,
+  paused,
+  canManage,
+}: {
+  connectionId: string;
+  paused: boolean;
+  canManage: boolean;
+}) {
+  if (!canManage) {
+    return (
+      <Badge variant={paused ? "outline" : "secondary"}>
+        {paused ? "Paused — not publishing" : "Active"}
+      </Badge>
+    );
+  }
+
+  return (
+    <form action={setSocialConnectionPaused} className="flex items-center gap-2">
+      <input type="hidden" name="connectionId" value={connectionId} />
+      <input type="hidden" name="paused" value={paused ? "false" : "true"} />
+      <Button
+        type="submit"
+        size="sm"
+        variant={paused ? "default" : "outline"}
+        title={
+          paused
+            ? "Resume publishing and metrics for this connection"
+            : "Pause publishing and metrics without disconnecting"
+        }
+      >
+        {paused ? "Resume" : "Pause"}
+      </Button>
+      <Badge variant={paused ? "outline" : "secondary"}>
+        {paused ? "Paused — not publishing" : "Active"}
+      </Badge>
+    </form>
+  );
 }
 
 export function ConnectionsPanel({
@@ -77,6 +121,7 @@ export function ConnectionsPanel({
     facebook &&
     expiresWithinDays(facebook.token_expires_at, 7) &&
     !isExpired(facebook.token_expires_at);
+  const metaPaused = Boolean(facebook?.paused || instagram?.paused);
 
   return (
     <div className="space-y-6">
@@ -100,10 +145,24 @@ export function ConnectionsPanel({
 
       {missingPlatforms.length > 0 ? (
         <Alert variant="destructive">
-          <AlertDescription>
-            Scheduled content exists for platforms with no active connection:{" "}
-            {missingPlatforms.map((p) => PLATFORM_LABELS[p]).join(", ")}. Connect
-            them below or unschedule those posts.
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Scheduled content exists for platforms with no active connection:{" "}
+              {missingPlatforms.map((p) => PLATFORM_LABELS[p]).join(", ")}.
+              Connect them below or unschedule those posts.
+            </span>
+            {canManage ? (
+              <form action={unscheduleOrphanedScheduledPosts}>
+                <input
+                  type="hidden"
+                  name="platforms"
+                  value={missingPlatforms.join(",")}
+                />
+                <Button type="submit" size="sm" variant="secondary">
+                  Unschedule these
+                </Button>
+              </form>
+            ) : null}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -118,7 +177,14 @@ export function ConnectionsPanel({
                 Facebook Page + Instagram Business via one OAuth connect.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {facebook && facebook.status !== "revoked" ? (
+                <PauseToggle
+                  connectionId={facebook.id}
+                  paused={metaPaused}
+                  canManage={canManage}
+                />
+              ) : null}
               {canManage ? (
                 <Link
                   href="/api/social/oauth/facebook/start"
@@ -151,7 +217,9 @@ export function ConnectionsPanel({
               <span className="font-medium">Facebook Page:</span>
               {facebook && facebook.status === "active" && !fbExpired ? (
                 <>
-                  <Badge variant="secondary">connected</Badge>
+                  <Badge variant="secondary">
+                    {metaPaused ? "Paused — not publishing" : "connected"}
+                  </Badge>
                   <span className="text-muted-foreground">
                     {fbMeta?.pageName || facebook.account_name}
                     {fbMeta?.pageId ? ` · ${fbMeta.pageId}` : ""}
@@ -171,13 +239,17 @@ export function ConnectionsPanel({
               <Badge
                 variant={
                   igUi === "connected"
-                    ? "secondary"
+                    ? metaPaused
+                      ? "outline"
+                      : "secondary"
                     : igUi === "needs_reconnect"
                       ? "destructive"
                       : "outline"
                 }
               >
-                {igStatusLabel(igUi)}
+                {igUi === "connected" && metaPaused
+                  ? "Paused — not publishing"
+                  : igStatusLabel(igUi)}
               </Badge>
               {igUi === "connected" ? (
                 <span className="text-muted-foreground">
@@ -216,6 +288,7 @@ export function ConnectionsPanel({
               connection &&
               (connection.status === "expired" ||
                 isExpired(connection.token_expires_at));
+            const paused = Boolean(connection?.paused);
 
             return (
               <div
@@ -228,12 +301,18 @@ export function ConnectionsPanel({
                     {connection ? (
                       <Badge
                         variant={
-                          connection.status === "active" && !expired
+                          connection.status === "active" && !expired && !paused
                             ? "secondary"
-                            : "destructive"
+                            : paused
+                              ? "outline"
+                              : "destructive"
                         }
                       >
-                        {expired ? "expired" : connection.status}
+                        {expired
+                          ? "expired"
+                          : paused
+                            ? "Paused — not publishing"
+                            : connection.status}
                       </Badge>
                     ) : (
                       <Badge variant="outline">not connected</Badge>
@@ -266,7 +345,14 @@ export function ConnectionsPanel({
                   ) : null}
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {connection && connection.status !== "revoked" ? (
+                    <PauseToggle
+                      connectionId={connection.id}
+                      paused={paused}
+                      canManage={canManage}
+                    />
+                  ) : null}
                   {canManage ? (
                     <Link
                       href={`/api/social/oauth/${platform}/start`}
@@ -277,10 +363,10 @@ export function ConnectionsPanel({
                       )}
                     >
                       {connection
-                      ? platform === "linkedin"
-                        ? "Reconnect / change Page"
-                        : "Reconnect"
-                      : "Connect"}
+                        ? platform === "linkedin"
+                          ? "Reconnect / change Page"
+                          : "Reconnect"
+                        : "Connect"}
                     </Link>
                   ) : null}
                   {canManage &&

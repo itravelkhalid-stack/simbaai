@@ -50,6 +50,7 @@ export async function upsertSocialConnection(params: {
         token_expires_at: encrypted.token_expires_at,
         scopes: encrypted.scopes,
         status: "active",
+        paused: false,
         metadata: encrypted.metadata,
         last_error: null,
       },
@@ -81,6 +82,17 @@ export async function getActiveConnection(params: {
 
   if (error) throw new Error(error.message);
   return data as SocialConnection | null;
+}
+
+/** Active + not paused — ready to publish/ingest. */
+export async function getPublishableConnection(params: {
+  organizationId: string;
+  brandId: string;
+  platform: ContentPlatform;
+}) {
+  const connection = await getActiveConnection(params);
+  if (!connection || connection.paused) return null;
+  return connection;
 }
 
 export async function ensureFreshAccessToken(connection: SocialConnection) {

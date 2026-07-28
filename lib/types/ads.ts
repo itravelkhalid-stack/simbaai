@@ -66,6 +66,8 @@ export type AdConnection = {
   token_expires_at: string | null;
   scopes: string[];
   status: AdConnectionStatus;
+  /** Soft pause — tokens kept; metrics/sync skip while true. */
+  paused: boolean;
   metadata: Record<string, unknown>;
   last_error: string | null;
   created_at: string;

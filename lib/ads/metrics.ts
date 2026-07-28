@@ -104,6 +104,10 @@ export async function syncAllManagedCampaignMetrics(limit = 50) {
       results.push({ id: campaign.id, ok: false, error: "connection missing" });
       continue;
     }
+    if ((connection as AdConnection).paused) {
+      results.push({ id: campaign.id, ok: false, error: "connection paused" });
+      continue;
+    }
     try {
       await syncCampaignMetrics({
         campaign,

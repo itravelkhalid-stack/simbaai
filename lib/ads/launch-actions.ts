@@ -110,6 +110,11 @@ async function loadCampaignContext(organizationId: string, campaignId: string) {
       `No active ${campaign.platform} Ads connection for this brand.`,
     );
   }
+  if (connection.paused) {
+    throw new Error(
+      `${campaign.platform} Ads connection is paused. Resume it in Ads → Connections.`,
+    );
+  }
 
   return { supabase, campaign: campaign as AdCampaign, connection };
 }

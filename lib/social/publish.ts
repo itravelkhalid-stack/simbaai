@@ -170,6 +170,20 @@ export async function publishContentItem(itemId: string) {
       );
     }
 
+    if (connection.paused) {
+      const message =
+        "Platform paused — not publishing. Resume the connection in Social to publish.";
+      await supabase
+        .from("content_items")
+        .update({
+          publish_error: message,
+          // Keep scheduled so it publishes when unpaused.
+          status: "scheduled",
+        })
+        .eq("id", itemId);
+      return { skipped: true as const, reason: "platform_paused" };
+    }
+
     const capabilities = getMetaPublishCapabilities({
       scopes: connection.scopes,
     });

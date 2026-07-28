@@ -31,16 +31,18 @@ export async function deriveConnectedChannels(params: {
   const [{ data: social }, { data: ads }] = await Promise.all([
     supabase
       .from("social_connections")
-      .select("platform, status, scopes, metadata")
+      .select("platform, status, paused, scopes, metadata")
       .eq("organization_id", params.organizationId)
       .eq("brand_id", params.brandId)
-      .eq("status", "active"),
+      .eq("status", "active")
+      .eq("paused", false),
     supabase
       .from("ad_connections")
-      .select("platform, status")
+      .select("platform, status, paused")
       .eq("organization_id", params.organizationId)
       .eq("brand_id", params.brandId)
-      .eq("status", "active"),
+      .eq("status", "active")
+      .eq("paused", false),
   ]);
 
   const channels = new Set<BrandChannel>();
@@ -76,6 +78,7 @@ export async function deriveConnectedChannels(params: {
  * Resolve enabled channels for a brand.
  * Explicit `enabled_channels` wins when non-empty; otherwise derive from connections.
  * Falls back to facebook+instagram when nothing is connected (safe default for content UI).
+ * Paused social connections are always excluded from content generation targets.
  */
 export async function resolveEnabledChannels(params: {
   organizationId: string;
@@ -84,12 +87,50 @@ export async function resolveEnabledChannels(params: {
   admin?: boolean;
 }): Promise<BrandChannel[]> {
   const stored = normalizeBrandChannels(params.stored);
-  if (stored.length > 0) return stored;
+  let base: BrandChannel[];
+  if (stored.length > 0) {
+    base = stored;
+  } else {
+    const derived = await deriveConnectedChannels(params);
+    base = derived.length > 0 ? derived : ["facebook", "instagram"];
+  }
 
-  const derived = await deriveConnectedChannels(params);
-  if (derived.length > 0) return derived;
+  const paused = await getPausedSocialPlatforms(params);
+  if (paused.size === 0) return base;
+  return base.filter((ch) => !(isContentPlatform(ch) && paused.has(ch)));
+}
 
-  return ["facebook", "instagram"];
+/** Platforms with an active-but-paused social connection for this brand. */
+export async function getPausedSocialPlatforms(params: {
+  organizationId: string;
+  brandId: string;
+  admin?: boolean;
+}): Promise<Set<ContentPlatform>> {
+  const supabase = params.admin ? createAdminClient() : await createClient();
+  const { data } = await supabase
+    .from("social_connections")
+    .select("platform, scopes, metadata")
+    .eq("organization_id", params.organizationId)
+    .eq("brand_id", params.brandId)
+    .eq("status", "active")
+    .eq("paused", true);
+
+  const paused = new Set<ContentPlatform>();
+  for (const row of data ?? []) {
+    const platform = String(row.platform);
+    if (isContentPlatform(platform)) paused.add(platform);
+    if (
+      platform === "facebook" &&
+      connectionCanPublishInstagram({
+        scopes: (row.scopes as string[]) ?? [],
+        metadata: (row.metadata as Record<string, unknown>) ?? {},
+        platform: "facebook",
+      })
+    ) {
+      paused.add("instagram");
+    }
+  }
+  return paused;
 }
 
 export async function resolveEnabledContentPlatforms(params: {
@@ -99,8 +140,7 @@ export async function resolveEnabledContentPlatforms(params: {
   admin?: boolean;
 }): Promise<ContentPlatform[]> {
   const channels = await resolveEnabledChannels(params);
-  const platforms = contentPlatformsFromChannels(channels);
-  return platforms.length > 0 ? platforms : ["facebook", "instagram"];
+  return contentPlatformsFromChannels(channels);
 }
 
 /** Load brand row + resolve content platforms (admin or RLS client). */

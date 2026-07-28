@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import {
   connectAdAccountManual,
   disconnectAdAccount,
+  setAdConnectionPaused,
   type AdsActionResult,
 } from "@/lib/ads/actions";
 import { AD_PLATFORMS } from "@/lib/ads/providers";
@@ -28,6 +29,13 @@ function connectionHealth(c: AdConnection): {
   const expires = c.token_expires_at
     ? new Date(c.token_expires_at).getTime() - Date.now()
     : null;
+  if (c.paused && c.status === "active") {
+    return {
+      label: "Paused — not publishing",
+      tone: "warning",
+      detail: "Tokens kept — resume anytime without reconnecting",
+    };
+  }
   if (c.status === "error" || c.status === "revoked") {
     return {
       label: "Needs reconnect",
@@ -209,12 +217,27 @@ export function ConnectionsPanel({
                     <p className="text-xs text-danger">{c.last_error}</p>
                   ) : null}
                 </div>
-                <form action={disconnectAdAccount}>
-                  <input type="hidden" name="connectionId" value={c.id} />
-                  <Button type="submit" variant="outline" size="sm">
-                    Disconnect
-                  </Button>
-                </form>
+                <div className="flex flex-wrap items-center gap-2">
+                  {c.status === "active" || c.status === "expired" || c.status === "error" ? (
+                    <form action={setAdConnectionPaused}>
+                      <input type="hidden" name="connectionId" value={c.id} />
+                      <input
+                        type="hidden"
+                        name="paused"
+                        value={c.paused ? "false" : "true"}
+                      />
+                      <Button type="submit" size="sm" variant="outline">
+                        {c.paused ? "Resume" : "Pause"}
+                      </Button>
+                    </form>
+                  ) : null}
+                  <form action={disconnectAdAccount}>
+                    <input type="hidden" name="connectionId" value={c.id} />
+                    <Button type="submit" variant="outline" size="sm">
+                      Disconnect
+                    </Button>
+                  </form>
+                </div>
               </li>
             );
           })}
