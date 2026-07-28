@@ -41,6 +41,16 @@ export const inviteMemberSchema = z.object({
   role: z.enum(INVITE_ROLES),
 });
 
+export const createTeamUserSchema = z.object({
+  fullName: z.string().trim().min(2, "Enter a full name"),
+  email: emailSchema,
+  role: z.enum(INVITE_ROLES),
+});
+
+export const resetTeamMemberPasswordSchema = z.object({
+  memberId: z.string().uuid(),
+});
+
 export const updateMemberRoleSchema = z.object({
   memberId: z.string().uuid(),
   role: z.enum(["org_owner", "org_admin", "org_member", "org_viewer"]),
