@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 
 import { sendInvitationEmail } from "@/lib/email/resend";
 import {
+  clearInviteTokenCookie,
+  setInviteTokenCookie,
+} from "@/lib/org/invite-cookie";
+import {
   canManageTeam,
   resolveActiveOrganization,
   setActiveOrganizationId,
@@ -28,6 +32,26 @@ export type OrgActionResult = {
 
 function siteUrl() {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+}
+
+function friendlyInviteError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("expired")) {
+    return "This invitation has expired. Ask your admin to send a new one.";
+  }
+  if (lower.includes("no longer pending") || lower.includes("revoked")) {
+    return "This invitation is no longer valid (revoked or already used).";
+  }
+  if (lower.includes("not found")) {
+    return "This invitation link is invalid or has been removed.";
+  }
+  if (lower.includes("does not match")) {
+    return "Sign in with the email address this invitation was sent to.";
+  }
+  if (lower.includes("not authenticated")) {
+    return "You must be signed in to accept this invitation.";
+  }
+  return message;
 }
 
 export async function createOrganization(
@@ -155,23 +179,90 @@ export async function inviteMember(
   const inviteUrl = `${siteUrl()}/accept-invite?token=${invitation.token}`;
 
   try {
-    await sendInvitationEmail({
+    const sent = await sendInvitationEmail({
       to: email,
       organizationName: active.organization.name,
       inviteUrl,
       role: parsed.data.role,
     });
+    revalidatePath("/settings/team");
+    return {
+      success: `Invitation sent to ${email} (from ${sent.from})`,
+    };
+  } catch (err) {
+    revalidatePath("/settings/team");
+    return {
+      error:
+        err instanceof Error
+          ? `Invite saved but email failed: ${err.message}. Use Resend invitation once email is fixed.`
+          : "Invite saved but email failed. Use Resend invitation once email is fixed.",
+    };
+  }
+}
+
+export async function resendInvitation(
+  _prev: OrgActionResult,
+  formData: FormData,
+): Promise<OrgActionResult> {
+  const invitationId = String(formData.get("invitationId") ?? "");
+  if (!invitationId) {
+    return { error: "Missing invitation" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "You must be signed in" };
+  }
+
+  const { active } = await resolveActiveOrganization(user.id);
+  if (!active || !canManageTeam(active.role)) {
+    return { error: "Only owners and admins can resend invitations" };
+  }
+
+  const { data: invitation, error } = await supabase
+    .from("invitations")
+    .select("*")
+    .eq("id", invitationId)
+    .eq("organization_id", active.organization_id)
+    .single();
+
+  if (error || !invitation) {
+    return { error: "Invitation not found" };
+  }
+
+  if (invitation.status !== "pending") {
+    return { error: "Only pending invitations can be resent" };
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    return { error: "This invitation has expired. Send a new invite instead." };
+  }
+
+  const inviteUrl = `${siteUrl()}/accept-invite?token=${invitation.token}`;
+
+  try {
+    const sent = await sendInvitationEmail({
+      to: invitation.email,
+      organizationName: active.organization.name,
+      inviteUrl,
+      role: invitation.role,
+    });
+    revalidatePath("/settings/team");
+    return {
+      success: `Invitation resent to ${invitation.email} (from ${sent.from})`,
+    };
   } catch (err) {
     return {
       error:
         err instanceof Error
-          ? `Invite created but email failed: ${err.message}`
-          : "Invite created but email failed",
+          ? `Resend failed: ${err.message}`
+          : "Resend failed",
     };
   }
-
-  revalidatePath("/settings/team");
-  return { success: `Invitation sent to ${email}` };
 }
 
 export async function updateMemberRole(
@@ -307,6 +398,8 @@ export async function acceptInvitation(
     return { error: "Missing invitation token" };
   }
 
+  await setInviteTokenCookie(token);
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -321,7 +414,7 @@ export async function acceptInvitation(
   });
 
   if (error) {
-    return { error: error.message };
+    return { error: friendlyInviteError(error.message) };
   }
 
   const membership = Array.isArray(data) ? data[0] : data;
@@ -329,6 +422,72 @@ export async function acceptInvitation(
     await setActiveOrganizationId(membership.organization_id);
   }
 
+  await clearInviteTokenCookie();
+  revalidatePath("/", "layout");
+  redirect("/");
+}
+
+/** Accept a pending invite matched by the signed-in user's email (no link token). */
+export async function joinPendingInvitation(
+  _prev: OrgActionResult,
+  formData: FormData,
+): Promise<OrgActionResult> {
+  const invitationId = String(formData.get("invitationId") ?? "");
+  if (!invitationId) {
+    return { error: "Missing invitation" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.email) {
+    return { error: "You must be signed in" };
+  }
+
+  const { data: invitation, error: loadError } = await supabase
+    .from("invitations")
+    .select("id, token, email, status, expires_at")
+    .eq("id", invitationId)
+    .eq("status", "pending")
+    .single();
+
+  if (loadError || !invitation) {
+    return {
+      error: friendlyInviteError(
+        loadError?.message ?? "Invitation not found",
+      ),
+    };
+  }
+
+  if (invitation.email.toLowerCase() !== user.email.toLowerCase()) {
+    return {
+      error: "Sign in with the email address this invitation was sent to.",
+    };
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    return {
+      error: "This invitation has expired. Ask your admin to send a new one.",
+    };
+  }
+
+  const { data, error } = await supabase.rpc("accept_invitation", {
+    p_token: invitation.token,
+  });
+
+  if (error) {
+    return { error: friendlyInviteError(error.message) };
+  }
+
+  const membership = Array.isArray(data) ? data[0] : data;
+  if (membership?.organization_id) {
+    await setActiveOrganizationId(membership.organization_id);
+  }
+
+  await clearInviteTokenCookie();
+  revalidatePath("/", "layout");
   redirect("/");
 }
 

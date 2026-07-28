@@ -10,6 +10,13 @@ import {
   signupSchema,
 } from "@/lib/validations/auth";
 import { clearActiveOrganizationId } from "@/lib/org/session";
+import {
+  getInviteTokenCookie,
+  inviteTokenFromNext,
+  isSafeRelativeNext,
+  resolvePostAuthPath,
+  setInviteTokenCookie,
+} from "@/lib/org/invite-cookie";
 
 function siteUrl() {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -20,10 +27,30 @@ export type ActionResult = {
   success?: string;
 };
 
+async function preserveInviteFromNext(next: string | null | undefined) {
+  const token = inviteTokenFromNext(next);
+  if (token) {
+    await setInviteTokenCookie(token);
+  }
+}
+
+async function postAuthRedirect(nextFromForm: string | null | undefined) {
+  await preserveInviteFromNext(nextFromForm);
+  const cookieToken = await getInviteTokenCookie();
+  const path = resolvePostAuthPath({
+    next: isSafeRelativeNext(nextFromForm) ? nextFromForm : null,
+    inviteToken: cookieToken,
+  });
+  redirect(path);
+}
+
 export async function signUpWithEmail(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  const next = String(formData.get("next") ?? "") || null;
+  await preserveInviteFromNext(next);
+
   const parsed = signupSchema.safeParse({
     fullName: formData.get("fullName"),
     email: formData.get("email"),
@@ -34,13 +61,19 @@ export async function signUpWithEmail(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
+  const callbackNext = isSafeRelativeNext(next)
+    ? next
+    : resolvePostAuthPath({
+        inviteToken: await getInviteTokenCookie(),
+      });
+
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
       data: { full_name: parsed.data.fullName },
-      emailRedirectTo: `${siteUrl()}/callback`,
+      emailRedirectTo: `${siteUrl()}/callback?next=${encodeURIComponent(callbackNext)}`,
     },
   });
 
@@ -57,6 +90,8 @@ export async function signInWithEmail(
   _prev: ActionResult,
   formData: FormData,
 ): Promise<ActionResult> {
+  const next = String(formData.get("next") ?? "") || null;
+
   const parsed = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -76,11 +111,15 @@ export async function signInWithEmail(
     return { error: error.message };
   }
 
-  redirect("/");
+  await postAuthRedirect(next);
+  return {};
 }
 
 export async function signInWithGoogle(formData?: FormData): Promise<void> {
-  const next = String(formData?.get("next") ?? "/");
+  const nextRaw = String(formData?.get("next") ?? "/") || "/";
+  const next = isSafeRelativeNext(nextRaw) ? nextRaw : "/";
+  await preserveInviteFromNext(next);
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",

@@ -13,10 +13,14 @@ const initial: ActionResult = {};
 
 export function LoginForm({ next }: { next?: string }) {
   const [state, formAction, pending] = useActionState(signInWithEmail, initial);
+  const signupHref = next
+    ? `/signup?next=${encodeURIComponent(next)}`
+    : "/signup";
 
   return (
     <div className="space-y-6">
       <form action={formAction} className="space-y-4">
+        <input type="hidden" name="next" value={next ?? ""} />
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input id="email" name="email" type="email" autoComplete="email" required />
@@ -55,7 +59,7 @@ export function LoginForm({ next }: { next?: string }) {
 
       <p className="text-center text-sm text-muted-foreground">
         No account?{" "}
-        <Link href="/signup" className="underline">
+        <Link href={signupHref} className="underline">
           Create one
         </Link>
       </p>

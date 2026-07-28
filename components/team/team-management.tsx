@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import {
   inviteMember,
   removeMember,
+  resendInvitation,
   revokeInvitation,
   updateMemberRole,
   type OrgActionResult,
@@ -55,6 +56,10 @@ export function TeamManagement({
   const [roleState, roleAction] = useActionState(updateMemberRole, initial);
   const [removeState, removeAction] = useActionState(removeMember, initial);
   const [revokeState, revokeAction] = useActionState(revokeInvitation, initial);
+  const [resendState, resendAction, resendPending] = useActionState(
+    resendInvitation,
+    initial,
+  );
 
   const feedback =
     inviteState.error ||
@@ -64,13 +69,16 @@ export function TeamManagement({
     removeState.error ||
     removeState.success ||
     revokeState.error ||
-    revokeState.success;
+    revokeState.success ||
+    resendState.error ||
+    resendState.success;
 
   const feedbackIsError = Boolean(
     inviteState.error ||
       roleState.error ||
       removeState.error ||
-      revokeState.error,
+      revokeState.error ||
+      resendState.error,
   );
 
   return (
@@ -216,12 +224,33 @@ export function TeamManagement({
                         {new Date(invite.expires_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <form action={revokeAction}>
-                          <input type="hidden" name="invitationId" value={invite.id} />
-                          <Button type="submit" variant="outline" size="sm">
-                            Revoke
-                          </Button>
-                        </form>
+                        <div className="flex justify-end gap-2">
+                          <form action={resendAction}>
+                            <input
+                              type="hidden"
+                              name="invitationId"
+                              value={invite.id}
+                            />
+                            <Button
+                              type="submit"
+                              variant="secondary"
+                              size="sm"
+                              disabled={resendPending}
+                            >
+                              {resendPending ? "Sending…" : "Resend invitation"}
+                            </Button>
+                          </form>
+                          <form action={revokeAction}>
+                            <input
+                              type="hidden"
+                              name="invitationId"
+                              value={invite.id}
+                            />
+                            <Button type="submit" variant="outline" size="sm">
+                              Revoke
+                            </Button>
+                          </form>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
