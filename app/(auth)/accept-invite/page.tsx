@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 import { AuthCard } from "@/components/auth/auth-card";
 import { AcceptInviteForm } from "@/components/team/accept-invite-form";
-import { setInviteTokenCookie } from "@/lib/org/invite-cookie";
 import type { InvitePreview } from "@/lib/org/invite-preview";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -48,10 +47,6 @@ export default async function AcceptInvitePage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  if (token) {
-    await setInviteTokenCookie(token);
-  }
 
   const preview = token ? await loadInvitePreview(token) : null;
 
