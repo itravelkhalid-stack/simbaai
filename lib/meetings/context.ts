@@ -414,6 +414,12 @@ export async function gatherMeetingContext(params: {
       ? "connected"
       : "connected_but_zero";
 
+  const { getLatestCeoCheck } = await import("@/lib/ceo/run");
+  const ceoCheck = await getLatestCeoCheck({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+  });
+
   const snapshot = {
     period: { fromDate, toDate, label, yesterday, today },
     empty_sources: emptySources,
@@ -481,6 +487,16 @@ export async function gatherMeetingContext(params: {
       intent_mode: ga4IntentResolved.mode,
     },
     setup_blockers: setupBlockers,
+    ceo: ceoCheck
+      ? {
+          checked_at: ceoCheck.checked_at,
+          overall_status: ceoCheck.overall_status,
+          accountability_markdown: ceoCheck.accountability_markdown,
+          state_of_company_markdown: ceoCheck.state_of_company_markdown,
+          hire_proposals: ceoCheck.hire_proposals,
+          actions_taken: ceoCheck.actions_taken,
+        }
+      : null,
     finance: {
       weekly_summaries: financeSummaries ?? [],
     },
@@ -539,9 +555,26 @@ ${
 `
       : "";
 
+  const ceoSection = ceoCheck
+    ? `
+### CEO accountability (from latest CEO check)
+${ceoCheck.accountability_markdown}
+${
+  params.type === "weekly_marketing" && ceoCheck.state_of_company_markdown
+    ? `\n### CEO state of the company (weekly)\n${ceoCheck.state_of_company_markdown}\n`
+    : ""
+}
+Include a dedicated "CEO accountability" section in minutes covering department status, what the CEO did, and hiring proposals. Prefer the CEO markdown above over re-deriving status.
+`
+    : `
+### CEO accountability
+- No CEO check yet for this brand. Note the gap; do not invent accountability results.
+`;
+
   const markdown = `
 ## Period: ${label} (${fromDate} → ${toDate})
 ${emptyDisclosure}
+${ceoSection}
 
 ### Brand KPI targets vs actuals
 ${

@@ -2093,6 +2093,96 @@ export type Database = {
           tool_payload: Record<string, unknown>;
         }>
       >;
+      ceo_checks: TableDef<
+        {
+          id: string;
+          organization_id: string;
+          brand_id: string;
+          checked_at: string;
+          period_start: string;
+          period_end: string;
+          departments: unknown;
+          kpi_summary: Record<string, unknown>;
+          actions_taken: unknown;
+          hire_proposals: unknown;
+          ai_judgment: Record<string, unknown>;
+          accountability_markdown: string;
+          state_of_company_markdown: string | null;
+          overall_status: string;
+          agent_run_id: string | null;
+          created_at: string;
+        },
+        {
+          organization_id: string;
+          brand_id: string;
+          period_start: string;
+          period_end: string;
+          departments?: unknown;
+          kpi_summary?: Record<string, unknown>;
+          actions_taken?: unknown;
+          hire_proposals?: unknown;
+          ai_judgment?: Record<string, unknown>;
+          accountability_markdown?: string;
+          state_of_company_markdown?: string | null;
+          overall_status?: string;
+          agent_run_id?: string | null;
+          checked_at?: string;
+        },
+        Partial<{
+          departments: unknown;
+          kpi_summary: Record<string, unknown>;
+          actions_taken: unknown;
+          hire_proposals: unknown;
+          ai_judgment: Record<string, unknown>;
+          accountability_markdown: string;
+          state_of_company_markdown: string | null;
+          overall_status: string;
+          agent_run_id: string | null;
+        }>
+      >;
+      brand_agent_activations: TableDef<
+        {
+          id: string;
+          organization_id: string;
+          brand_id: string;
+          agent_id: string;
+          status: string;
+          mandate: string;
+          proposed_by: string;
+          proposed_reason: string | null;
+          ceo_check_id: string | null;
+          activated_at: string | null;
+          declined_at: string | null;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          organization_id: string;
+          brand_id: string;
+          agent_id: string;
+          status?: string;
+          mandate?: string;
+          proposed_by?: string;
+          proposed_reason?: string | null;
+          ceo_check_id?: string | null;
+          activated_at?: string | null;
+          declined_at?: string | null;
+          updated_at?: string;
+        },
+        {
+          organization_id?: string;
+          brand_id?: string;
+          agent_id?: string;
+          status?: string;
+          mandate?: string;
+          proposed_by?: string;
+          proposed_reason?: string | null;
+          ceo_check_id?: string | null;
+          activated_at?: string | null;
+          declined_at?: string | null;
+          updated_at?: string;
+        }
+      >;
     };
     Views: Record<string, never>;
     Functions: {

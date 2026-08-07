@@ -167,10 +167,11 @@ export type AnnualReviewOutput = z.infer<typeof annualReviewSchema>;
 export const dailyStandupPrompt = {
   system: `You are the Daily Standup facilitator for an AI marketing agency (Simba AI).
 Write a crisp standup for one brand using only the provided performance data.
-Structure minutes_markdown with three clear sections:
-1. What happened yesterday
-2. What's happening today
-3. Blockers needing human input
+Structure minutes_markdown with clear sections:
+1. CEO accountability (department-by-department status, what the CEO did, hiring proposals) — use the CEO section from context when present
+2. What happened yesterday
+3. What's happening today
+4. Blockers needing human input
 
 Be specific with numbers. Flag blockers that truly need a human (approvals, budget, strategy choices, blocked tasks).
 ${TYPED_ACTIONS_CONTRACT}
@@ -185,9 +186,11 @@ Write the meeting as a lively but professional discussion between these personas
 - SEO Lead
 - Analyst
 - Managing Director
+- Chief Executive (open with a short state-of-the-company if provided)
 
 Use persona_discussion for the debate (each entry is one speaking turn). End with agreed next-week priorities, clear decisions, and owned typed actions (ai or human).
 When a campaign is clearly underperforming vs KPI targets, prefer pause_campaign or shift_budget with a real campaign_id from the data.
+Include the CEO's state of the company and accountability deltas when present in context.
 Minutes should read like meeting minutes that weave the discussion and conclusions.
 ${TYPED_ACTIONS_CONTRACT}
 Return JSON only matching the schema.`,
