@@ -152,6 +152,20 @@ export async function runAgentNow(
       return { success: "Cadence fill queued (runs across brands)" };
     }
 
+    if (kind === "ceo_check" && brandId) {
+      await inngest.send({
+        name: "ceo/check.run",
+        data: {
+          organizationId: active.organization_id,
+          brandId,
+          weekly: false,
+        },
+      });
+      revalidatePath("/team");
+      revalidatePath("/meetings");
+      return { success: "CEO check queued" };
+    }
+
     if (kind === "finance_ingest") {
       const result = await runDailyFinanceIngestion();
       revalidatePath("/team");

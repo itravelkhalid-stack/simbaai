@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { PageHeader } from "@/components/dashboard/page-header";
 import { DepartmentCard } from "@/components/team/department-card";
+import { CeoHireProposals } from "@/components/team/ceo-hire-proposals";
 import { MetricCard } from "@/components/brand/metric-card";
 import { buttonVariants } from "@/components/ui/button";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -9,13 +10,22 @@ import {
   loadDepartmentStats,
   loadOrgTeamHeaderStats,
 } from "@/lib/team/stats";
+import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
 export default async function TeamPage() {
   const { active } = await requireActiveOrg();
-  const [header, departments] = await Promise.all([
+  const supabase = await createClient();
+  const [header, departments, { data: hires }] = await Promise.all([
     loadOrgTeamHeaderStats(active.organization_id),
     loadDepartmentStats(active.organization_id),
+    supabase
+      .from("brand_agent_activations")
+      .select("id, agent_id, mandate, proposed_reason, brand_id, status")
+      .eq("organization_id", active.organization_id)
+      .eq("status", "proposed")
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
 
   return (
@@ -44,6 +54,8 @@ export default async function TeamPage() {
           deltaTone={header.failingCount > 0 ? "down" : "up"}
         />
       </section>
+
+      <CeoHireProposals proposals={hires ?? []} />
 
       <section className="space-y-3">
         <h2 className="font-heading text-lg font-semibold text-ink">

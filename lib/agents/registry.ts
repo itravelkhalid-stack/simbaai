@@ -27,7 +27,7 @@ export const DEPARTMENT_META: Record<
 > = {
   executive: {
     label: "Executive",
-    blurb: "Standups, board packs, and performance reviews",
+    blurb: "CEO accountability, standups, board packs, and performance reviews",
     href: "/meetings",
   },
   research: {
@@ -104,6 +104,7 @@ export type AgentRunNowKind =
   | "ads_sync_metrics"
   | "organic_growth"
   | "content_cadence_fill"
+  | "ceo_check"
   | "finance_ingest"
   | "finance_analyst"
   | "pipeline_review"
@@ -142,6 +143,21 @@ export type AgentRegistryEntry = {
 
 export const AGENT_REGISTRY: AgentRegistryEntry[] = [
   // ── Executive ────────────────────────────────────────────────────────────
+  {
+    id: "chief-executive",
+    displayName: "Chief Executive",
+    roleTitle: "CEO / Accountability",
+    department: "executive",
+    responsibility:
+      "Deterministic department health checks, remediations, hiring proposals, and standup accountability — before the daily standup.",
+    trigger: { kind: "cron", schedule: "45 6 * * *" },
+    module: "meetings",
+    executionPath: "lib/ceo/run.ts",
+    inngestId: "ceo/daily-check",
+    agentNames: ["chief_executive"],
+    runNow: { kind: "ceo_check", requiresBrand: true },
+    moduleHref: "/meetings",
+  },
   {
     id: "daily-standup",
     displayName: "Daily Standup Lead",
