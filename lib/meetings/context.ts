@@ -80,7 +80,7 @@ export async function gatherMeetingContext(params: {
 
   const { data: ga4Connection } = await supabase
     .from("ga4_connections")
-    .select("id, status, property_id")
+    .select("id, status, property_id, conversion_event_names, discovered_event_names")
     .eq("organization_id", params.organizationId)
     .eq("brand_id", params.brandId)
     .maybeSingle();
@@ -615,7 +615,8 @@ ${
         ga4Status === "connected_but_zero"
           ? " (connected; zero rows this period)"
           : ""
-      }`
+      }
+- Conversion counting uses brand-selected GA4 event(s) only (or purchase-like auto). Never treat GA4 "all key events" totals as true conversions — page_view/session_start often inflate them.`
 }
 
 ### Finance rollups

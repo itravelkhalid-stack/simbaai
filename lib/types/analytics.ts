@@ -43,6 +43,10 @@ export type Ga4Connection = {
   status: string;
   last_sync_at: string | null;
   last_error: string | null;
+  /** Explicit event names that count as conversions. Empty = purchase-like auto. */
+  conversion_event_names: string[];
+  /** Event names discovered on last sync (settings UI). */
+  discovered_event_names: string[];
   created_at: string;
   updated_at: string;
 };

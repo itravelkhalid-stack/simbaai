@@ -1,4 +1,5 @@
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { resolveGa4ConversionEvents } from "@/lib/data/ga4-conversion-events";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Ga4Connection } from "@/lib/types/analytics";
 
@@ -193,20 +194,32 @@ export async function listGa4Properties(
   return out;
 }
 
-type Ga4ReportRow = {
+type Ga4SessionsRow = {
   metric_date: string;
   source: string;
   medium: string;
   sessions: number;
-  conversions: number;
 };
 
-async function runGa4Report(params: {
+type Ga4EventCountRow = {
+  metric_date: string;
+  source: string;
+  medium: string;
+  eventName: string;
+  eventCount: number;
+};
+
+function parseGa4Date(raw: string) {
+  return raw.length === 8
+    ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
+    : raw;
+}
+
+async function runGa4JsonReport(params: {
   accessToken: string;
   propertyId: string;
-  startDate: string;
-  endDate: string;
-}): Promise<Ga4ReportRow[]> {
+  body: Record<string, unknown>;
+}) {
   const property = params.propertyId.replace(/^properties\//, "");
   const res = await fetch(
     `https://analyticsdata.googleapis.com/v1beta/properties/${property}:runReport`,
@@ -216,16 +229,7 @@ async function runGa4Report(params: {
         Authorization: `Bearer ${params.accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        dateRanges: [{ startDate: params.startDate, endDate: params.endDate }],
-        dimensions: [
-          { name: "date" },
-          { name: "sessionSource" },
-          { name: "sessionMedium" },
-        ],
-        metrics: [{ name: "sessions" }, { name: "conversions" }],
-        limit: 10000,
-      }),
+      body: JSON.stringify(params.body),
     },
   );
   const json = (await res.json()) as {
@@ -238,21 +242,108 @@ async function runGa4Report(params: {
   if (!res.ok) {
     throw new Error(json.error?.message ?? "GA4 report failed");
   }
+  return json.rows ?? [];
+}
 
-  return (json.rows ?? []).map((row) => {
+async function runGa4SessionsReport(params: {
+  accessToken: string;
+  propertyId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<Ga4SessionsRow[]> {
+  const rows = await runGa4JsonReport({
+    accessToken: params.accessToken,
+    propertyId: params.propertyId,
+    body: {
+      dateRanges: [{ startDate: params.startDate, endDate: params.endDate }],
+      dimensions: [
+        { name: "date" },
+        { name: "sessionSource" },
+        { name: "sessionMedium" },
+      ],
+      metrics: [{ name: "sessions" }],
+      limit: 10000,
+    },
+  });
+
+  return rows.map((row) => {
     const dims = row.dimensionValues ?? [];
-    const metrics = row.metricValues ?? [];
-    const rawDate = dims[0]?.value ?? "";
-    const metric_date =
-      rawDate.length === 8
-        ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
-        : rawDate;
     return {
-      metric_date,
+      metric_date: parseGa4Date(dims[0]?.value ?? ""),
       source: dims[1]?.value || "(direct)",
       medium: dims[2]?.value || "(none)",
-      sessions: Number(metrics[0]?.value ?? 0),
-      conversions: Number(metrics[1]?.value ?? 0),
+      sessions: Number(row.metricValues?.[0]?.value ?? 0),
+    };
+  });
+}
+
+async function runGa4EventBreakdown(params: {
+  accessToken: string;
+  propertyId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<Array<{ eventName: string; eventCount: number; keyEventCount: number }>> {
+  const rows = await runGa4JsonReport({
+    accessToken: params.accessToken,
+    propertyId: params.propertyId,
+    body: {
+      dateRanges: [{ startDate: params.startDate, endDate: params.endDate }],
+      dimensions: [{ name: "eventName" }],
+      metrics: [{ name: "eventCount" }, { name: "conversions" }],
+      orderBys: [{ metric: { metricName: "eventCount" }, desc: true }],
+      limit: 200,
+    },
+  });
+
+  return rows.map((row) => ({
+    eventName: row.dimensionValues?.[0]?.value ?? "(unknown)",
+    eventCount: Number(row.metricValues?.[0]?.value ?? 0),
+    keyEventCount: Number(row.metricValues?.[1]?.value ?? 0),
+  }));
+}
+
+async function runGa4EventCountsBySource(params: {
+  accessToken: string;
+  propertyId: string;
+  startDate: string;
+  endDate: string;
+  eventNames: string[];
+}): Promise<Ga4EventCountRow[]> {
+  if (params.eventNames.length === 0) return [];
+
+  const rows = await runGa4JsonReport({
+    accessToken: params.accessToken,
+    propertyId: params.propertyId,
+    body: {
+      dateRanges: [{ startDate: params.startDate, endDate: params.endDate }],
+      dimensions: [
+        { name: "date" },
+        { name: "sessionSource" },
+        { name: "sessionMedium" },
+        { name: "eventName" },
+      ],
+      metrics: [{ name: "eventCount" }],
+      dimensionFilter: {
+        filter: {
+          fieldName: "eventName",
+          inListFilter: {
+            values: params.eventNames,
+            caseSensitive: false,
+          },
+        },
+      },
+      limit: 10000,
+    },
+  });
+
+  return rows.map((row) => {
+    const dims = row.dimensionValues ?? [];
+    return {
+      metric_date: parseGa4Date(dims[0]?.value ?? ""),
+      source: dims[1]?.value || "(direct)",
+      medium: dims[2]?.value || "(none)",
+      eventName: dims[3]?.value ?? "",
+      eventCount: Number(row.metricValues?.[0]?.value ?? 0),
     };
   });
 }
@@ -267,12 +358,90 @@ export async function syncGa4Connection(
     const end = new Date();
     const start = new Date();
     start.setUTCDate(start.getUTCDate() - daysBack);
-    const rows = await runGa4Report({
+    const startDate = start.toISOString().slice(0, 10);
+    const endDate = end.toISOString().slice(0, 10);
+
+    const [sessionRows, eventBreakdown] = await Promise.all([
+      runGa4SessionsReport({
+        accessToken,
+        propertyId: connection.property_id,
+        startDate,
+        endDate,
+      }),
+      runGa4EventBreakdown({
+        accessToken,
+        propertyId: connection.property_id,
+        startDate,
+        endDate,
+      }),
+    ]);
+
+    const discovered = eventBreakdown.map((e) => e.eventName);
+    const resolved = resolveGa4ConversionEvents({
+      configured: connection.conversion_event_names ?? [],
+      discoveredEventNames: discovered,
+    });
+
+    const eventRows = await runGa4EventCountsBySource({
       accessToken,
       propertyId: connection.property_id,
-      startDate: start.toISOString().slice(0, 10),
-      endDate: end.toISOString().slice(0, 10),
+      startDate,
+      endDate,
+      eventNames: resolved.events,
     });
+
+    const conversionByKey = new Map<string, number>();
+    for (const row of eventRows) {
+      const key = `${row.metric_date}|${row.source}|${row.medium}`;
+      conversionByKey.set(
+        key,
+        (conversionByKey.get(key) ?? 0) + row.eventCount,
+      );
+    }
+
+    const merged = new Map<
+      string,
+      {
+        metric_date: string;
+        source: string;
+        medium: string;
+        sessions: number;
+        conversions: number;
+      }
+    >();
+
+    for (const row of sessionRows) {
+      const key = `${row.metric_date}|${row.source}|${row.medium}`;
+      merged.set(key, {
+        metric_date: row.metric_date,
+        source: row.source,
+        medium: row.medium,
+        sessions: row.sessions,
+        conversions: conversionByKey.get(key) ?? 0,
+      });
+    }
+
+    for (const [key, conversions] of conversionByKey) {
+      if (merged.has(key)) continue;
+      const [metric_date, source, medium] = key.split("|");
+      merged.set(key, {
+        metric_date,
+        source,
+        medium,
+        sessions: 0,
+        conversions,
+      });
+    }
+
+    const rows = [...merged.values()];
+
+    // Replace prior window rows so stale all-key-event conversions don't linger.
+    await supabase
+      .from("analytics_ga4_daily")
+      .delete()
+      .eq("brand_id", connection.brand_id)
+      .gte("metric_date", startDate)
+      .lte("metric_date", endDate);
 
     for (let i = 0; i < rows.length; i += 100) {
       const chunk = rows.slice(i, i + 100);
@@ -297,10 +466,16 @@ export async function syncGa4Connection(
         last_sync_at: new Date().toISOString(),
         last_error: null,
         status: "active",
+        discovered_event_names: discovered,
       })
       .eq("id", connection.id);
 
-    return { rows: rows.length };
+    return {
+      rows: rows.length,
+      conversionEvents: resolved.events,
+      conversionMode: resolved.mode,
+      discoveredEvents: discovered.length,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : "GA4 sync failed";
     await supabase

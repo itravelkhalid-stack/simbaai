@@ -100,6 +100,35 @@ export async function syncGa4Now(formData: FormData) {
     data: { daysBack: 14 },
   });
   revalidatePath("/data");
+  revalidatePath("/data/settings");
+}
+
+export async function saveGa4ConversionEvents(formData: FormData) {
+  const { active } = await assertCanWrite();
+  const brandId = String(formData.get("brandId") ?? "");
+  if (!brandId) throw new Error("brandId required");
+
+  const raw = formData.getAll("eventName").map((v) => String(v).trim());
+  const events = [...new Set(raw.filter(Boolean))];
+
+  const supabase = await createClient();
+  const { data: connection } = await supabase
+    .from("ga4_connections")
+    .select("id")
+    .eq("organization_id", active.organization_id)
+    .eq("brand_id", brandId)
+    .maybeSingle();
+  if (!connection) throw new Error("Connect GA4 first");
+
+  const { error } = await supabase
+    .from("ga4_connections")
+    .update({ conversion_event_names: events })
+    .eq("id", connection.id)
+    .eq("organization_id", active.organization_id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/data/settings");
+  revalidatePath("/data");
 }
 
 export async function runRollupNow() {

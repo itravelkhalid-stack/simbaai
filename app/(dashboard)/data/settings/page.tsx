@@ -1,10 +1,15 @@
 import { DataNav } from "@/components/data/data-nav";
 import { Button } from "@/components/ui/button";
 import {
+  saveGa4ConversionEvents,
   selectGa4Property,
   startGa4OAuth,
   syncGa4Now,
 } from "@/lib/data/actions";
+import {
+  GA4_PURCHASE_LIKE_EVENTS,
+  resolveGa4ConversionEvents,
+} from "@/lib/data/ga4-conversion-events";
 import {
   getValidGa4AccessToken,
   listGa4Properties,
@@ -58,14 +63,30 @@ export default async function DataSettingsPage({
     .eq("brand_id", brandId)
     .maybeSingle();
 
+  const ga4 = connection as Ga4Connection | null;
+  const configuredEvents = ga4?.conversion_event_names ?? [];
+  const discoveredEvents = ga4?.discovered_event_names ?? [];
+  const resolved = resolveGa4ConversionEvents({
+    configured: configuredEvents,
+    discoveredEventNames: discoveredEvents,
+  });
+
+  const eventOptions = [
+    ...new Set([
+      ...discoveredEvents,
+      ...configuredEvents,
+      ...GA4_PURCHASE_LIKE_EVENTS,
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
+
   let properties: Array<{
     propertyId: string;
     displayName: string;
     accountName: string;
   }> = [];
-  if (connection && params.ga4 === "pick") {
+  if (ga4 && params.ga4 === "pick") {
     try {
-      const token = await getValidGa4AccessToken(connection as Ga4Connection);
+      const token = await getValidGa4AccessToken(ga4);
       properties = await listGa4Properties(token);
     } catch {
       properties = [];
@@ -78,7 +99,7 @@ export default async function DataSettingsPage({
         <h1 className="text-3xl font-semibold tracking-tight">Data settings</h1>
         <p className="mt-2 text-muted-foreground">
           Connect Google Analytics 4 to enrich daily rollups with sessions and
-          conversions by source/medium.
+          selected conversion events by source/medium.
         </p>
       </div>
       <DataNav current="/data/settings" />
@@ -104,29 +125,29 @@ export default async function DataSettingsPage({
       ) : null}
       {params.ga4 === "connected" ? (
         <p className="rounded-md border p-3 text-sm text-muted-foreground">
-          GA4 connected. Nightly sync pulls sessions, conversions, and
-          source/medium into rollups.
+          GA4 connected. Nightly sync pulls sessions and your selected conversion
+          events into rollups.
         </p>
       ) : null}
 
       <section className="space-y-3 rounded-xl border p-4">
         <h2 className="text-sm font-medium">Google Analytics 4</h2>
-        {connection ? (
+        {ga4 ? (
           <div className="space-y-2 text-sm">
             <p>
               Property:{" "}
               <span className="font-medium">
-                {connection.property_name ?? connection.property_id}
+                {ga4.property_name ?? ga4.property_id}
               </span>
             </p>
             <p className="text-muted-foreground">
-              Status: {connection.status}
-              {connection.last_sync_at
-                ? ` · last sync ${new Date(connection.last_sync_at).toLocaleString()}`
+              Status: {ga4.status}
+              {ga4.last_sync_at
+                ? ` · last sync ${new Date(ga4.last_sync_at).toLocaleString()}`
                 : ""}
             </p>
-            {connection.last_error ? (
-              <p className="text-destructive">{connection.last_error}</p>
+            {ga4.last_error ? (
+              <p className="text-destructive">{ga4.last_error}</p>
             ) : null}
             <div className="flex flex-wrap gap-2">
               <form action={syncGa4Now}>
@@ -179,9 +200,7 @@ export default async function DataSettingsPage({
                     <Button
                       type="submit"
                       variant={
-                        connection?.property_id === p.propertyId
-                          ? "default"
-                          : "outline"
+                        ga4?.property_id === p.propertyId ? "default" : "outline"
                       }
                       size="sm"
                       className="w-full justify-start"
@@ -198,6 +217,72 @@ export default async function DataSettingsPage({
           </div>
         ) : null}
       </section>
+
+      {ga4 ? (
+        <section className="space-y-3 rounded-xl border p-4">
+          <div>
+            <h2 className="text-sm font-medium">Conversion events</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Only selected events count as conversions in rollups and meetings.
+              GA4 often marks page_view / session_start as key events — do not
+              use those here. Leave unchecked to auto-use purchase/booking-style
+              events when they appear on the property.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Active mode:{" "}
+            <span className="font-medium text-foreground">
+              {resolved.mode === "configured"
+                ? `configured (${resolved.events.join(", ") || "none"})`
+                : resolved.mode === "purchase_like_auto"
+                  ? `auto purchase-like (${resolved.events.join(", ")})`
+                  : "none — conversions will be 0 until purchase events exist or you select events"}
+            </span>
+          </p>
+          {eventOptions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Run Sync now once to discover event names from this property.
+            </p>
+          ) : (
+            <form action={saveGa4ConversionEvents} className="space-y-3">
+              <input type="hidden" name="brandId" value={brandId} />
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {eventOptions.map((name) => (
+                  <li key={name}>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        name="eventName"
+                        value={name}
+                        defaultChecked={configuredEvents.includes(name)}
+                      />
+                      <span>
+                        {name}
+                        {GA4_PURCHASE_LIKE_EVENTS.includes(
+                          name as (typeof GA4_PURCHASE_LIKE_EVENTS)[number],
+                        ) ? (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            (purchase-like)
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" size="sm">
+                  Save conversion events
+                </Button>
+                <p className="self-center text-xs text-muted-foreground">
+                  Saving with nothing checked clears the override (auto mode).
+                  Re-sync after changing.
+                </p>
+              </div>
+            </form>
+          )}
+        </section>
+      ) : null}
 
       <section className="rounded-xl border p-4 text-sm text-muted-foreground">
         <p className="font-medium text-foreground">Jobs</p>
