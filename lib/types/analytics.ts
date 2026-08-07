@@ -43,8 +43,10 @@ export type Ga4Connection = {
   status: string;
   last_sync_at: string | null;
   last_error: string | null;
-  /** Explicit event names that count as conversions. Empty = purchase-like auto. */
+  /** Revenue conversion events (purchase/booking). Empty = purchase-like auto. */
   conversion_event_names: string[];
+  /** Engagement/intent proxy events — never used for ROAS/CPA/revenue. */
+  intent_event_names: string[];
   /** Event names discovered on last sync (settings UI). */
   discovered_event_names: string[];
   created_at: string;
@@ -59,7 +61,10 @@ export type AnalyticsGa4Daily = {
   source: string;
   medium: string;
   sessions: number;
+  /** Revenue conversion event counts only. */
   conversions: number;
+  /** Intent/engagement proxy event counts. */
+  intent_events: number;
   created_at: string;
 };
 

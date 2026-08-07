@@ -234,16 +234,19 @@ export async function buildAnalyticsDailyRollups(daysBack = 14) {
   // Finance expenses (if rollup not already covered by ads)
   // Skip — ads already covered
 
-  // GA4 sessions into web channel
+  // GA4: sessions + revenue conversions → sales; intent proxies → leads (never revenue).
   const { data: ga4 } = await supabase
     .from("analytics_ga4_daily")
-    .select("organization_id, brand_id, metric_date, sessions, conversions")
+    .select(
+      "organization_id, brand_id, metric_date, sessions, conversions, intent_events",
+    )
     .gte("metric_date", sinceDate)
     .limit(10000);
   for (const g of ga4 ?? []) {
     const row = ensure(g.organization_id, g.brand_id, g.metric_date, "web");
     row.sessions += g.sessions ?? 0;
-    row.leads += Math.round(Number(g.conversions ?? 0));
+    row.sales += Math.round(Number(g.conversions ?? 0));
+    row.leads += Math.round(Number(g.intent_events ?? 0));
   }
 
   let upserted = 0;

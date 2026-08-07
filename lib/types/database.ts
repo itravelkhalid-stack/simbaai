@@ -1775,6 +1775,7 @@ export type Database = {
           last_sync_at?: string | null;
           last_error?: string | null;
           conversion_event_names?: string[];
+          intent_event_names?: string[];
           discovered_event_names?: string[];
           created_at?: string;
           updated_at?: string;
@@ -1792,6 +1793,7 @@ export type Database = {
           medium?: string;
           sessions?: number;
           conversions?: number;
+          intent_events?: number;
           created_at?: string;
         },
         Partial<import("@/lib/types/analytics").AnalyticsGa4Daily>

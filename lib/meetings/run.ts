@@ -247,6 +247,21 @@ export async function runMeeting(meetingId: string): Promise<{
 
     const result = await generateMeetingForType(m.type, ctx);
     const common = extractCommon(result.data as unknown as Record<string, unknown>);
+    const setupBlockers = (
+      (ctx.snapshot.setup_blockers as MeetingBlocker[] | undefined) ?? []
+    ).map((b) => ({
+      title: b.title,
+      detail: b.detail,
+      needs_human: true,
+    }));
+    const blockerTitles = new Set(
+      common.blockers.map((b) => b.title.toLowerCase()),
+    );
+    const mergedBlockers = [
+      ...common.blockers,
+      ...setupBlockers.filter((b) => !blockerTitles.has(b.title.toLowerCase())),
+    ];
+    common.blockers = mergedBlockers;
 
     await persistActions({
       organizationId: m.organization_id,

@@ -8,7 +8,9 @@ import {
 } from "@/lib/data/actions";
 import {
   GA4_PURCHASE_LIKE_EVENTS,
-  resolveGa4ConversionEvents,
+  hasGa4RevenueTracking,
+  resolveGa4IntentEvents,
+  resolveGa4RevenueEvents,
 } from "@/lib/data/ga4-conversion-events";
 import {
   getValidGa4AccessToken,
@@ -64,17 +66,27 @@ export default async function DataSettingsPage({
     .maybeSingle();
 
   const ga4 = connection as Ga4Connection | null;
-  const configuredEvents = ga4?.conversion_event_names ?? [];
+  const revenueConfigured = ga4?.conversion_event_names ?? [];
+  const intentConfigured = ga4?.intent_event_names ?? [];
   const discoveredEvents = ga4?.discovered_event_names ?? [];
-  const resolved = resolveGa4ConversionEvents({
-    configured: configuredEvents,
+  const revenueResolved = resolveGa4RevenueEvents({
+    configured: revenueConfigured,
+    discoveredEventNames: discoveredEvents,
+  });
+  const intentResolved = resolveGa4IntentEvents({
+    configured: intentConfigured,
+    revenueEvents: revenueResolved.events,
+  });
+  const revenueReady = hasGa4RevenueTracking({
+    conversionEventNames: revenueConfigured,
     discoveredEventNames: discoveredEvents,
   });
 
   const eventOptions = [
     ...new Set([
       ...discoveredEvents,
-      ...configuredEvents,
+      ...revenueConfigured,
+      ...intentConfigured,
       ...GA4_PURCHASE_LIKE_EVENTS,
     ]),
   ].sort((a, b) => a.localeCompare(b));
@@ -98,8 +110,8 @@ export default async function DataSettingsPage({
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Data settings</h1>
         <p className="mt-2 text-muted-foreground">
-          Connect Google Analytics 4 to enrich daily rollups with sessions and
-          selected conversion events by source/medium.
+          Connect Google Analytics 4 to enrich daily rollups with sessions,
+          revenue conversions, and intent proxies by source/medium.
         </p>
       </div>
       <DataNav current="/data/settings" />
@@ -219,64 +231,110 @@ export default async function DataSettingsPage({
       </section>
 
       {ga4 ? (
-        <section className="space-y-3 rounded-xl border p-4">
+        <section className="space-y-4 rounded-xl border p-4">
           <div>
-            <h2 className="text-sm font-medium">Conversion events</h2>
+            <h2 className="text-sm font-medium">GA4 tracking events</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Only selected events count as conversions in rollups and meetings.
-              GA4 often marks page_view / session_start as key events — do not
-              use those here. Leave unchecked to auto-use purchase/booking-style
-              events when they appear on the property.
+              Separate revenue conversions (purchase/booking) from
+              engagement/intent proxies (e.g. form_start). Proxies must never
+              drive ROAS, CPA, or revenue attribution.
             </p>
           </div>
+
+          {!revenueReady ? (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+              Setup blocker: GA4 purchase/revenue tracking is not configured.
+              Implement a purchase/booking event on the site, mark it as a key
+              event in GA4, then select it below under Revenue conversions.
+            </p>
+          ) : null}
+
           <p className="text-xs text-muted-foreground">
-            Active mode:{" "}
+            Active:{" "}
             <span className="font-medium text-foreground">
-              {resolved.mode === "configured"
-                ? `configured (${resolved.events.join(", ") || "none"})`
-                : resolved.mode === "purchase_like_auto"
-                  ? `auto purchase-like (${resolved.events.join(", ")})`
-                  : "none — conversions will be 0 until purchase events exist or you select events"}
+              revenue{" "}
+              {revenueResolved.mode === "configured"
+                ? `(${revenueResolved.events.join(", ")})`
+                : revenueResolved.mode === "purchase_like_auto"
+                  ? `auto (${revenueResolved.events.join(", ")})`
+                  : "(not configured)"}
+              {" · "}
+              intent{" "}
+              {intentResolved.mode === "configured"
+                ? `(${intentResolved.events.join(", ")})`
+                : "(none)"}
             </span>
           </p>
+
           {eventOptions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Run Sync now once to discover event names from this property.
             </p>
           ) : (
-            <form action={saveGa4ConversionEvents} className="space-y-3">
+            <form action={saveGa4ConversionEvents} className="space-y-4">
               <input type="hidden" name="brandId" value={brandId} />
-              <ul className="grid gap-2 sm:grid-cols-2">
-                {eventOptions.map((name) => (
-                  <li key={name}>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        name="eventName"
-                        value={name}
-                        defaultChecked={configuredEvents.includes(name)}
-                      />
-                      <span>
-                        {name}
-                        {GA4_PURCHASE_LIKE_EVENTS.includes(
-                          name as (typeof GA4_PURCHASE_LIKE_EVENTS)[number],
-                        ) ? (
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            (purchase-like)
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium">Revenue conversions</h3>
+                <p className="text-xs text-muted-foreground">
+                  Purchase / booking / checkout-complete. Leave empty to
+                  auto-detect purchase-like events when they appear.
+                </p>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {eventOptions.map((name) => (
+                    <li key={`rev-${name}`}>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          name="revenueEvent"
+                          value={name}
+                          defaultChecked={revenueConfigured.includes(name)}
+                        />
+                        <span>
+                          {name}
+                          {GA4_PURCHASE_LIKE_EVENTS.includes(
+                            name as (typeof GA4_PURCHASE_LIKE_EVENTS)[number],
+                          ) ? (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              (purchase-like)
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="space-y-2 border-t pt-3">
+                <h3 className="text-sm font-medium">
+                  Engagement / intent proxies
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Counts as intent leads only. Not revenue — agents must label
+                  these as proxies and must not compute ROAS/CPA from them.
+                </p>
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {eventOptions.map((name) => (
+                    <li key={`intent-${name}`}>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          name="intentEvent"
+                          value={name}
+                          defaultChecked={intentConfigured.includes(name)}
+                        />
+                        <span>{name}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" size="sm">
-                  Save conversion events
+                  Save tracking events
                 </Button>
                 <p className="self-center text-xs text-muted-foreground">
-                  Saving with nothing checked clears the override (auto mode).
-                  Re-sync after changing.
+                  Re-sync after changing. An event in both lists counts as
+                  revenue only.
                 </p>
               </div>
             </form>

@@ -1,4 +1,8 @@
 import { aggregateMetrics } from "@/lib/ads/metric-math";
+import {
+  GA4_REVENUE_SETUP_BLOCKER,
+  hasGa4RevenueTracking,
+} from "@/lib/data/ga4-conversion-events";
 import { previewUpcomingMeetings } from "@/lib/meetings/schedule";
 import { parseMeetingsSettings } from "@/lib/meetings/settings";
 import { createClient } from "@/lib/supabase/server";
@@ -75,6 +79,7 @@ export async function loadDashboardHome(organizationId: string) {
     { data: brands },
     { data: org },
     { data: recentMeetings },
+    { data: ga4Connections },
   ] = await Promise.all([
     supabase
       .from("ad_metrics_daily")
@@ -138,6 +143,13 @@ export async function loadDashboardHome(organizationId: string) {
       .gte("scheduled_for", new Date().toISOString())
       .order("scheduled_for", { ascending: true })
       .limit(6),
+    supabase
+      .from("ga4_connections")
+      .select(
+        "id, brand_id, status, property_id, conversion_event_names, discovered_event_names",
+      )
+      .eq("organization_id", organizationId)
+      .limit(50),
   ]);
 
   const current = aggregateMetrics((metrics ?? []) as AdMetricDaily[]);
@@ -178,6 +190,28 @@ export async function loadDashboardHome(organizationId: string) {
   ] as const;
 
   const attention: DashboardAttentionItem[] = [];
+
+  const brandMap = new Map((brands ?? []).map((b) => [b.id, b.name]));
+
+  for (const conn of ga4Connections ?? []) {
+    const connected =
+      conn.status !== "error" && Boolean(conn.property_id);
+    if (!connected) continue;
+    const ready = hasGa4RevenueTracking({
+      conversionEventNames: conn.conversion_event_names,
+      discoveredEventNames: conn.discovered_event_names,
+    });
+    if (ready) continue;
+    const brandName = brandMap.get(conn.brand_id) ?? "Brand";
+    attention.push({
+      id: `ga4-revenue-${conn.brand_id}`,
+      title: `${GA4_REVENUE_SETUP_BLOCKER.title} (${brandName})`,
+      detail: GA4_REVENUE_SETUP_BLOCKER.detail,
+      href: `${GA4_REVENUE_SETUP_BLOCKER.href}?brandId=${conn.brand_id}`,
+      cta: GA4_REVENUE_SETUP_BLOCKER.cta,
+      tone: "warning",
+    });
+  }
 
   if ((pendingContent ?? 0) > 0) {
     attention.push({
@@ -229,7 +263,6 @@ export async function loadDashboardHome(organizationId: string) {
     });
   }
 
-  const brandMap = new Map((brands ?? []).map((b) => [b.id, b.name]));
   const settings = parseMeetingsSettings(
     org?.settings as Record<string, unknown>,
   );

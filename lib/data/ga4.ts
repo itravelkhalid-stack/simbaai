@@ -1,5 +1,8 @@
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
-import { resolveGa4ConversionEvents } from "@/lib/data/ga4-conversion-events";
+import {
+  resolveGa4IntentEvents,
+  resolveGa4RevenueEvents,
+} from "@/lib/data/ga4-conversion-events";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Ga4Connection } from "@/lib/types/analytics";
 
@@ -377,26 +380,40 @@ export async function syncGa4Connection(
     ]);
 
     const discovered = eventBreakdown.map((e) => e.eventName);
-    const resolved = resolveGa4ConversionEvents({
+    const revenue = resolveGa4RevenueEvents({
       configured: connection.conversion_event_names ?? [],
       discoveredEventNames: discovered,
     });
+    const intent = resolveGa4IntentEvents({
+      configured: connection.intent_event_names ?? [],
+      revenueEvents: revenue.events,
+    });
 
+    const trackedEvents = [...new Set([...revenue.events, ...intent.events])];
     const eventRows = await runGa4EventCountsBySource({
       accessToken,
       propertyId: connection.property_id,
       startDate,
       endDate,
-      eventNames: resolved.events,
+      eventNames: trackedEvents,
     });
 
+    const revenueNames = new Set(revenue.events.map((e) => e.toLowerCase()));
+    const intentNames = new Set(intent.events.map((e) => e.toLowerCase()));
     const conversionByKey = new Map<string, number>();
+    const intentByKey = new Map<string, number>();
     for (const row of eventRows) {
       const key = `${row.metric_date}|${row.source}|${row.medium}`;
-      conversionByKey.set(
-        key,
-        (conversionByKey.get(key) ?? 0) + row.eventCount,
-      );
+      const name = row.eventName.toLowerCase();
+      if (revenueNames.has(name)) {
+        conversionByKey.set(
+          key,
+          (conversionByKey.get(key) ?? 0) + row.eventCount,
+        );
+      }
+      if (intentNames.has(name)) {
+        intentByKey.set(key, (intentByKey.get(key) ?? 0) + row.eventCount);
+      }
     }
 
     const merged = new Map<
@@ -407,35 +424,58 @@ export async function syncGa4Connection(
         medium: string;
         sessions: number;
         conversions: number;
+        intent_events: number;
       }
     >();
 
+    const ensureRow = (
+      key: string,
+      parts: { metric_date: string; source: string; medium: string },
+    ) => {
+      let row = merged.get(key);
+      if (!row) {
+        row = {
+          metric_date: parts.metric_date,
+          source: parts.source,
+          medium: parts.medium,
+          sessions: 0,
+          conversions: 0,
+          intent_events: 0,
+        };
+        merged.set(key, row);
+      }
+      return row;
+    };
+
     for (const row of sessionRows) {
       const key = `${row.metric_date}|${row.source}|${row.medium}`;
-      merged.set(key, {
-        metric_date: row.metric_date,
-        source: row.source,
-        medium: row.medium,
-        sessions: row.sessions,
-        conversions: conversionByKey.get(key) ?? 0,
-      });
+      const out = ensureRow(key, row);
+      out.sessions = row.sessions;
+      out.conversions = conversionByKey.get(key) ?? 0;
+      out.intent_events = intentByKey.get(key) ?? 0;
     }
 
     for (const [key, conversions] of conversionByKey) {
-      if (merged.has(key)) continue;
       const [metric_date, source, medium] = key.split("|");
-      merged.set(key, {
-        metric_date,
-        source,
-        medium,
-        sessions: 0,
-        conversions,
-      });
+      const out = ensureRow(key, { metric_date, source, medium });
+      out.conversions = conversions;
+      if (!intentByKey.has(key)) {
+        out.intent_events = out.intent_events || 0;
+      }
+    }
+
+    for (const [key, intentCount] of intentByKey) {
+      const [metric_date, source, medium] = key.split("|");
+      const out = ensureRow(key, { metric_date, source, medium });
+      out.intent_events = intentCount;
+      if (!conversionByKey.has(key)) {
+        out.conversions = out.conversions || 0;
+      }
     }
 
     const rows = [...merged.values()];
 
-    // Replace prior window rows so stale all-key-event conversions don't linger.
+    // Replace prior window rows so stale totals don't linger.
     await supabase
       .from("analytics_ga4_daily")
       .delete()
@@ -454,6 +494,7 @@ export async function syncGa4Connection(
           medium: r.medium,
           sessions: r.sessions,
           conversions: r.conversions,
+          intent_events: r.intent_events,
         })),
         { onConflict: "brand_id,metric_date,source,medium" },
       );
@@ -472,8 +513,10 @@ export async function syncGa4Connection(
 
     return {
       rows: rows.length,
-      conversionEvents: resolved.events,
-      conversionMode: resolved.mode,
+      revenueEvents: revenue.events,
+      revenueMode: revenue.mode,
+      intentEvents: intent.events,
+      intentMode: intent.mode,
       discoveredEvents: discovered.length,
     };
   } catch (err) {
