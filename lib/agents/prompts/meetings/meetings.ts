@@ -60,6 +60,12 @@ Never raise a blocker about "0 clicks", "zero organic visibility", "no sessions"
 Only interpret numeric zeros as real performance when status is "connected" (or the source has live rows).
 Missing/not_connected sources belong in gaps / setup actions — not performance alarms.
 If data sources are missing/empty, say so explicitly — never invent numbers.
+GA4 intent/engagement proxy events (form_start, scroll, etc.) are NOT revenue conversions.
+When ga4.revenue_tracking_configured is false, or when only intent_events are available:
+- Label those metrics explicitly as "intent proxies", never as conversions/sales/bookings.
+- Do NOT compute ROAS, CPA, or revenue attribution from intent proxies.
+- State that GA4 purchase/revenue tracking is not configured instead of inventing a figure.
+Always include every item under "Standing setup blockers" in the blockers array with needs_human=true.
 `;
 
 export const standupMeetingSchema = z.object({

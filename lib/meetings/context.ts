@@ -1,5 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBrandContext } from "@/lib/brand/context";
+import {
+  GA4_REVENUE_SETUP_BLOCKER,
+  hasGa4RevenueTracking,
+  resolveGa4IntentEvents,
+  resolveGa4RevenueEvents,
+} from "@/lib/data/ga4-conversion-events";
 import { buildKpiActualsMap } from "@/lib/reviews/kpi-actuals";
 import { latestFollowersInPeriod } from "@/lib/social/metrics";
 import type { MeetingType } from "@/lib/types/meetings";
@@ -80,7 +86,9 @@ export async function gatherMeetingContext(params: {
 
   const { data: ga4Connection } = await supabase
     .from("ga4_connections")
-    .select("id, status, property_id, conversion_event_names, discovered_event_names")
+    .select(
+      "id, status, property_id, conversion_event_names, intent_event_names, discovered_event_names",
+    )
     .eq("organization_id", params.organizationId)
     .eq("brand_id", params.brandId)
     .maybeSingle();
@@ -200,7 +208,7 @@ export async function gatherMeetingContext(params: {
       .order("sort_order", { ascending: true }),
     supabase
       .from("analytics_ga4_daily")
-      .select("metric_date, sessions, conversions")
+      .select("metric_date, sessions, conversions, intent_events")
       .eq("organization_id", params.organizationId)
       .eq("brand_id", params.brandId)
       .gte("metric_date", fromDate)
@@ -274,10 +282,40 @@ export async function gatherMeetingContext(params: {
   );
 
   const ga4Sessions = (ga4Daily ?? []).reduce((s, r) => s + Number(r.sessions ?? 0), 0);
-  const ga4Conversions = (ga4Daily ?? []).reduce(
+  const ga4RevenueConversions = (ga4Daily ?? []).reduce(
     (s, r) => s + Number(r.conversions ?? 0),
     0,
   );
+  const ga4IntentEvents = (ga4Daily ?? []).reduce(
+    (s, r) => s + Number(r.intent_events ?? 0),
+    0,
+  );
+  const ga4RevenueResolved = resolveGa4RevenueEvents({
+    configured: ga4Connection?.conversion_event_names ?? [],
+    discoveredEventNames: ga4Connection?.discovered_event_names ?? [],
+  });
+  const ga4IntentResolved = resolveGa4IntentEvents({
+    configured: ga4Connection?.intent_event_names ?? [],
+    revenueEvents: ga4RevenueResolved.events,
+  });
+  const ga4RevenueConfigured =
+    ga4Connected &&
+    hasGa4RevenueTracking({
+      conversionEventNames: ga4Connection?.conversion_event_names,
+      discoveredEventNames: ga4Connection?.discovered_event_names,
+    });
+  const setupBlockers = [
+    ...(ga4Connected && !ga4RevenueConfigured
+      ? [
+          {
+            title: GA4_REVENUE_SETUP_BLOCKER.title,
+            detail: GA4_REVENUE_SETUP_BLOCKER.detail,
+            needs_human: true,
+            kind: "setup" as const,
+          },
+        ]
+      : []),
+  ];
 
   const completedTasks = (tasks ?? []).filter((t) => t.status === "done");
   const blockedTasks = (tasks ?? []).filter((t) => t.status === "blocked");
@@ -429,9 +467,20 @@ export async function gatherMeetingContext(params: {
       status: ga4Status,
       connected: ga4Connected,
       sessions: ga4Status === "not_connected" ? null : ga4Sessions,
-      conversions: ga4Status === "not_connected" ? null : ga4Conversions,
+      revenue_conversions:
+        ga4Status === "not_connected" ? null : ga4RevenueConversions,
+      intent_events: ga4Status === "not_connected" ? null : ga4IntentEvents,
+      /** @deprecated Prefer revenue_conversions — never treat intent as conversions. */
+      conversions:
+        ga4Status === "not_connected" ? null : ga4RevenueConversions,
       days: (ga4Daily ?? []).length,
+      revenue_tracking_configured: ga4RevenueConfigured,
+      revenue_events: ga4RevenueResolved.events,
+      revenue_mode: ga4RevenueResolved.mode,
+      intent_event_names: ga4IntentResolved.events,
+      intent_mode: ga4IntentResolved.mode,
     },
+    setup_blockers: setupBlockers,
     finance: {
       weekly_summaries: financeSummaries ?? [],
     },
@@ -610,13 +659,30 @@ ${
 ${
   ga4Status === "not_connected"
     ? "- GA4 is NOT CONNECTED for this brand. Do not treat missing sessions/conversions as a performance miss."
-    : `- Sessions: ${ga4Sessions}, Conversions: ${ga4Conversions}
+    : `- Sessions: ${ga4Sessions}
+- Revenue conversions: ${ga4RevenueConversions} (events: ${ga4RevenueResolved.events.join(", ") || "none"}; mode: ${ga4RevenueResolved.mode})
+- Intent / engagement proxies: ${ga4IntentEvents} (events: ${ga4IntentResolved.events.join(", ") || "none"}) — label as intent proxies, NOT conversions/sales
 - Days with data: ${(ga4Daily ?? []).length}${
         ga4Status === "connected_but_zero"
           ? " (connected; zero rows this period)"
           : ""
       }
-- Conversion counting uses brand-selected GA4 event(s) only (or purchase-like auto). Never treat GA4 "all key events" totals as true conversions — page_view/session_start often inflate them.`
+- Revenue tracking configured: ${ga4RevenueConfigured ? "yes" : "NO — standing setup blocker"}
+${
+  !ga4RevenueConfigured
+    ? `- SETUP BLOCKER (must include in blockers with needs_human=true): ${GA4_REVENUE_SETUP_BLOCKER.title}. ${GA4_REVENUE_SETUP_BLOCKER.detail}
+- Do NOT compute ROAS, CPA, or revenue attribution from intent proxy events. State that revenue tracking is not configured.`
+    : "- Use revenue_conversions only for conversion/ROAS/CPA context from GA4. Intent proxies are funnel signals only."
+}`
+}
+
+### Standing setup blockers (always surface in blockers when present)
+${
+  setupBlockers.length
+    ? setupBlockers
+        .map((b) => `- ${b.title}: ${b.detail}`)
+        .join("\n")
+    : "- None"
 }
 
 ### Finance rollups

@@ -108,8 +108,24 @@ export async function saveGa4ConversionEvents(formData: FormData) {
   const brandId = String(formData.get("brandId") ?? "");
   if (!brandId) throw new Error("brandId required");
 
-  const raw = formData.getAll("eventName").map((v) => String(v).trim());
-  const events = [...new Set(raw.filter(Boolean))];
+  const revenue = [
+    ...new Set(
+      formData
+        .getAll("revenueEvent")
+        .map((v) => String(v).trim())
+        .filter(Boolean),
+    ),
+  ];
+  const revenueLower = new Set(revenue.map((e) => e.toLowerCase()));
+  const intent = [
+    ...new Set(
+      formData
+        .getAll("intentEvent")
+        .map((v) => String(v).trim())
+        .filter(Boolean)
+        .filter((e) => !revenueLower.has(e.toLowerCase())),
+    ),
+  ];
 
   const supabase = await createClient();
   const { data: connection } = await supabase
@@ -122,13 +138,17 @@ export async function saveGa4ConversionEvents(formData: FormData) {
 
   const { error } = await supabase
     .from("ga4_connections")
-    .update({ conversion_event_names: events })
+    .update({
+      conversion_event_names: revenue,
+      intent_event_names: intent,
+    })
     .eq("id", connection.id)
     .eq("organization_id", active.organization_id);
   if (error) throw new Error(error.message);
 
   revalidatePath("/data/settings");
   revalidatePath("/data");
+  revalidatePath("/");
 }
 
 export async function runRollupNow() {
