@@ -228,6 +228,20 @@ export async function runDeterministicCeoChecks(params: {
       }
     }
 
+    // Budget-only mode: human monthly budget is the control surface
+    const monthlyBudget = Number(
+      (brand as { monthly_ad_budget_pence?: number | null })
+        .monthly_ad_budget_pence ?? 0,
+    );
+    if (monthlyBudget < 100) {
+      findings.push({
+        code: "monthly_budget_missing",
+        severity: "warning",
+        message:
+          "No monthly ad budget set — set Brand → Autonomy monthly budget for budget-only ads.",
+      });
+    }
+
     const optActive = await isRegistryAgentActiveForBrand({
       organizationId,
       brandId,

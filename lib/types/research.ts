@@ -41,6 +41,9 @@ export type Brand = {
   enabled_channels: string[];
   /** Organic cadence quotas; empty uses platform defaults. */
   content_cadence: Record<string, unknown>;
+  /** Human-set monthly ad budget (minor units). Null = budget loop off. */
+  monthly_ad_budget_pence: number | null;
+  monthly_ad_budget_currency: string;
   created_at: string;
   updated_at: string;
 };

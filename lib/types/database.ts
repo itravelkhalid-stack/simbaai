@@ -224,6 +224,8 @@ export type Database = {
           autonomy_max_cpa_pence?: number;
           enabled_channels?: string[];
           content_cadence?: Record<string, unknown>;
+          monthly_ad_budget_pence?: number | null;
+          monthly_ad_budget_currency?: string;
           created_at?: string;
           updated_at?: string;
         },

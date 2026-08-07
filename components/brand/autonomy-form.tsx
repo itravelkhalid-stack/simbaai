@@ -23,11 +23,15 @@ export function BrandAutonomyForm({
   brandName,
   settings,
   canWrite,
+  monthlyAdBudgetPence = null,
+  monthlyAdBudgetCurrency = "GBP",
 }: {
   brandId: string;
   brandName: string;
   settings: BrandAutonomySettings;
   canWrite: boolean;
+  monthlyAdBudgetPence?: number | null;
+  monthlyAdBudgetCurrency?: string;
 }) {
   const [state, action, pending] = useActionState(saveBrandAutonomy, initial);
 
@@ -39,6 +43,7 @@ export function BrandAutonomyForm({
         <p className="text-sm text-muted-foreground">
           Approval mode queues outbound agent actions for humans. Autonomous mode
           lets agents execute within ads limits and organic compliance rules.
+          For ads, set the monthly budget below — agents derive the rest.
         </p>
       </div>
 
@@ -103,6 +108,34 @@ export function BrandAutonomyForm({
             </select>
           </div>
         ))}
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-brand/30 bg-brand-soft/30 p-3">
+        <Label htmlFor={`budget-${brandId}`}>Monthly ad budget (£)</Label>
+        <Input
+          id={`budget-${brandId}`}
+          name="monthly_ad_budget_major"
+          type="number"
+          step="1"
+          min="0"
+          defaultValue={
+            monthlyAdBudgetPence != null
+              ? (monthlyAdBudgetPence / 100).toFixed(0)
+              : ""
+          }
+          disabled={!canWrite}
+          placeholder="e.g. 3000"
+        />
+        <input
+          type="hidden"
+          name="monthly_ad_budget_currency"
+          value={monthlyAdBudgetCurrency || "GBP"}
+        />
+        <p className="text-xs text-muted-foreground">
+          The only ads input required in budget-only mode. Daily pacing =
+          monthly/30 ±20%, always capped by Ads → Settings org limits. Leave
+          blank to disable the budget loop for this brand.
+        </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

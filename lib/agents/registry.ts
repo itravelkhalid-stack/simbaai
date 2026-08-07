@@ -105,6 +105,7 @@ export type AgentRunNowKind =
   | "organic_growth"
   | "content_cadence_fill"
   | "ceo_check"
+  | "ads_budget_loop"
   | "finance_ingest"
   | "finance_analyst"
   | "pipeline_review"
@@ -611,6 +612,21 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
     executionPath: "lib/ads/actions.ts",
     agentNames: ["ads_strategist"],
     moduleHref: "/ads/plans",
+  },
+  {
+    id: "ads-budget-loop",
+    displayName: "Budget-Only Ads Loop",
+    roleTitle: "Autonomous Media Operator",
+    department: "advertising",
+    responsibility:
+      "From the brand monthly budget, plans → paces (±20% of monthly/30) → approves/queues within org_ad_limits.",
+    trigger: { kind: "cron", schedule: "0 7 * * 1" },
+    module: "ads",
+    executionPath: "lib/ads/budget-loop.ts",
+    inngestId: "ads/budget-loop",
+    agentNames: ["ads_budget_loop"],
+    runNow: { kind: "ads_budget_loop", requiresBrand: true },
+    moduleHref: "/brand/autonomy",
   },
   {
     id: "ads-creative",

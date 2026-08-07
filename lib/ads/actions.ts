@@ -249,7 +249,9 @@ export async function createMediaPlanWithAi(
         .eq("id", run.id);
     }
 
-    const planPayload: MediaPlanPayload = {
+    const { applyBudgetPacingToPlan } = await import("@/lib/ads/budget-pacing");
+    const { loadEffectiveOrgAdLimits } = await import("@/lib/ads/org-limits");
+    let planPayload: MediaPlanPayload = {
       summary: generated.data.summary,
       platform_split: generated.data.platform_split,
       funnel_stages: generated.data.funnel_stages,
@@ -257,6 +259,21 @@ export async function createMediaPlanWithAi(
       creative_brief: generated.data.creative_brief,
       risks: generated.data.risks,
     };
+    try {
+      const limits = await loadEffectiveOrgAdLimits({
+        organizationId: active.organization_id,
+        brandId,
+      });
+      planPayload = applyBudgetPacingToPlan({
+        plan: planPayload,
+        monthlyBudgetPence: monthlyBudget,
+        orgMaxDailySpendPence: limits.max_daily_spend_pence,
+        maxSingleCampaignDailyPence:
+          limits.max_single_campaign_daily_budget_pence,
+      });
+    } catch {
+      // org limits optional for manual plan create — still save AI plan
+    }
 
     const { data: plan, error } = await supabase
       .from("ad_media_plans")

@@ -24,6 +24,38 @@ export const runDailyAdsOptimisation = inngest.createFunction(
   },
 );
 
+export const runAdsBudgetLoop = inngest.createFunction(
+  {
+    id: "ads/budget-loop",
+    retries: 1,
+    triggers: [
+      { cron: "0 7 * * 1" },
+      { event: "ads/budget-loop.run" },
+    ],
+  },
+  async ({ event, step }) => {
+    const data = (event?.data ?? {}) as {
+      organizationId?: string;
+      brandId?: string;
+      force?: boolean;
+    };
+    if (data.organizationId && data.brandId) {
+      const { runBrandBudgetAdsLoop } = await import("@/lib/ads/budget-loop");
+      return step.run("budget-one", () =>
+        runBrandBudgetAdsLoop({
+          organizationId: data.organizationId!,
+          brandId: data.brandId!,
+          force: Boolean(data.force),
+        }),
+      );
+    }
+    const { runBudgetAdsLoopsForAllBrands } = await import(
+      "@/lib/ads/budget-loop"
+    );
+    return step.run("budget-all", () => runBudgetAdsLoopsForAllBrands());
+  },
+);
+
 export const syncAdCampaignMetricsNow = inngest.createFunction(
   {
     id: "ads/sync-metrics-now",
@@ -38,5 +70,6 @@ export const syncAdCampaignMetricsNow = inngest.createFunction(
 export const adsFunctions = [
   ingestDailyAdMetrics,
   runDailyAdsOptimisation,
+  runAdsBudgetLoop,
   syncAdCampaignMetricsNow,
 ];
