@@ -223,6 +223,7 @@ export type Database = {
           autonomy_min_roas?: number;
           autonomy_max_cpa_pence?: number;
           enabled_channels?: string[];
+          content_cadence?: Record<string, unknown>;
           created_at?: string;
           updated_at?: string;
         },

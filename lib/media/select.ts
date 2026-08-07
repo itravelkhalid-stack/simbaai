@@ -73,6 +73,8 @@ export async function selectBestLibraryImage(params: {
   topic: string;
   title?: string | null;
   copy?: string | null;
+  /** When set, never pick assets used in content within this many days. */
+  hardExcludeRecentDays?: number;
 }): Promise<string | null> {
   const supabase = createAdminClient();
   const topicTokens = tokenize(
@@ -82,8 +84,9 @@ export async function selectBestLibraryImage(params: {
   );
   if (topicTokens.size === 0) return null;
 
+  const recentDays = params.hardExcludeRecentDays ?? RECENT_DAYS;
   const since = new Date();
-  since.setDate(since.getDate() - RECENT_DAYS);
+  since.setDate(since.getDate() - recentDays);
 
   const [{ data: assets }, { data: recentLinks }] = await Promise.all([
     supabase
@@ -110,14 +113,14 @@ export async function selectBestLibraryImage(params: {
   );
 
   let bestId: string | null = null;
-  let bestScore = 0;
+  let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const asset of assets) {
-    const score = scoreAsset(
-      asset as MediaAsset,
-      topicTokens,
-      recentlyUsedIds.has(asset.id),
-    );
+    const recentlyUsed = recentlyUsedIds.has(asset.id);
+    if (params.hardExcludeRecentDays != null && recentlyUsed) {
+      continue;
+    }
+    const score = scoreAsset(asset as MediaAsset, topicTokens, recentlyUsed);
     if (score > bestScore) {
       bestScore = score;
       bestId = asset.id;
@@ -135,6 +138,7 @@ export async function autoAttachLibraryImage(params: {
   topic: string;
   title?: string | null;
   copy?: string | null;
+  hardExcludeRecentDays?: number;
 }): Promise<{ attached: boolean; assetId: string | null }> {
   const assetId = await selectBestLibraryImage(params);
   if (!assetId) return { attached: false, assetId: null };

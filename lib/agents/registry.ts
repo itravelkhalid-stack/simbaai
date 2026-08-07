@@ -103,6 +103,7 @@ export type AgentRunNowKind =
   | "ads_optimisation"
   | "ads_sync_metrics"
   | "organic_growth"
+  | "content_cadence_fill"
   | "finance_ingest"
   | "finance_analyst"
   | "pipeline_review"
@@ -495,6 +496,21 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
     inngestId: "content/repurpose",
     agentNames: ["content_repurpose"],
     moduleHref: "/content",
+  },
+  {
+    id: "content-cadence-fill",
+    displayName: "Cadence Filler",
+    roleTitle: "Organic Engine",
+    department: "content",
+    responsibility:
+      "Keeps the next 7 days of organic slots filled to brand cadence (feed + Instagram stories).",
+    trigger: { kind: "cron", schedule: "30 5 * * *" },
+    module: "content",
+    executionPath: "lib/content/cadence-fill.ts",
+    inngestId: "content/daily-cadence-fill",
+    agentNames: ["content_cadence_fill"],
+    runNow: { kind: "content_cadence_fill", requiresBrand: false },
+    moduleHref: "/content/calendar",
   },
   {
     id: "organic-growth",

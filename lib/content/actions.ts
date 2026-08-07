@@ -666,6 +666,48 @@ export async function rescheduleContentItem(formData: FormData) {
   revalidatePath("/content/calendar");
 }
 
+export async function saveContentCadence(
+  formData: FormData,
+): Promise<ContentActionResult> {
+  try {
+    const { active } = await assertCanWrite();
+    const brandId = String(formData.get("brandId") ?? "");
+    if (!brandId) return { error: "Brand required" };
+
+    const n = (key: string, fallback: number) => {
+      const raw = Number(formData.get(key));
+      if (!Number.isFinite(raw)) return fallback;
+      return Math.max(0, Math.min(10, Math.round(raw)));
+    };
+
+    const content_cadence = {
+      instagram: {
+        feed_per_day: n("igFeed", 2),
+        stories_per_day: n("igStories", 2),
+      },
+      facebook: {
+        feed_per_day: n("fbFeed", 1),
+      },
+      linkedin: {
+        feed_per_day: n("liFeed", 1),
+      },
+    };
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("brands")
+      .update({ content_cadence })
+      .eq("id", brandId)
+      .eq("organization_id", active.organization_id);
+    if (error) return { error: error.message };
+
+    revalidatePath("/content/calendar");
+    return { success: "Cadence saved" };
+  } catch (error) {
+    return actionErrorFromUnknown(error, "Failed to save cadence");
+  }
+}
+
 export async function regenerateRejectedItem(formData: FormData) {
   const itemId = String(formData.get("itemId") ?? "");
   if (!itemId) throw new Error("Missing item");

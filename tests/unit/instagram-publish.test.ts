@@ -122,6 +122,22 @@ describe("instagramProvider.publishPost", () => {
     structured: {},
   };
 
+  it("publishes stories with media_type=STORIES and no caption", async () => {
+    const { created } = mockGraphFetch({});
+    const result = await instagramProvider.publishPost({
+      ...baseInput,
+      mediaUrls: ["https://cdn.test/story.jpg"],
+      format: "story",
+      copy: "ignored for stories",
+      hashtags: ["nope"],
+    });
+    expect(result.platformPostId).toBe("post_123");
+    expect(created).toHaveLength(1);
+    expect(created[0].get("media_type")).toBe("STORIES");
+    expect(created[0].get("image_url")).toBe("https://cdn.test/story.jpg");
+    expect(created[0].get("caption")).toBeNull();
+  });
+
   it("publishes a single image via the container flow", async () => {
     const { created } = mockGraphFetch({});
     const result = await instagramProvider.publishPost({

@@ -115,14 +115,36 @@ export const instagramProvider: SocialProvider = {
 
     try {
       assertNoVideo(input);
-      const caption = buildInstagramCaption(input.copy, input.hashtags);
-
       const images = input.mediaUrls.filter(Boolean);
       if (!images.length) {
         throw new Error(
           "Instagram publishing requires at least one publicly reachable image URL. Attach media from the brand library.",
         );
       }
+
+      // Instagram Stories — Graph media_type=STORIES (image only for now).
+      if (input.format === "story") {
+        await assertPublicImageUrl(images[0]);
+        const created = await graphPost(
+          `${input.accountId}/media`,
+          new URLSearchParams({
+            image_url: images[0],
+            media_type: "STORIES",
+            access_token: input.accessToken,
+          }),
+        );
+        await waitForContainer(created.id, input.accessToken);
+        const published = await graphPost(
+          `${input.accountId}/media_publish`,
+          new URLSearchParams({
+            creation_id: created.id,
+            access_token: input.accessToken,
+          }),
+        );
+        return { platformPostId: published.id };
+      }
+
+      const caption = buildInstagramCaption(input.copy, input.hashtags);
 
       const useCarousel = input.format === "carousel" || images.length > 1;
       if (useCarousel) {

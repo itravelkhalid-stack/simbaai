@@ -9,6 +9,7 @@ import {
 } from "@/lib/agents/content/generate";
 import { appendAgentRunLog } from "@/lib/agents/research/persist";
 import { runEntityComplianceCheck } from "@/lib/compliance/check";
+import { fillAllBrandsContentCadence } from "@/lib/content/cadence-fill";
 import { inngest } from "@/lib/inngest/client";
 import { recordJobFailure } from "@/lib/inngest/functions/jobs";
 import { autoAttachLibraryImage } from "@/lib/media/select";
@@ -800,9 +801,57 @@ export const runContentRepurpose = inngest.createFunction(
   },
 );
 
+export const runContentDailyCadenceFill = inngest.createFunction(
+  {
+    id: "content/daily-cadence-fill",
+    retries: 1,
+    triggers: [
+      { cron: "30 5 * * *" },
+      { event: "content/cadence.fill" },
+    ],
+  },
+  async ({ event, step }) => {
+    const brandId =
+      event && "data" in event
+        ? (event.data as { brandId?: string | null } | undefined)?.brandId
+        : undefined;
+    const organizationId =
+      event && "data" in event
+        ? (event.data as { organizationId?: string } | undefined)
+            ?.organizationId
+        : undefined;
+
+    if (brandId && organizationId) {
+      const { fillBrandContentCadence } = await import(
+        "@/lib/content/cadence-fill"
+      );
+      const result = await step.run("fill-one-brand", async () =>
+        fillBrandContentCadence({ organizationId, brandId }),
+      );
+      return {
+        brands: 1,
+        filled: result.filled,
+        gapsFound: result.gapsFound,
+        errors: result.errors.slice(0, 20),
+      };
+    }
+
+    const results = await step.run("fill-all-brands", async () => {
+      return fillAllBrandsContentCadence();
+    });
+    return {
+      brands: results.length,
+      filled: results.reduce((s, r) => s + r.filled, 0),
+      gapsFound: results.reduce((s, r) => s + r.gapsFound, 0),
+      errors: results.flatMap((r) => r.errors).slice(0, 20),
+    };
+  },
+);
+
 export const contentFunctions = [
   runContentSingleGenerate,
   runContentBatchPropose,
   runContentBatchGenerateSlots,
   runContentRepurpose,
+  runContentDailyCadenceFill,
 ];
