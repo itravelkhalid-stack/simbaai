@@ -23,7 +23,8 @@ Shape:
     }
   ]
 }
-Always return exactly 3 variants with meaningfully different hooks/angles.`,
+Always return exactly 3 variants with meaningfully different hooks/angles.
+When format is "story", write short (under 80 characters) visual-first copy suitable for Instagram Stories — no long paragraphs, minimal hashtags.`,
   buildUserPrompt(input: {
     brandContextMarkdown: string;
     platform: string;

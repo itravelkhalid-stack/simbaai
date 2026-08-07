@@ -139,6 +139,19 @@ export async function runAgentNow(
       return { success: "Organic growth review complete" };
     }
 
+    if (kind === "content_cadence_fill") {
+      await inngest.send({
+        name: "content/cadence.fill",
+        data: {
+          organizationId: active.organization_id,
+          brandId: brandId ?? null,
+        },
+      });
+      revalidatePath("/team");
+      revalidatePath("/content/calendar");
+      return { success: "Cadence fill queued (runs across brands)" };
+    }
+
     if (kind === "finance_ingest") {
       const result = await runDailyFinanceIngestion();
       revalidatePath("/team");

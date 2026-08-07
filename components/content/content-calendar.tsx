@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { rescheduleContentItem } from "@/lib/content/actions";
 import {
+  FORMAT_LABELS,
   PLATFORM_LABELS,
   STATUS_LABELS,
   type ContentItem,
@@ -86,6 +87,18 @@ export function ContentCalendar({
       const key = item.scheduled_at.slice(0, 10);
       const list = map.get(key) ?? [];
       list.push(item);
+      map.set(key, list);
+    }
+    for (const [key, list] of map) {
+      list.sort((a, b) => {
+        const aStory = a.format === "story" ? 1 : 0;
+        const bStory = b.format === "story" ? 1 : 0;
+        if (aStory !== bStory) return aStory - bStory;
+        if (a.platform !== b.platform) {
+          return a.platform.localeCompare(b.platform);
+        }
+        return (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? "");
+      });
       map.set(key, list);
     }
     return map;
@@ -283,6 +296,16 @@ export function ContentCalendar({
                           {PLATFORM_LABELS[item.platform]}
                         </span>
                         <Badge
+                          variant="outline"
+                          className={cn(
+                            "h-4 px-1.5 text-[10px]",
+                            item.format === "story" &&
+                              "border-warning/50 text-warning",
+                          )}
+                        >
+                          {FORMAT_LABELS[item.format]}
+                        </Badge>
+                        <Badge
                           variant={statusTone(item.status)}
                           className="h-4 px-1.5 text-[10px]"
                         >
@@ -294,13 +317,19 @@ export function ContentCalendar({
                         <img
                           src={item.media_urls[0]}
                           alt=""
-                          className="mb-1 aspect-video w-full rounded object-cover"
+                          className={cn(
+                            "mb-1 w-full rounded object-cover",
+                            item.format === "story"
+                              ? "aspect-[9/16] max-h-28"
+                              : "aspect-video",
+                          )}
                         />
                       ) : null}
                       <p className="line-clamp-2 text-ink-soft">
                         {item.title || item.copy.slice(0, 60)}
                       </p>
-                      {item.platform === "instagram" &&
+                      {(item.platform === "instagram" ||
+                        item.format === "story") &&
                       !item.media_urls?.[0] ? (
                         <p className="mt-1 text-[10px] text-danger">
                           Needs image
@@ -321,7 +350,8 @@ export function ContentCalendar({
       </div>
 
       <p className="text-xs text-ink-soft">
-        Drag items between days to reschedule. Dot = platform · badge = status.
+        Drag items between days to reschedule. Dot = platform · format badge
+        (Post/Story) · status.
       </p>
     </div>
   );

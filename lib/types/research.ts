@@ -39,6 +39,8 @@ export type Brand = {
   autonomy_max_cpa_pence: number;
   /** Empty = derive from connected social/ad accounts. */
   enabled_channels: string[];
+  /** Organic cadence quotas; empty uses platform defaults. */
+  content_cadence: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 };
