@@ -266,8 +266,16 @@ export async function runMeeting(meetingId: string): Promise<{
       taken,
       awaiting,
     );
-    if (ctx.dataSparse) {
-      const banner = `> **Sparse data notice:** Missing sources — ${ctx.emptySources.join(", ") || "unknown"}. Minutes reflect incomplete live context.\n\n`;
+    if (ctx.dataSparse || ctx.notConnectedSources.length) {
+      const parts = [
+        ctx.notConnectedSources.length
+          ? `Not connected: ${ctx.notConnectedSources.join(", ")}`
+          : null,
+        ctx.connectedEmptySources.length
+          ? `Connected but empty/zero: ${ctx.connectedEmptySources.join(", ")}`
+          : null,
+      ].filter(Boolean);
+      const banner = `> **Sparse data notice:** ${parts.join(" · ") || "incomplete context"}. Do not treat NOT CONNECTED sources as performance failures.\n\n`;
       if (!minutes.includes("Sparse data notice")) {
         minutes = banner + minutes;
       }

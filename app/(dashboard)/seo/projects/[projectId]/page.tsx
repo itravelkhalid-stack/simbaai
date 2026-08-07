@@ -15,6 +15,13 @@ import { createClient } from "@/lib/supabase/server";
 import type { SeoProject } from "@/lib/types/seo";
 import { listGscSites, getValidGscAccessToken } from "@/lib/seo/gsc";
 
+function googleOAuthConfigured() {
+  return Boolean(
+    process.env.GOOGLE_CLIENT_ID?.trim() &&
+      process.env.GOOGLE_CLIENT_SECRET?.trim(),
+  );
+}
+
 export default async function SeoProjectPage({
   params,
   searchParams,
@@ -35,6 +42,7 @@ export default async function SeoProjectPage({
   if (!project) notFound();
 
   const p = project as SeoProject;
+  const oauthReady = googleOAuthConfigured();
   let sites: Array<{ siteUrl: string }> = [];
   if (p.gsc_connected) {
     try {
@@ -97,10 +105,18 @@ export default async function SeoProjectPage({
       <div className="space-y-4 rounded-xl border p-4">
         <p className="text-sm font-medium">Google Search Console</p>
         {!p.gsc_connected ? (
-          <form action={startGscOAuth}>
-            <input type="hidden" name="projectId" value={projectId} />
-            <Button type="submit">Connect GSC</Button>
-          </form>
+          oauthReady ? (
+            <form action={startGscOAuth}>
+              <input type="hidden" name="projectId" value={projectId} />
+              <Button type="submit">Connect GSC</Button>
+            </form>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Google OAuth is not configured on the server (
+              <code className="text-xs">GOOGLE_CLIENT_ID</code> /{" "}
+              <code className="text-xs">GOOGLE_CLIENT_SECRET</code>).
+            </p>
+          )
         ) : (
           <div className="space-y-3">
             <form action={setGscSiteUrl} className="flex flex-wrap items-end gap-3">
