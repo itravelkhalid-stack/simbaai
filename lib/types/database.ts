@@ -1774,6 +1774,8 @@ export type Database = {
           status?: string;
           last_sync_at?: string | null;
           last_error?: string | null;
+          conversion_event_names?: string[];
+          discovered_event_names?: string[];
           created_at?: string;
           updated_at?: string;
         },
