@@ -26,6 +26,10 @@ export type MeetingPeriodContext = {
   markdown: string;
   snapshot: Record<string, unknown>;
   emptySources: string[];
+  /** Sources with no connection / integration configured. */
+  notConnectedSources: string[];
+  /** Sources that are connected but returned zero/empty rows this period. */
+  connectedEmptySources: string[];
   dataSparse: boolean;
 };
 
@@ -66,10 +70,25 @@ export async function gatherMeetingContext(params: {
 
   const { data: seoProjects } = await supabase
     .from("seo_projects")
-    .select("id")
+    .select("id, gsc_connected, gsc_site_url")
     .eq("organization_id", params.organizationId)
     .eq("brand_id", params.brandId);
   const seoProjectIds = (seoProjects ?? []).map((p) => p.id);
+  const gscConnected = (seoProjects ?? []).some(
+    (p) => p.gsc_connected && Boolean(p.gsc_site_url),
+  );
+
+  const { data: ga4Connection } = await supabase
+    .from("ga4_connections")
+    .select("id, status, property_id")
+    .eq("organization_id", params.organizationId)
+    .eq("brand_id", params.brandId)
+    .maybeSingle();
+  const ga4Connected = Boolean(
+    ga4Connection &&
+      ga4Connection.status !== "error" &&
+      ga4Connection.property_id,
+  );
 
   const { data: brandCampaigns } = await supabase
     .from("ad_campaigns")
@@ -307,24 +326,61 @@ export async function gatherMeetingContext(params: {
     ig_followers: igFollowers,
     fb_followers: fbFollowers,
   });
+  // Avoid false "0 SEO clicks" KPI misses when Search Console isn't connected.
+  if (!gscConnected) {
+    delete kpiActuals.seo_clicks;
+  }
 
-  const emptySources: string[] = [];
-  if (!igFollowers && !fbFollowers) emptySources.push("social_followers");
-  if (!(publishedPosts ?? []).length) emptySources.push("content_items");
-  if (!(contentMetrics ?? []).length) emptySources.push("content_metrics");
-  if (!(adMetrics ?? []).length) emptySources.push("ad_metrics_daily");
-  if (!emailSends.length && !(emailEvents ?? []).length) emptySources.push("email");
-  if (!(gscDaily ?? []).length) emptySources.push("gsc");
-  if (!(ga4Daily ?? []).length) emptySources.push("ga4");
-  if (!(financeSummaries ?? []).length) emptySources.push("finance");
-  if (!kpis.length && !planKpis.length) emptySources.push("kpi_targets");
-  if (!(plans ?? []).length) emptySources.push("marketing_plan");
+  const notConnectedSources: string[] = [];
+  const connectedEmptySources: string[] = [];
 
+  // Social / content / ads / email: treat "no rows" as empty (connection is per-platform;
+  // we don't always have a single connected flag). GSC/GA4 get explicit connect status.
+  if (!igFollowers && !fbFollowers) connectedEmptySources.push("social_followers");
+  if (!(publishedPosts ?? []).length) connectedEmptySources.push("content_items");
+  if (!(contentMetrics ?? []).length) connectedEmptySources.push("content_metrics");
+  if (!(adMetrics ?? []).length) connectedEmptySources.push("ad_metrics_daily");
+  if (!emailSends.length && !(emailEvents ?? []).length) {
+    connectedEmptySources.push("email");
+  }
+
+  if (!seoProjectIds.length || !gscConnected) {
+    notConnectedSources.push("gsc");
+  } else if (!(gscDaily ?? []).length) {
+    connectedEmptySources.push("gsc");
+  }
+
+  if (!ga4Connected) {
+    notConnectedSources.push("ga4");
+  } else if (!(ga4Daily ?? []).length) {
+    connectedEmptySources.push("ga4");
+  }
+
+  if (!(financeSummaries ?? []).length) connectedEmptySources.push("finance");
+  if (!kpis.length && !planKpis.length) connectedEmptySources.push("kpi_targets");
+  if (!(plans ?? []).length) connectedEmptySources.push("marketing_plan");
+
+  const emptySources = [...notConnectedSources, ...connectedEmptySources];
   const dataSparse = emptySources.length >= 4;
+
+  const gscStatus = !seoProjectIds.length
+    ? "not_connected"
+    : !gscConnected
+      ? "not_connected"
+      : (gscDaily ?? []).length
+        ? "connected"
+        : "connected_but_zero";
+  const ga4Status = !ga4Connected
+    ? "not_connected"
+    : (ga4Daily ?? []).length
+      ? "connected"
+      : "connected_but_zero";
 
   const snapshot = {
     period: { fromDate, toDate, label, yesterday, today },
     empty_sources: emptySources,
+    not_connected_sources: notConnectedSources,
+    connected_empty_sources: connectedEmptySources,
     data_sparse: dataSparse,
     content: {
       published_count: (publishedPosts ?? []).length,
@@ -361,15 +417,19 @@ export async function gatherMeetingContext(params: {
       events: emailEventCounts,
     },
     seo: {
-      clicks: gscClicks,
-      impressions: gscImpressions,
+      status: gscStatus,
+      connected: gscConnected,
+      clicks: gscStatus === "not_connected" ? null : gscClicks,
+      impressions: gscStatus === "not_connected" ? null : gscImpressions,
       keywords: seoKeywords ?? [],
       weekly_summaries: seoSummaries ?? [],
       daily: gscDaily ?? [],
     },
     ga4: {
-      sessions: ga4Sessions,
-      conversions: ga4Conversions,
+      status: ga4Status,
+      connected: ga4Connected,
+      sessions: ga4Status === "not_connected" ? null : ga4Sessions,
+      conversions: ga4Status === "not_connected" ? null : ga4Conversions,
       days: (ga4Daily ?? []).length,
     },
     finance: {
@@ -408,16 +468,25 @@ export async function gatherMeetingContext(params: {
     campaigns: campaigns ?? [],
   };
 
-  const emptyDisclosure = dataSparse
-    ? `
-## DATA AVAILABILITY WARNING
-This meeting has sparse or empty live data. Missing sources: ${emptySources.join(", ") || "none"}.
-You MUST state explicitly in the minutes that context is incomplete / empty for those sources. Do not invent metrics.
-`
-    : emptySources.length
+  const emptyDisclosure =
+    notConnectedSources.length || connectedEmptySources.length
       ? `
-## Data gaps
-Missing or empty sources this period: ${emptySources.join(", ")}. Mention these gaps briefly in the minutes.
+## DATA SOURCE STATUS (read carefully)
+${
+  notConnectedSources.length
+    ? `- NOT CONNECTED (do not treat as performance failure; do not invent zeros): ${notConnectedSources.join(", ")}`
+    : "- NOT CONNECTED: none"
+}
+${
+  connectedEmptySources.length
+    ? `- CONNECTED BUT ZERO/EMPTY this period (real zeros — may indicate underperformance or no activity): ${connectedEmptySources.join(", ")}`
+    : "- CONNECTED BUT ZERO/EMPTY: none"
+}
+${
+  dataSparse
+    ? "Overall context is sparse. State gaps explicitly. Never raise performance blockers for NOT CONNECTED sources."
+    : "Mention gaps briefly. Never raise performance blockers for NOT CONNECTED sources."
+}
 `
       : "";
 
@@ -495,8 +564,16 @@ ${
     : "- No sends"
 }
 
-### SEO (GSC)
-- Clicks: ${gscClicks}, Impressions: ${gscImpressions}
+### SEO (GSC) — status: ${gscStatus}
+${
+  gscStatus === "not_connected"
+    ? "- GSC is NOT CONNECTED for this brand. Do not report 0 clicks or zero organic visibility as a performance issue."
+    : `- Clicks: ${gscClicks}, Impressions: ${gscImpressions}${
+        gscStatus === "connected_but_zero"
+          ? " (connected; zero rows this period)"
+          : ""
+      }`
+}
 ### Keyword positions
 ${
   (seoKeywords ?? []).length
@@ -529,9 +606,17 @@ ${
     : "- None"
 }
 
-### GA4
-- Sessions: ${ga4Sessions}, Conversions: ${ga4Conversions}
-- Days with data: ${(ga4Daily ?? []).length}
+### GA4 — status: ${ga4Status}
+${
+  ga4Status === "not_connected"
+    ? "- GA4 is NOT CONNECTED for this brand. Do not treat missing sessions/conversions as a performance miss."
+    : `- Sessions: ${ga4Sessions}, Conversions: ${ga4Conversions}
+- Days with data: ${(ga4Daily ?? []).length}${
+        ga4Status === "connected_but_zero"
+          ? " (connected; zero rows this period)"
+          : ""
+      }`
+}
 
 ### Finance rollups
 ${
@@ -599,6 +684,8 @@ ${
     markdown,
     snapshot,
     emptySources,
+    notConnectedSources,
+    connectedEmptySources,
     dataSparse,
   };
 }

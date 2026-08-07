@@ -55,6 +55,10 @@ Typed actions (required when recommending operational changes):
 - flag_risk / note: human review only
 Every meeting minutes MUST end with sections "## Actions taken" and "## Actions awaiting approval"
 (placeholders are fine — the system fills results after execution).
+If a source status is "not_connected", do NOT treat its metrics as a performance failure.
+Never raise a blocker about "0 clicks", "zero organic visibility", "no sessions", or similar when that source is not_connected.
+Only interpret numeric zeros as real performance when status is "connected" (or the source has live rows).
+Missing/not_connected sources belong in gaps / setup actions — not performance alarms.
 If data sources are missing/empty, say so explicitly — never invent numbers.
 `;
 

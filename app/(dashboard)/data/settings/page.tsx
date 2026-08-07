@@ -13,6 +13,13 @@ import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { Ga4Connection } from "@/lib/types/analytics";
 
+function googleOAuthConfigured() {
+  return Boolean(
+    process.env.GOOGLE_CLIENT_ID?.trim() &&
+      process.env.GOOGLE_CLIENT_SECRET?.trim(),
+  );
+}
+
 export default async function DataSettingsPage({
   searchParams,
 }: {
@@ -25,6 +32,7 @@ export default async function DataSettingsPage({
   const { active } = await requireActiveOrg();
   const params = await searchParams;
   const supabase = await createClient();
+  const oauthReady = googleOAuthConfigured();
 
   const { data: brands } = await supabase
     .from("brands")
@@ -127,19 +135,27 @@ export default async function DataSettingsPage({
                   Sync now
                 </Button>
               </form>
-              <form action={startGa4OAuth}>
-                <input type="hidden" name="brandId" value={brandId} />
-                <Button type="submit" size="sm" variant="outline">
-                  Reconnect
-                </Button>
-              </form>
+              {oauthReady ? (
+                <form action={startGa4OAuth}>
+                  <input type="hidden" name="brandId" value={brandId} />
+                  <Button type="submit" size="sm" variant="outline">
+                    Reconnect
+                  </Button>
+                </form>
+              ) : null}
             </div>
           </div>
-        ) : (
+        ) : oauthReady ? (
           <form action={startGa4OAuth}>
             <input type="hidden" name="brandId" value={brandId} />
             <Button type="submit">Connect GA4</Button>
           </form>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Google OAuth is not configured on the server (
+            <code className="text-xs">GOOGLE_CLIENT_ID</code> /{" "}
+            <code className="text-xs">GOOGLE_CLIENT_SECRET</code>).
+          </p>
         )}
 
         {properties.length > 1 ? (
