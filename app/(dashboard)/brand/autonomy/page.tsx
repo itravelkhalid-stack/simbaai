@@ -45,6 +45,10 @@ export default async function BrandAutonomyPage() {
               brandName={brand.name}
               settings={parseBrandAutonomy(brand)}
               canWrite={canWrite}
+              monthlyAdBudgetPence={brand.monthly_ad_budget_pence ?? null}
+              monthlyAdBudgetCurrency={
+                brand.monthly_ad_budget_currency ?? "GBP"
+              }
             />
           ))}
         </div>

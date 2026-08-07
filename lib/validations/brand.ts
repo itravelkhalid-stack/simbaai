@@ -68,6 +68,13 @@ export const brandAutonomySchema = z.object({
   channel_email: z.enum(["inherit", "approval", "autonomous"]).default("inherit"),
   autonomy_min_roas: z.coerce.number().min(0).max(100).default(1.5),
   autonomy_max_cpa_major: z.coerce.number().min(0).max(1_000_000).default(50),
+  monthly_ad_budget_major: z.coerce
+    .number()
+    .min(0)
+    .max(100_000_000)
+    .optional()
+    .nullable(),
+  monthly_ad_budget_currency: z.string().trim().min(3).max(3).default("GBP"),
 });
 
 export const brandEnabledChannelsSchema = z.object({

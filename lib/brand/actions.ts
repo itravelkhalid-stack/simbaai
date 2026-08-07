@@ -475,6 +475,9 @@ export async function saveBrandAutonomy(
     channel_email: formData.get("channel_email") || "inherit",
     autonomy_min_roas: formData.get("autonomy_min_roas") || 1.5,
     autonomy_max_cpa_major: formData.get("autonomy_max_cpa_major") || 50,
+    monthly_ad_budget_major: formData.get("monthly_ad_budget_major") || 0,
+    monthly_ad_budget_currency:
+      formData.get("monthly_ad_budget_currency") || "GBP",
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid autonomy settings" };
@@ -496,11 +499,17 @@ export async function saveBrandAutonomy(
     channel_modes.email = parsed.data.channel_email;
   }
 
+  const monthlyPence =
+    parsed.data.monthly_ad_budget_major != null &&
+    parsed.data.monthly_ad_budget_major > 0
+      ? Math.round(parsed.data.monthly_ad_budget_major * 100)
+      : null;
+
   const supabase = await createClient();
   const { data: before } = await supabase
     .from("brands")
     .select(
-      "autonomy_mode, channel_modes, agent_activity_paused, autonomy_min_roas, autonomy_max_cpa_pence",
+      "autonomy_mode, channel_modes, agent_activity_paused, autonomy_min_roas, autonomy_max_cpa_pence, monthly_ad_budget_pence, monthly_ad_budget_currency",
     )
     .eq("id", parsed.data.brandId)
     .eq("organization_id", active.organization_id)
@@ -514,6 +523,8 @@ export async function saveBrandAutonomy(
       agent_activity_paused: parsed.data.agent_activity_paused,
       autonomy_min_roas: parsed.data.autonomy_min_roas,
       autonomy_max_cpa_pence: Math.round(parsed.data.autonomy_max_cpa_major * 100),
+      monthly_ad_budget_pence: monthlyPence,
+      monthly_ad_budget_currency: parsed.data.monthly_ad_budget_currency.toUpperCase(),
     })
     .eq("id", parsed.data.brandId)
     .eq("organization_id", active.organization_id);
@@ -536,11 +547,30 @@ export async function saveBrandAutonomy(
       agent_activity_paused: parsed.data.agent_activity_paused,
       autonomy_min_roas: parsed.data.autonomy_min_roas,
       autonomy_max_cpa_pence: Math.round(parsed.data.autonomy_max_cpa_major * 100),
+      monthly_ad_budget_pence: monthlyPence,
+      monthly_ad_budget_currency: parsed.data.monthly_ad_budget_currency.toUpperCase(),
     },
   });
 
+  // Kick budget-only loop when a budget is set
+  if (monthlyPence && monthlyPence >= 100) {
+    try {
+      const { inngest } = await import("@/lib/inngest/client");
+      await inngest.send({
+        name: "ads/budget-loop.run",
+        data: {
+          organizationId: active.organization_id,
+          brandId: parsed.data.brandId,
+        },
+      });
+    } catch {
+      /* non-blocking */
+    }
+  }
+
   revalidatePath("/brand");
   revalidatePath("/brand/autonomy");
+  revalidatePath("/ads");
   return { success: "Autonomy settings saved" };
 }
 

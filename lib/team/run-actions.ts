@@ -166,6 +166,21 @@ export async function runAgentNow(
       return { success: "CEO check queued" };
     }
 
+    if (kind === "ads_budget_loop" && brandId) {
+      await inngest.send({
+        name: "ads/budget-loop.run",
+        data: {
+          organizationId: active.organization_id,
+          brandId,
+          force: true,
+        },
+      });
+      revalidatePath("/team");
+      revalidatePath("/ads");
+      revalidatePath("/brand/autonomy");
+      return { success: "Budget-only ads loop queued" };
+    }
+
     if (kind === "finance_ingest") {
       const result = await runDailyFinanceIngestion();
       revalidatePath("/team");
