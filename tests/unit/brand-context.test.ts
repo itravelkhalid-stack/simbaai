@@ -130,7 +130,7 @@ describe("brand context builder", () => {
       competitors: [],
       pillars: [],
     });
-    expect(md).toContain("None saved yet");
+    expect(md).toContain("## Approved claims");
     expect(md).toContain("None configured");
   });
 });

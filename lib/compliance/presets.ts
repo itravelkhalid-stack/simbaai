@@ -52,6 +52,8 @@ export type IndustryPresetPack = {
   required_disclaimers: string[];
   banned_claims: string[];
   banned_terms: string[];
+  approved_claims: string[];
+  terms_urls: string[];
   rules: ComplianceRule[];
 };
 
@@ -66,6 +68,8 @@ export const INDUSTRY_PRESETS: Record<
     required_disclaimers: [],
     banned_claims: ["miracle results", "risk-free forever"],
     banned_terms: [],
+    approved_claims: [],
+    terms_urls: [],
     rules: SHARED_RULES,
   },
   financial_promotions: {
@@ -83,6 +87,8 @@ export const INDUSTRY_PRESETS: Record<
       "no risk",
     ],
     banned_terms: ["guaranteed profit", "sure thing"],
+    approved_claims: [],
+    terms_urls: [],
     rules: [
       ...SHARED_RULES,
       rule(
@@ -113,6 +119,8 @@ export const INDUSTRY_PRESETS: Record<
       "FDA approved",
     ],
     banned_terms: ["miracle cure", "detox toxin"],
+    approved_claims: [],
+    terms_urls: [],
     rules: [
       ...SHARED_RULES,
       rule(
@@ -142,6 +150,8 @@ export const INDUSTRY_PRESETS: Record<
       "essential for success",
     ],
     banned_terms: [],
+    approved_claims: [],
+    terms_urls: [],
     rules: [
       ...SHARED_RULES,
       rule(
@@ -170,6 +180,8 @@ export const INDUSTRY_PRESETS: Record<
       "safe for unsupervised use" /* when not true */,
     ],
     banned_terms: [],
+    approved_claims: [],
+    terms_urls: [],
     rules: [
       ...SHARED_RULES,
       rule(
@@ -199,6 +211,8 @@ export function getPresetPack(
       required_disclaimers: [],
       banned_claims: [],
       banned_terms: [],
+      approved_claims: [],
+      terms_urls: [],
       rules: SHARED_RULES.map((r) => ({ ...r })),
     };
   }
@@ -209,6 +223,8 @@ export function getPresetPack(
     required_disclaimers: [...pack.required_disclaimers],
     banned_claims: [...pack.banned_claims],
     banned_terms: [...pack.banned_terms],
+    approved_claims: [...pack.approved_claims],
+    terms_urls: [...pack.terms_urls],
     rules: pack.rules.map((r) => ({ ...r })),
   };
 }

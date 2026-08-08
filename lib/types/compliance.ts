@@ -39,6 +39,10 @@ export type ComplianceProfile = {
   required_disclaimers: string[];
   banned_claims: string[];
   banned_terms: string[];
+  /** Pre-cleared claim wording that does not need unsubstantiated-claim flags. */
+  approved_claims: string[];
+  /** Canonical T&Cs / disclaimer landing URLs. */
+  terms_urls: string[];
   created_at: string;
   updated_at: string;
 };

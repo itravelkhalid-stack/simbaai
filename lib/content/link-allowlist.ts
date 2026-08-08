@@ -23,21 +23,28 @@ export async function loadBrandLinkAllowlist(params: {
   brandId: string;
 }): Promise<string[]> {
   const supabase = createAdminClient();
-  const [{ data: brand }, { data: products }] = await Promise.all([
-    supabase
-      .from("brands")
-      .select("website, allowed_link_urls")
-      .eq("id", params.brandId)
-      .eq("organization_id", params.organizationId)
-      .maybeSingle(),
-    supabase
-      .from("brand_products")
-      .select("url")
-      .eq("brand_id", params.brandId)
-      .eq("organization_id", params.organizationId)
-      .not("url", "is", null)
-      .limit(100),
-  ]);
+  const [{ data: brand }, { data: products }, { data: profile }] =
+    await Promise.all([
+      supabase
+        .from("brands")
+        .select("website, allowed_link_urls")
+        .eq("id", params.brandId)
+        .eq("organization_id", params.organizationId)
+        .maybeSingle(),
+      supabase
+        .from("brand_products")
+        .select("url")
+        .eq("brand_id", params.brandId)
+        .eq("organization_id", params.organizationId)
+        .not("url", "is", null)
+        .limit(100),
+      supabase
+        .from("compliance_profiles")
+        .select("terms_urls")
+        .eq("brand_id", params.brandId)
+        .eq("organization_id", params.organizationId)
+        .maybeSingle(),
+    ]);
 
   const list: string[] = [];
   if (brand?.website) list.push(String(brand.website));
@@ -46,6 +53,9 @@ export async function loadBrandLinkAllowlist(params: {
   }
   for (const p of products ?? []) {
     if (p.url?.trim()) list.push(p.url.trim());
+  }
+  for (const u of (profile?.terms_urls as string[] | null) ?? []) {
+    if (u?.trim()) list.push(u.trim());
   }
   return Array.from(new Set(list));
 }

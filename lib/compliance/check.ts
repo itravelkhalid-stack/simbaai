@@ -89,7 +89,14 @@ export async function getOrCreateComplianceProfile(params: {
     .eq("brand_id", params.brandId)
     .maybeSingle();
 
-  if (existing) return existing as ComplianceProfile;
+  if (existing) {
+    const row = existing as ComplianceProfile;
+    return {
+      ...row,
+      approved_claims: row.approved_claims ?? [],
+      terms_urls: row.terms_urls ?? [],
+    };
+  }
 
   const pack = getPresetPack("general_ecommerce");
   const { data, error } = await supabase
@@ -104,6 +111,8 @@ export async function getOrCreateComplianceProfile(params: {
       required_disclaimers: pack.required_disclaimers,
       banned_claims: pack.banned_claims,
       banned_terms: pack.banned_terms,
+      approved_claims: pack.approved_claims,
+      terms_urls: pack.terms_urls,
     })
     .select("*")
     .single();
@@ -175,14 +184,21 @@ export async function runEntityComplianceCheck(params: {
       organizationId: params.organizationId,
       brandId: params.brandId,
     });
+    // Merge compliance terms URLs so profile substantiation links are allowed
+    const withTerms = Array.from(
+      new Set([
+        ...allowlist,
+        ...((profile.terms_urls as string[] | null) ?? []).filter(Boolean),
+      ]),
+    );
     const text = `${params.title ?? ""}\n${params.body}`;
-    for (const url of findDisallowedUrls(text, allowlist)) {
+    for (const url of findDisallowedUrls(text, withTerms)) {
       deterministic.push({
         severity: "critical",
         code: "disallowed_url",
         message: `Link not on brand allowlist: ${url}`,
         suggestion:
-          "Use only the brand website, product URLs, or links listed under Brand → allowed links. Invented URLs are blocked.",
+          "Use only the brand website, product URLs, Brand → allowed links, or Compliance → terms URLs. Invented URLs are blocked.",
         rule_id: "link_allowlist",
       });
     }
