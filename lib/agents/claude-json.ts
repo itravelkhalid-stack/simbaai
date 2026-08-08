@@ -49,11 +49,65 @@ function extractToolInput(
   return null;
 }
 
+function extractToolUses(
+  content: Anthropic.Messages.ContentBlock[],
+): Anthropic.Messages.ToolUseBlock[] {
+  return content.filter(
+    (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use",
+  );
+}
+
+/**
+ * Anthropic requires every tool_use in an assistant turn to be answered with a
+ * matching tool_result before any further turns. Plain-text follow-ups cause 400s.
+ */
+export function toolResultFollowUp(
+  assistantContent: Anthropic.Messages.ContentBlock[],
+  message: string,
+  isError = true,
+): Anthropic.Messages.MessageParam[] {
+  const toolUses = extractToolUses(assistantContent);
+  const params: Anthropic.Messages.MessageParam[] = [
+    { role: "assistant", content: assistantContent },
+  ];
+  if (toolUses.length === 0) {
+    params.push({ role: "user", content: message });
+    return params;
+  }
+  params.push({
+    role: "user",
+    content: toolUses.map((use) => ({
+      type: "tool_result" as const,
+      tool_use_id: use.id,
+      content: message,
+      is_error: isError,
+    })),
+  });
+  return params;
+}
+
 function formatZodIssues(err: z.ZodError) {
   return err.issues
     .slice(0, 8)
     .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
     .join("; ");
+}
+
+async function createMessageWithRetry(
+  anthropic: Anthropic,
+  body: Anthropic.Messages.MessageCreateParamsNonStreaming,
+): Promise<Anthropic.Messages.Message> {
+  try {
+    return await anthropic.messages.create(body);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Retry only transient provider errors — conversation 400s need history fixes above.
+    if (/429|529|timeout|ECONNRESET|overloaded|Internal server error/i.test(message)) {
+      await new Promise((r) => setTimeout(r, 750));
+      return await anthropic.messages.create(body);
+    }
+    throw err;
+  }
 }
 
 export async function runClaudeJson<T>(params: {
@@ -112,7 +166,7 @@ export async function runClaudeJson<T>(params: {
       (params.webSearch && turn >= 5) ||
       turn > 0;
 
-    const response = await anthropic.messages.create({
+    const response = await createMessageWithRetry(anthropic, {
       model,
       max_tokens: baseMaxTokens,
       system: `${params.system}
@@ -150,12 +204,13 @@ You must call the tool "${STRUCTURED_TOOL_NAME}" with the COMPLETE result matchi
             turn < maxTurns - 1
           ) {
             baseMaxTokens = Math.min(baseMaxTokens + 8000, 24000);
-            messages.push({ role: "assistant", content: response.content });
-            messages.push({
-              role: "user",
-              content: `Your previous "${STRUCTURED_TOOL_NAME}" call was truncated (stop_reason=max_tokens) and failed validation: ${formatZodIssues(err)}.
+            messages.push(
+              ...toolResultFollowUp(
+                response.content,
+                `Your previous "${STRUCTURED_TOOL_NAME}" call was truncated (stop_reason=max_tokens) and failed validation: ${formatZodIssues(err)}.
 Call "${STRUCTURED_TOOL_NAME}" again with the COMPLETE object. Include every required field (especially any that were missing). Do not omit trailing arrays.`,
-            });
+              ),
+            );
             continue;
           }
           throw new Error(
@@ -166,19 +221,16 @@ Call "${STRUCTURED_TOOL_NAME}" again with the COMPLETE object. Include every req
       }
     }
 
-    // No tool call yet — continue (web search or truncated mid-stream without parseable input).
+    // No usable tool call yet — continue (web search or truncated mid-stream).
     if (turn < maxTurns - 1) {
       if (response.stop_reason === "max_tokens") {
         baseMaxTokens = Math.min(baseMaxTokens + 8000, 24000);
       }
-      messages.push({ role: "assistant", content: response.content });
-      messages.push({
-        role: "user",
-        content:
-          response.stop_reason === "max_tokens"
-            ? `Output was truncated (max_tokens). Call "${STRUCTURED_TOOL_NAME}" now with the COMPLETE structured result including all required fields.`
-            : `Continue. When ready, call the "${STRUCTURED_TOOL_NAME}" tool with the complete structured result. Do not answer in plain text.`,
-      });
+      const followUp =
+        response.stop_reason === "max_tokens"
+          ? `Output was truncated (max_tokens). Call "${STRUCTURED_TOOL_NAME}" now with the COMPLETE structured result including all required fields.`
+          : `Continue. When ready, call the "${STRUCTURED_TOOL_NAME}" tool with the complete structured result. Do not answer in plain text.`;
+      messages.push(...toolResultFollowUp(response.content, followUp));
       continue;
     }
   }

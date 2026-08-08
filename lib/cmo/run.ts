@@ -62,10 +62,20 @@ export async function runCmoBackfillForBrand(params: {
         }),
       );
     } catch (err) {
+      // reviewContentItemAsCmo parks on errors; this is a safety net only.
+      const detail = err instanceof Error ? err.message : "failed";
+      const supabasePark = createAdminClient();
+      await supabasePark
+        .from("content_items")
+        .update({
+          cmo_note: `CMO review error — needs human: ${detail.slice(0, 400)}`,
+        })
+        .eq("id", row.id)
+        .eq("organization_id", params.organizationId);
       results.push({
         itemId: row.id,
-        outcome: "skipped",
-        detail: err instanceof Error ? err.message : "failed",
+        outcome: "parked",
+        detail,
       });
     }
   }
