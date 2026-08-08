@@ -17,6 +17,7 @@ export async function generateFinanceWeeklyAnalysis(params: {
   blended: FinanceBlendedMetrics;
   priorBlended?: FinanceBlendedMetrics | null;
   combinedAdPot?: CombinedAdPotActual | null;
+  connectedAdPlatforms?: string[];
 }) {
   return runClaudeJson({
     system: financeAnalystPrompt.system,
@@ -27,6 +28,9 @@ ${params.periodLabel}
 
 ## Combined ad pot (ALL platforms share this pot — primary budget control)
 ${JSON.stringify(params.combinedAdPot ?? {}, null, 2)}
+
+## Connected ad platforms (ONLY these may appear in reallocation_suggestions)
+${JSON.stringify(params.connectedAdPlatforms ?? [], null, 2)}
 
 ## Channel budget vs actual / pacing (ledger channels; reallocations must still respect the combined pot)
 ${JSON.stringify(params.budgetActual, null, 2)}

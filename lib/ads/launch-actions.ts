@@ -7,6 +7,7 @@ import { getAdsProvider } from "@/lib/ads/providers";
 import { auditAdWrite, authorizeAdWrite } from "@/lib/ads/write-safety";
 import { requireActiveOrg } from "@/lib/org/require";
 import { adsTable } from "@/lib/ads/db";
+import { assertMetaCreateDailyBudget } from "@/lib/ads/meta-budget";
 import { createClient } from "@/lib/supabase/server";
 import type {
   AdCampaign,
@@ -160,6 +161,9 @@ export async function createCampaignsPaused(formData: FormData) {
   }
   if (!campaign.daily_budget_pence || campaign.daily_budget_pence <= 0) {
     throw new Error("Set a positive daily budget before platform creation");
+  }
+  if (campaign.platform === "meta") {
+    assertMetaCreateDailyBudget(campaign.daily_budget_pence);
   }
 
   const { data: creativeRows } = await supabase

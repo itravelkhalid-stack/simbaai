@@ -8,6 +8,11 @@ import {
   runDeterministicLaunchChecks,
 } from "@/lib/ads/launch-review";
 import { getAdmissibleDestinations } from "@/lib/ads/seasonality";
+import {
+  findNearDuplicateCampaign,
+  findNearDuplicateMediaPlan,
+} from "@/lib/ads/campaign-dedupe";
+import { enforceMetaDailyBudgetShape } from "@/lib/ads/meta-budget";
 import { adsTable } from "@/lib/ads/db";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AdPlatform } from "@/lib/types/ads";
@@ -179,11 +184,42 @@ export async function runAdsPlanningPipeline(params: {
   });
 
   // Prefer Meta-only for first flight pipeline
+  let planCampaigns = generated.data.campaigns
+    .map((c) => ({ ...c, platform: "meta" as AdPlatform }))
+    .slice(0, directive ? 1 : 3);
+
+  const dailyEnvelope = Math.max(
+    100,
+    Math.round(params.monthlyBudgetPence / 30),
+  );
+  const shaped = enforceMetaDailyBudgetShape({
+    campaigns: planCampaigns,
+    totalDailyEnvelopePence: Math.min(
+      dailyEnvelope,
+      // Prefer first-flight-friendly envelope when planner monthly is £60 (=£2/day)
+      params.monthlyBudgetPence <= 6000 ? 200 : dailyEnvelope,
+    ),
+  });
+  planCampaigns = shaped.campaigns;
+  if (shaped.reason) evidence.push(`budget_shape:${shaped.reason}`);
+
+  const dupePlan = await findNearDuplicateMediaPlan({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+    name: generated.data.name,
+    directiveId: directive?.id ?? null,
+    destinationSlug: directive?.destination_slug ?? null,
+    focusText: directive?.focus_text ?? goalBrief.slice(0, 200),
+  });
+  if (dupePlan) {
+    throw new Error(
+      `${dupePlan.reason} (${dupePlan.name}). Open /ads/plans/${dupePlan.id} instead of creating another.`,
+    );
+  }
+
   const plan = {
     ...generated.data,
-    campaigns: generated.data.campaigns
-      .map((c) => ({ ...c, platform: "meta" as AdPlatform }))
-      .slice(0, directive ? 1 : 3),
+    campaigns: planCampaigns,
   };
 
   const { data: mediaPlan, error: planErr } = await supabase
@@ -212,11 +248,22 @@ export async function runAdsPlanningPipeline(params: {
   const campaignIds: string[] = [];
 
   for (const spec of plan.campaigns) {
-    const daily = Math.min(
-      spec.daily_budget_pence,
-      // Prefer £2 first-flight friendly unless plan is lower
-      spec.daily_budget_pence,
-    );
+    const daily = Math.round(spec.daily_budget_pence);
+
+    const dupeCampaign = await findNearDuplicateCampaign({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      name: spec.name,
+      funnelStage: spec.funnel_stage,
+      destinationSlug: directive?.destination_slug ?? null,
+      focusText: directive?.focus_text ?? spec.audience,
+      platform: "meta",
+    });
+    if (dupeCampaign) {
+      throw new Error(
+        `Near-duplicate campaign already exists: "${dupeCampaign.name}". Open /ads/campaigns/${dupeCampaign.id} instead of creating another.`,
+      );
+    }
 
     const { data: brief } = await adsTable(supabase, "ad_targeting_briefs")
       .insert({
