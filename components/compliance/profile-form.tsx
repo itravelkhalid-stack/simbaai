@@ -37,28 +37,47 @@ export function ComplianceProfileForm({
     <div className="space-y-6">
       <section className="rounded-xl border p-4">
         <p className="mb-3 text-sm font-medium">Industry presets</p>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Each button immediately overwrites rules, banned claims, and
+          disclaimers for this brand. Confirm before applying — browsing by
+          click leaves the last preset selected.
+        </p>
         <div className="flex flex-wrap gap-2">
           {(
             Object.keys(INDUSTRY_PRESETS) as Array<
               Exclude<ComplianceIndustryPreset, "custom">
             >
-          ).map((key) => (
-            <form key={key} action={applyIndustryPreset}>
-              <input type="hidden" name="brandId" value={brandId} />
-              <input type="hidden" name="industry" value={key} />
-              <Button
-                type="submit"
-                size="sm"
-                variant={profile.industry === key ? "default" : "outline"}
+          ).map((key) => {
+            const label = COMPLIANCE_INDUSTRY_LABELS[key];
+            const active = profile.industry === key;
+            return (
+              <form
+                key={key}
+                action={applyIndustryPreset}
+                onSubmit={(e) => {
+                  if (active) {
+                    e.preventDefault();
+                    return;
+                  }
+                  const ok = window.confirm(
+                    `Replace this brand's compliance rules with the “${label}” preset?\n\nThis overwrites rules, banned claims, and required disclaimers.`,
+                  );
+                  if (!ok) e.preventDefault();
+                }}
               >
-                {COMPLIANCE_INDUSTRY_LABELS[key]}
-              </Button>
-            </form>
-          ))}
+                <input type="hidden" name="brandId" value={brandId} />
+                <input type="hidden" name="industry" value={key} />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                >
+                  {active ? `✓ ${label}` : `Apply ${label}`}
+                </Button>
+              </form>
+            );
+          })}
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Presets pre-populate rules, disclaimers, and bans — all editable below.
-        </p>
       </section>
 
       <form action={action} className="space-y-4 rounded-xl border p-4">

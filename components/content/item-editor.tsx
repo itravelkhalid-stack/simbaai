@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toDatetimeLocalValue } from "@/lib/datetime/local";
 
 const initial: ContentActionResult = {};
 
@@ -201,11 +202,7 @@ export function ContentItemEditor({
             id="scheduledAt"
             name="scheduledAt"
             type="datetime-local"
-            defaultValue={
-              item.scheduled_at
-                ? new Date(item.scheduled_at).toISOString().slice(0, 16)
-                : ""
-            }
+            defaultValue={toDatetimeLocalValue(item.scheduled_at)}
             disabled={!canWrite}
           />
           {item.platform === "instagram" ? (

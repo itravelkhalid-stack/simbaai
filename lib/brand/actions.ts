@@ -581,7 +581,10 @@ export async function saveBrandAutonomy(
     channel_modes,
     agent_activity_paused: parsed.data.agent_activity_paused,
   });
+  let cmoBackfillNote = "";
   if (afterCmo && !beforeCmo) {
+    // Prefer async Inngest so the save action does not time out mid-queue.
+    // Inline sync was silently failing when the serverless request budget ran out.
     try {
       const { inngest } = await import("@/lib/inngest/client");
       await inngest.send({
@@ -592,18 +595,11 @@ export async function saveBrandAutonomy(
           backfill: true,
         },
       });
-    } catch {
-      /* non-blocking */
-    }
-    try {
-      const { runCmoBackfillForBrand } = await import("@/lib/cmo/run");
-      await runCmoBackfillForBrand({
-        organizationId: active.organization_id,
-        brandId: parsed.data.brandId,
-        limit: 50,
-      });
-    } catch {
-      /* non-blocking when Claude/keys unavailable */
+      cmoBackfillNote = " CMO queue backfill queued.";
+    } catch (err) {
+      cmoBackfillNote =
+        " CMO backfill event failed to send — use Team → Chief Marketing Officer → Run now.";
+      console.error("CMO backfill enqueue failed", err);
     }
   }
 
@@ -611,7 +607,9 @@ export async function saveBrandAutonomy(
   revalidatePath("/brand/autonomy");
   revalidatePath("/ads");
   revalidatePath("/content/queue");
-  return { success: "Autonomy settings saved" };
+  return {
+    success: `Autonomy settings saved.${cmoBackfillNote}`,
+  };
 }
 
 export async function saveBrandEnabledChannels(
