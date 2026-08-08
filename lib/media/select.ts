@@ -2,7 +2,14 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { attachAssetToContentItem } from "@/lib/media/sync";
+import {
+  assetFitsSlot,
+  canDeriveStoryFit,
+  formatSlotForContent,
+} from "@/lib/media/format-fit";
+import { deriveStoryFittedAsset } from "@/lib/media/story-fit";
 import type { MediaAsset } from "@/lib/types/media";
+import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 
 const RECENT_DAYS = 14;
 
@@ -57,24 +64,21 @@ function scoreAsset(
     }
   }
   if (recentlyUsed) score -= 12;
-  // Prefer tagged assets over untagged dumps
   if ((asset.tags ?? []).length > 0 || asset.description) score += 1;
   return score;
 }
 
-/**
- * Pick the best library image for a content topic.
- * Prefers assets not attached to content in the last 14 days.
- * Returns null when nothing scores above a minimal threshold.
- */
 export async function selectBestLibraryImage(params: {
   organizationId: string;
   brandId: string;
   topic: string;
   title?: string | null;
   copy?: string | null;
-  /** When set, never pick assets used in content within this many days. */
   hardExcludeRecentDays?: number;
+  platform?: ContentPlatform;
+  format?: ContentFormat;
+  /** Prefer never-used; allow used-over-avg only when no unused fits (Phase 5b simplified: prefer unused). */
+  preferUnused?: boolean;
 }): Promise<string | null> {
   const supabase = createAdminClient();
   const topicTokens = tokenize(
@@ -82,55 +86,94 @@ export async function selectBestLibraryImage(params: {
       " ",
     ),
   );
-  if (topicTokens.size === 0) return null;
 
   const recentDays = params.hardExcludeRecentDays ?? RECENT_DAYS;
   const since = new Date();
   since.setDate(since.getDate() - recentDays);
 
-  const [{ data: assets }, { data: recentLinks }] = await Promise.all([
-    supabase
-      .from("media_assets")
-      .select(
-        "id, tags, description, ai_subject, ai_style, ai_colors, suitable_for, filename, type",
-      )
-      .eq("organization_id", params.organizationId)
-      .eq("brand_id", params.brandId)
-      .in("type", ["image", "logo"])
-      .order("created_at", { ascending: false })
-      .limit(200),
-    supabase
-      .from("content_item_media")
-      .select("media_asset_id, created_at")
-      .eq("organization_id", params.organizationId)
-      .gte("created_at", since.toISOString()),
-  ]);
+  const slot =
+    params.platform && params.format
+      ? formatSlotForContent(params.platform, params.format)
+      : null;
+
+  const [{ data: assets }, { data: recentUsages }, { data: allUsages }] =
+    await Promise.all([
+      supabase
+        .from("media_assets")
+        .select(
+          "id, tags, description, ai_subject, ai_style, ai_colors, suitable_for, suitable_formats, filename, type, width, height, is_derived",
+        )
+        .eq("organization_id", params.organizationId)
+        .eq("brand_id", params.brandId)
+        .in("type", ["image", "logo"])
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabase
+        .from("media_asset_usages")
+        .select("media_asset_id")
+        .eq("organization_id", params.organizationId)
+        .gte("used_at", since.toISOString()),
+      supabase
+        .from("media_asset_usages")
+        .select("media_asset_id")
+        .eq("organization_id", params.organizationId)
+        .eq("brand_id", params.brandId)
+        .limit(2000),
+    ]);
 
   if (!assets?.length) return null;
 
   const recentlyUsedIds = new Set(
-    (recentLinks ?? []).map((r) => r.media_asset_id as string),
+    (recentUsages ?? []).map((r) => r.media_asset_id as string),
   );
+  const everUsedIds = new Set(
+    (allUsages ?? []).map((r) => r.media_asset_id as string),
+  );
+
+  type Row = (typeof assets)[number];
+  const candidates: Row[] = [];
+  for (const asset of assets) {
+    if (asset.is_derived && slot !== "instagram_story") continue;
+    // Never reuse within the 14-day window
+    if (recentlyUsedIds.has(asset.id)) continue;
+    if (slot) {
+      const suitable = (asset.suitable_formats as string[]) ?? [];
+      if (!assetFitsSlot(suitable, slot)) continue;
+    }
+    candidates.push(asset);
+  }
+
+  // Prefer never-used; allow previously-used (outside 14d window) only if none unused
+  const neverUsed = candidates.filter((a) => !everUsedIds.has(a.id));
+  const pool = neverUsed.length > 0 ? neverUsed : candidates;
+
+  if (!pool.length && slot === "instagram_story") {
+    return null;
+  }
+  const searchPool = pool;
 
   let bestId: string | null = null;
   let bestScore = Number.NEGATIVE_INFINITY;
 
-  for (const asset of assets) {
+  for (const asset of searchPool) {
     const recentlyUsed = recentlyUsedIds.has(asset.id);
-    if (params.hardExcludeRecentDays != null && recentlyUsed) {
-      continue;
-    }
     const score = scoreAsset(asset as MediaAsset, topicTokens, recentlyUsed);
-    if (score > bestScore) {
-      bestScore = score;
+    // When topic tokens empty, still allow format-fit only picks
+    const effective = topicTokens.size === 0 ? score + 3 : score;
+    if (effective > bestScore) {
+      bestScore = effective;
       bestId = asset.id;
     }
   }
 
-  // Require at least one real token match
-  return bestScore >= 3 ? bestId : null;
+  if (topicTokens.size > 0 && bestScore < 3 && slot == null) return null;
+  return bestId;
 }
 
+/**
+ * Auto-attach a format-suitable library image. For IG stories without 9:16,
+ * derives a fitted asset when possible; otherwise sets awaiting note.
+ */
 export async function autoAttachLibraryImage(params: {
   organizationId: string;
   brandId: string;
@@ -139,9 +182,75 @@ export async function autoAttachLibraryImage(params: {
   title?: string | null;
   copy?: string | null;
   hardExcludeRecentDays?: number;
-}): Promise<{ attached: boolean; assetId: string | null }> {
-  const assetId = await selectBestLibraryImage(params);
-  if (!assetId) return { attached: false, assetId: null };
+  platform?: ContentPlatform;
+  format?: ContentFormat;
+}): Promise<{
+  attached: boolean;
+  assetId: string | null;
+  awaitingNote: string | null;
+}> {
+  const supabase = createAdminClient();
+  const slot =
+    params.platform && params.format
+      ? formatSlotForContent(params.platform, params.format)
+      : null;
+
+  let assetId = await selectBestLibraryImage({
+    ...params,
+    preferUnused: true,
+  });
+
+  if (!assetId && slot === "instagram_story") {
+    // Pick any recent image we can derive from
+    const { data: sources } = await supabase
+      .from("media_assets")
+      .select("id, width, height")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .in("type", ["image", "logo"])
+      .eq("is_derived", false)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    const source = (sources ?? []).find((s) =>
+      canDeriveStoryFit(s.width, s.height),
+    );
+    if (source) {
+      const derived = await deriveStoryFittedAsset({
+        organizationId: params.organizationId,
+        brandId: params.brandId,
+        sourceAssetId: source.id,
+      });
+      assetId = derived?.assetId ?? null;
+    }
+    if (!assetId) {
+      const note = "awaiting story-format image";
+      await supabase
+        .from("content_items")
+        .update({
+          cmo_note: note,
+          status: "pending_approval",
+        })
+        .eq("id", params.contentItemId);
+      return { attached: false, assetId: null, awaitingNote: note };
+    }
+  }
+
+  if (!assetId) {
+    const needsImage =
+      params.platform === "instagram" ||
+      params.platform === "linkedin" ||
+      params.platform === "facebook";
+    if (needsImage) {
+      const note = "awaiting image";
+      await supabase
+        .from("content_items")
+        .update({ cmo_note: note, status: "pending_approval" })
+        .eq("id", params.contentItemId)
+        .eq("organization_id", params.organizationId);
+      return { attached: false, assetId: null, awaitingNote: note };
+    }
+    return { attached: false, assetId: null, awaitingNote: null };
+  }
 
   await attachAssetToContentItem({
     organizationId: params.organizationId,
@@ -150,5 +259,5 @@ export async function autoAttachLibraryImage(params: {
     replace: true,
   });
 
-  return { attached: true, assetId };
+  return { attached: true, assetId, awaitingNote: null };
 }

@@ -18,6 +18,8 @@ export type Brand = {
   organization_id: string;
   name: string;
   website: string | null;
+  /** Extra allowlisted URL prefixes for content links. */
+  allowed_link_urls: string[];
   positioning: string | null;
   brand_voice: string | null;
   target_audience: string | null;

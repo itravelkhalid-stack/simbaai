@@ -17,6 +17,7 @@ export type BrandContextInput = {
     Brand,
     | "name"
     | "website"
+    | "allowed_link_urls"
     | "positioning"
     | "brand_voice"
     | "target_audience"
@@ -34,7 +35,10 @@ export type BrandContextInput = {
     Pick<BrandAudience, "name" | "description" | "messaging_angles" | "channel_behaviour">
   >;
   products?: Array<
-    Pick<BrandProduct, "name" | "description" | "category" | "price_pence" | "currency">
+    Pick<
+      BrandProduct,
+      "name" | "description" | "category" | "price_pence" | "currency" | "url"
+    >
   >;
   competitors: Array<
     Pick<Competitor, "name" | "website" | "positioning" | "strengths">
@@ -70,6 +74,16 @@ export function buildBrandContextMarkdown(ctx: BrandContextInput): string {
 - Brand: ${ctx.brand.name}
 - Tagline: ${ctx.brand.tagline ?? "n/a"}
 - Website: ${ctx.brand.website ?? "n/a"}
+## Allowed links
+(Use ONLY these URLs in copy — never invent links)
+${[
+  ctx.brand.website,
+  ...((ctx.brand.allowed_link_urls as string[] | undefined) ?? []),
+  ...((ctx.products ?? []).map((p) => p.url).filter(Boolean) as string[]),
+]
+  .filter(Boolean)
+  .map((u) => `- ${u}`)
+  .join("\n") || "- (none configured — do not include any URLs)"}
 - Positioning: ${ctx.brand.positioning ?? "n/a"}
 - Brand voice: ${ctx.brand.brand_voice ?? "n/a"}
 - Target audience summary: ${ctx.brand.target_audience ?? "n/a"}

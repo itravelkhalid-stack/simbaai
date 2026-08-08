@@ -253,6 +253,8 @@ export async function fillBrandContentCadence(params: {
           title: variant.title,
           copy: variant.copy,
           hardExcludeRecentDays: 14,
+          platform: gap.platform,
+          format: gap.format,
         });
       } catch {
         // media optional for feed; IG story without image will fail at publish

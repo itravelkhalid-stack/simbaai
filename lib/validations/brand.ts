@@ -6,6 +6,7 @@ export const brandBasicsSchema = z.object({
   tagline: z.string().trim().max(200).optional().or(z.literal("")),
   positioning: z.string().trim().max(2000).optional().or(z.literal("")),
   target_audience: z.string().trim().max(2000).optional().or(z.literal("")),
+  allowed_link_urls: z.string().trim().max(4000).optional().or(z.literal("")),
 });
 
 export const brandVisualSchema = z.object({

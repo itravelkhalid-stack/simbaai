@@ -8,6 +8,79 @@ import {
 } from "@/lib/social/linkedin";
 import { readJson, requireEnv } from "@/lib/social/providers/http";
 
+async function registerAndUploadLinkedInImage(params: {
+  accessToken: string;
+  ownerUrn: string;
+  imageUrl: string;
+}): Promise<string> {
+  const registerBody = {
+    registerUploadRequest: {
+      recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
+      owner: params.ownerUrn,
+      serviceRelationships: [
+        {
+          relationshipType: "OWNER",
+          identifier: "urn:li:userGeneratedContent",
+        },
+      ],
+    },
+  };
+  const reg = (await readJson(
+    await fetch(
+      "https://api.linkedin.com/v2/assets?action=registerUpload",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${params.accessToken}`,
+          "Content-Type": "application/json",
+          "X-Restli-Protocol-Version": "2.0.0",
+        },
+        body: JSON.stringify(registerBody),
+      },
+    ),
+  )) as {
+    value?: {
+      asset?: string;
+      uploadMechanism?: {
+        "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"?: {
+          uploadUrl?: string;
+          headers?: Record<string, string>;
+        };
+      };
+    };
+  };
+
+  const uploadUrl =
+    reg.value?.uploadMechanism?.[
+      "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
+    ]?.uploadUrl;
+  const assetUrn = reg.value?.asset;
+  if (!uploadUrl || !assetUrn) {
+    throw new Error("LinkedIn image registerUpload failed");
+  }
+
+  const imgRes = await fetch(params.imageUrl);
+  if (!imgRes.ok) {
+    throw new Error(
+      `LinkedIn image download failed (${imgRes.status}) for ${params.imageUrl}`,
+    );
+  }
+  const bytes = Buffer.from(await imgRes.arrayBuffer());
+  const put = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      "Content-Type": "application/octet-stream",
+    },
+    body: bytes,
+  });
+  if (!put.ok) {
+    const text = await put.text().catch(() => "");
+    throw new Error(`LinkedIn image upload failed (${put.status}): ${text}`);
+  }
+  return assetUrn;
+}
+
 /**
  * LinkedIn company Page posting (default).
  * OAuth for org mode creates a session + page picker; member mode connects immediately.
@@ -123,14 +196,45 @@ export const linkedinProvider: SocialProvider = {
       );
     }
 
+    const mediaUrls = input.mediaUrls ?? [];
+    let shareMediaCategory: "NONE" | "IMAGE" = "NONE";
+    let media:
+      | Array<{
+          status: string;
+          description: { text: string };
+          media: string;
+          title: { text: string };
+        }>
+      | undefined;
+
+    if (mediaUrls[0]) {
+      const assetUrn = await registerAndUploadLinkedInImage({
+        accessToken: input.accessToken,
+        ownerUrn: input.accountId,
+        imageUrl: mediaUrls[0],
+      });
+      shareMediaCategory = "IMAGE";
+      media = [
+        {
+          status: "READY",
+          description: { text: commentary.slice(0, 200) },
+          media: assetUrn,
+          title: { text: "Image" },
+        },
+      ];
+    }
+
+    const shareContent: Record<string, unknown> = {
+      shareCommentary: { text: commentary },
+      shareMediaCategory,
+    };
+    if (media) shareContent.media = media;
+
     const payload = {
       author: input.accountId,
       lifecycleState: "PUBLISHED",
       specificContent: {
-        "com.linkedin.ugc.ShareContent": {
-          shareCommentary: { text: commentary },
-          shareMediaCategory: "NONE",
-        },
+        "com.linkedin.ugc.ShareContent": shareContent,
       },
       visibility: {
         "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",

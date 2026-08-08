@@ -146,7 +146,11 @@ export async function getBrandContext(
     guidelinesDoc: pickTaggedUrl(mediaAssets, BRAND_ASSET_TAGS.guidelinesDoc),
   };
 
-  const brandTyped = resolvedBrand as Brand;
+  const brandTyped = {
+    ...(resolvedBrand as Brand),
+    allowed_link_urls: ((resolvedBrand as Brand).allowed_link_urls ??
+      []) as string[],
+  };
   const colorPalette = [
     brandTyped.primary_color,
     brandTyped.secondary_color,

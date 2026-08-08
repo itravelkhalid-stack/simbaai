@@ -166,6 +166,30 @@ export async function runEntityComplianceCheck(params: {
     regulated: profile.regulated,
   });
 
+  // Link allowlist (deterministic) — never invent URLs
+  try {
+    const { findDisallowedUrls, loadBrandLinkAllowlist } = await import(
+      "@/lib/content/link-allowlist"
+    );
+    const allowlist = await loadBrandLinkAllowlist({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+    });
+    const text = `${params.title ?? ""}\n${params.body}`;
+    for (const url of findDisallowedUrls(text, allowlist)) {
+      deterministic.push({
+        severity: "critical",
+        code: "disallowed_url",
+        message: `Link not on brand allowlist: ${url}`,
+        suggestion:
+          "Use only the brand website, product URLs, or links listed under Brand → allowed links. Invented URLs are blocked.",
+        rule_id: "link_allowlist",
+      });
+    }
+  } catch {
+    // non-blocking if brand lookup fails
+  }
+
   let aiFindings: ComplianceFinding[] = [];
   try {
     const ai = await runComplianceProfileCheck({

@@ -34,6 +34,10 @@ export type MediaAsset = {
   ai_style: string | null;
   ai_colors: string[];
   suitable_for: string[];
+  /** Format slots from dimensions: instagram_story, instagram_feed, etc. */
+  suitable_formats: string[];
+  is_derived: boolean;
+  derived_from_asset_id: string | null;
   ai_tagged_at: string | null;
   source: MediaAssetSource;
   created_by: string | null;
