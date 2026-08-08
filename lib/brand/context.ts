@@ -104,6 +104,7 @@ export async function getBrandContext(
     { data: competitors },
     { data: pillars },
     { data: mediaRows },
+    { data: complianceProfile },
   ] = await Promise.all([
     supabase
       .from("brand_audiences")
@@ -133,6 +134,12 @@ export async function getBrandContext(
       .eq("organization_id", organizationId)
       .eq("brand_id", resolvedBrand.id)
       .overlaps("tags", Object.values(BRAND_ASSET_TAGS)),
+    supabase
+      .from("compliance_profiles")
+      .select("approved_claims, terms_urls")
+      .eq("organization_id", organizationId)
+      .eq("brand_id", resolvedBrand.id)
+      .maybeSingle(),
   ]);
 
   const mediaAssets = (mediaRows ?? []) as MediaAsset[];
@@ -159,6 +166,23 @@ export async function getBrandContext(
 
   const guidelinesDigest = buildGuidelinesDigest(brandTyped);
 
+  const substantiation = {
+    approvedClaims: ((complianceProfile?.approved_claims as string[]) ?? []).filter(
+      Boolean,
+    ),
+    termsUrls: ((complianceProfile?.terms_urls as string[]) ?? []).filter(Boolean),
+  };
+
+  // Fold terms into allowed links shown to content agents
+  if (substantiation.termsUrls.length) {
+    brandTyped.allowed_link_urls = Array.from(
+      new Set([
+        ...(brandTyped.allowed_link_urls ?? []),
+        ...substantiation.termsUrls,
+      ]),
+    );
+  }
+
   const base = {
     organizationId,
     organizationName: org.name,
@@ -170,6 +194,7 @@ export async function getBrandContext(
     assets,
     guidelinesDigest,
     colorPalette,
+    substantiation,
   };
 
   return {

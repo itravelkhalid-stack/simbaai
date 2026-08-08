@@ -47,6 +47,11 @@ export type BrandContextInput = {
   assets?: Partial<BrandAssetSlotUrls>;
   guidelinesDigest?: string;
   colorPalette?: string[];
+  /** From compliance_profiles — prefer these claims; link terms when qualifying. */
+  substantiation?: {
+    approvedClaims: string[];
+    termsUrls: string[];
+  };
 };
 
 export function buildBrandContextMarkdown(ctx: BrandContextInput): string {
@@ -142,6 +147,20 @@ ${
         .map((p) => `- ${p.name} (${p.target_pct}%): ${p.description ?? ""}`)
         .join("\n")
     : "- None configured"
+}
+
+## Approved claims (use only these when making strong / guarantee-style claims)
+${
+  (ctx.substantiation?.approvedClaims ?? []).length
+    ? (ctx.substantiation?.approvedClaims ?? []).map((c) => `- ${c}`).join("\n")
+    : "- (none configured — avoid unsubstantiated superlatives and guarantees)"
+}
+
+## Terms / disclaimer URLs (prefer these when qualifying claims)
+${
+  (ctx.substantiation?.termsUrls ?? []).length
+    ? (ctx.substantiation?.termsUrls ?? []).map((u) => `- ${u}`).join("\n")
+    : "- (none configured)"
 }
 `.trim();
 }

@@ -63,6 +63,10 @@ export async function upsertComplianceProfile(
     );
     const banned_claims = parseList(String(formData.get("banned_claims") ?? ""));
     const banned_terms = parseList(String(formData.get("banned_terms") ?? ""));
+    const approved_claims = parseList(
+      String(formData.get("approved_claims") ?? ""),
+    );
+    const terms_urls = parseList(String(formData.get("terms_urls") ?? ""));
 
     let rules: ComplianceRule[] = [];
     const rulesRaw = String(formData.get("rules_json") ?? "").trim();
@@ -95,6 +99,8 @@ export async function upsertComplianceProfile(
         required_disclaimers,
         banned_claims,
         banned_terms,
+        approved_claims,
+        terms_urls,
       },
       { onConflict: "brand_id" },
     );
@@ -144,6 +150,8 @@ export async function applyIndustryPreset(formData: FormData) {
       required_disclaimers: pack.required_disclaimers,
       banned_claims: pack.banned_claims,
       banned_terms: pack.banned_terms,
+      approved_claims: pack.approved_claims,
+      terms_urls: pack.terms_urls,
     },
     { onConflict: "brand_id" },
   );

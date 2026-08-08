@@ -126,6 +126,36 @@ export function ComplianceProfileForm({
           />
         </div>
         <div className="space-y-2">
+          <Label htmlFor="approved_claims">
+            Approved claims (pre-cleared wording)
+          </Label>
+          <Textarea
+            id="approved_claims"
+            name="approved_claims"
+            rows={4}
+            placeholder={"Price Match Guarantee\nBest Price Guarantee (T&Cs apply)"}
+            defaultValue={(profile.approved_claims ?? []).join("\n")}
+          />
+          <p className="text-xs text-muted-foreground">
+            Exact or near-exact phrases the brand may use without unsubstantiated
+            claim flags. One claim per line.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="terms_urls">Terms / disclaimer URLs</Label>
+          <Textarea
+            id="terms_urls"
+            name="terms_urls"
+            rows={3}
+            placeholder={"https://example.com/terms\nhttps://example.com/price-match"}
+            defaultValue={(profile.terms_urls ?? []).join("\n")}
+          />
+          <p className="text-xs text-muted-foreground">
+            Canonical T&amp;Cs / disclaimer pages. Also merged into the publish
+            link allowlist.
+          </p>
+        </div>
+        <div className="space-y-2">
           <Label htmlFor="banned_claims">Banned claims</Label>
           <Textarea
             id="banned_claims"

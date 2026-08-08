@@ -1850,6 +1850,8 @@ export type Database = {
           required_disclaimers?: string[];
           banned_claims?: string[];
           banned_terms?: string[];
+          approved_claims?: string[];
+          terms_urls?: string[];
           created_at?: string;
           updated_at?: string;
         },
