@@ -87,6 +87,27 @@ export async function runWeeklyFinanceAnalyst() {
       admin: true,
     });
 
+    const { data: adConnections } = await supabase
+      .from("ad_connections")
+      .select("platform, status, paused")
+      .eq("organization_id", brand.organization_id)
+      .eq("brand_id", brand.id)
+      .eq("status", "active")
+      .eq("paused", false);
+    const connectedAdPlatforms = Array.from(
+      new Set((adConnections ?? []).map((c) => String(c.platform))),
+    );
+
+    // Drop stale pending finance reallocations before writing fresh ones
+    await supabase
+      .from("ad_recommendations")
+      .update({ status: "dismissed" })
+      .eq("organization_id", brand.organization_id)
+      .eq("brand_id", brand.id)
+      .eq("status", "pending")
+      .eq("recommendation_type", "shift_budget")
+      .contains("payload", { source: "finance_analyst" });
+
     const { data: agentRun } = await supabase
       .from("agent_runs")
       .insert({
@@ -94,7 +115,12 @@ export async function runWeeklyFinanceAnalyst() {
         module: "finance",
         agent_name: "finance_analyst",
         status: "running",
-        input: { brand_id: brand.id, week_start: weekStart },
+        input: {
+          brand_id: brand.id,
+          week_start: weekStart,
+          combined_ad_pot_pence: combinedAdPot.pot_pence,
+          connected_ad_platforms: connectedAdPlatforms,
+        },
         progress: 10,
       metered: false,
     })
@@ -109,6 +135,7 @@ export async function runWeeklyFinanceAnalyst() {
         blended,
         priorBlended,
         combinedAdPot,
+        connectedAdPlatforms,
       });
 
       const { data: summary, error } = await supabase
@@ -126,10 +153,18 @@ export async function runWeeklyFinanceAnalyst() {
         .single();
       if (error || !summary) throw new Error(error?.message ?? "Insert failed");
 
+      const connected = new Set(connectedAdPlatforms);
       // Push reallocation suggestions into Ads recommendations feed
       for (const sug of generated.data.reallocation_suggestions) {
         const from = platformToFinanceChannel(sug.from_channel);
         const to = platformToFinanceChannel(sug.to_channel);
+        // Map finance channels back to ad platforms where possible
+        const fromPlatform = from === "meta" || from === "google" ? from : null;
+        const toPlatform = to === "meta" || to === "google" ? to : null;
+        if (fromPlatform && !connected.has(fromPlatform)) continue;
+        if (toPlatform && !connected.has(toPlatform)) continue;
+        if (!fromPlatform && !toPlatform) continue;
+        if (sug.amount_pence <= 0) continue;
         await supabase.from("ad_recommendations").insert({
           organization_id: brand.organization_id,
           brand_id: brand.id,
@@ -142,6 +177,8 @@ export async function runWeeklyFinanceAnalyst() {
             amount_pence: sug.amount_pence,
             source: "finance_analyst",
             week_start: weekStart,
+            pot_monthly_pence: combinedAdPot.pot_pence,
+            connected_ad_platforms: connectedAdPlatforms,
           },
           status: "pending",
         });
