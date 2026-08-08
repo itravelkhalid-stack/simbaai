@@ -12,6 +12,7 @@ import {
 import { adsWritesEnabled } from "@/lib/ads/providers/types";
 import { getAdsProvider } from "@/lib/ads/providers";
 import { ensureFreshAdAccessToken } from "@/lib/ads/connections";
+import { createAdDirectiveFromAsk } from "@/lib/ads/directives";
 import { inngest } from "@/lib/inngest/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AdCampaign, AdConnection } from "@/lib/types/ads";
@@ -81,6 +82,15 @@ const draftContentSchema = z.object({
 const pauseResumeSchema = z.object({
   campaign_id: z.string().uuid(),
   action: z.enum(["pause", "resume"]),
+});
+
+const createAdDirectiveSchema = z.object({
+  scope: z.enum(["destination", "area", "hotel", "open"]),
+  title: z.string().min(3).max(200),
+  focus_text: z.string().min(3).max(500),
+  destination_slug: z.string().max(120).optional(),
+  budget_share_pct: z.number().min(1).max(100).optional(),
+  notes: z.string().max(2000).optional(),
 });
 
 export const ASK_FINAL_SCHEMA = z.object({
@@ -173,6 +183,12 @@ export function buildAskTools(): Anthropic.Messages.Tool[] {
       description:
         "Advertising: pause or resume a managed ad campaign (autonomy-gated).",
       input_schema: zodSchemaToToolInputSchema(pauseResumeSchema),
+    },
+    {
+      name: "create_ad_directive",
+      description:
+        "Advertising: create an active campaign directive that binds the next media plan (destination / area / hotel / open).",
+      input_schema: zodSchemaToToolInputSchema(createAdDirectiveSchema),
     },
   ];
 }
@@ -682,6 +698,27 @@ export async function executeAskTool(
         status: "executed",
         campaign_id: campaign.id,
         new_status: nextStatus,
+      };
+    }
+    case "create_ad_directive": {
+      const input = createAdDirectiveSchema.parse(rawInput);
+      const directiveId = await createAdDirectiveFromAsk({
+        organizationId: ctx.organizationId,
+        brandId: ctx.brandId,
+        userId: ctx.userId,
+        scope: input.scope,
+        title: input.title,
+        focusText: input.focus_text,
+        destinationSlug: input.destination_slug ?? null,
+        budgetSharePct: input.budget_share_pct ?? null,
+        notes: input.notes ?? null,
+      });
+      return {
+        ok: true,
+        department: "Advertising",
+        status: "executed",
+        directive_id: directiveId,
+        href: "/ads/directives",
       };
     }
     default:

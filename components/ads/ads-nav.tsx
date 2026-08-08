@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 
 const LINKS = [
   { href: "/ads", label: "Dashboard" },
+  { href: "/ads/directives", label: "Directives" },
+  { href: "/ads/seasonality", label: "Seasonality" },
   { href: "/ads/plans", label: "Media plans" },
   { href: "/ads/campaigns", label: "Campaigns" },
   { href: "/ads/approvals", label: "Creative approvals" },

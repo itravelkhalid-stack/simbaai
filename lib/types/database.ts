@@ -946,6 +946,8 @@ export type Database = {
           created_by?: string | null;
           approved_by?: string | null;
           approved_at?: string | null;
+          directive_id?: string | null;
+          selection_evidence?: unknown[];
           created_at?: string;
           updated_at?: string;
         },
@@ -959,6 +961,11 @@ export type Database = {
           brand_id: string;
           connection_id?: string | null;
           media_plan_id?: string | null;
+          directive_id?: string | null;
+          targeting_brief_id?: string | null;
+          launch_review_id?: string | null;
+          optimization_goal?: string | null;
+          setup_blockers?: unknown[];
           platform: import("@/lib/types/ads").AdPlatform;
           platform_campaign_id?: string | null;
           platform_adset_id?: string | null;
