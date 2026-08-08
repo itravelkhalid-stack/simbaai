@@ -5,11 +5,13 @@ import { runClaudeJson } from "@/lib/agents/claude-json";
 import {
   cmoApproveDecisionSchema,
   cmoApprovePrompt,
+  type CmoApproveDecision,
 } from "@/lib/agents/prompts/content/cmo-approve";
 import { isMeteredAgentName } from "@/lib/billing/metering";
 import { getBrandContext } from "@/lib/brand/context";
 import { writeAuditEvent } from "@/lib/compliance/audit";
 import { runEntityComplianceCheck } from "@/lib/compliance/check";
+import { shouldParkForBrandFit } from "@/lib/cmo/severity";
 import { CMO_APPROVAL_LABEL } from "@/lib/cmo/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ContentFormat, ContentItem, ContentPlatform } from "@/lib/types/content";
@@ -357,29 +359,72 @@ export async function reviewContentItemAsCmo(params: {
       { admin: true },
     );
 
-    const decision = await runClaudeJson({
-      system: cmoApprovePrompt.system,
-      user: cmoApprovePrompt.buildUserPrompt({
-        brandName: brandContext.brand.name,
-        brandVoice: brandContext.brand.brand_voice ?? "",
-        targetAudience:
-          brandContext.audiences
-            .map((a) => a.name)
-            .filter(Boolean)
-            .join(", ") || brandContext.guidelinesDigest,
-        platform: working.platform,
-        format: working.format,
-        title: working.title,
-        copy: working.copy,
-        hashtags: working.hashtags ?? [],
-        complianceStatus: compliance.status,
-        complianceFindings: compliance.findings,
-      }),
-      schema: cmoApproveDecisionSchema,
-      maxTokens: 1200,
-    });
+    const brandContext = await getBrandContext(
+      params.organizationId,
+      params.brandId,
+      { admin: true },
+    );
 
-    if (decision.data.decision === "park" || decision.data.brand_fit === "poor") {
+    const promptInput = {
+      brandName: brandContext.brand.name,
+      brandVoice: brandContext.brand.brand_voice ?? "",
+      targetAudience:
+        brandContext.audiences
+          .map((a) => a.name)
+          .filter(Boolean)
+          .join(", ") || brandContext.guidelinesDigest,
+      platform: working.platform,
+      format: working.format,
+      title: working.title,
+      copy: working.copy,
+      hashtags: working.hashtags ?? [],
+      complianceStatus: compliance.status,
+      complianceFindings: compliance.findings,
+    };
+
+    let decision: {
+      data: CmoApproveDecision;
+      model: string;
+      tokensIn: number;
+      tokensOut: number;
+      costPence: number;
+    };
+    try {
+      decision = await runClaudeJson({
+        system: cmoApprovePrompt.system,
+        user: cmoApprovePrompt.buildUserPrompt(promptInput),
+        schema: cmoApproveDecisionSchema,
+        maxTokens: 1200,
+      });
+    } catch (firstErr) {
+      // Retry the whole brand-fit call once, then park with visible reason.
+      try {
+        decision = await runClaudeJson({
+          system: cmoApprovePrompt.system,
+          user: cmoApprovePrompt.buildUserPrompt(promptInput),
+          schema: cmoApproveDecisionSchema,
+          maxTokens: 1200,
+        });
+      } catch (secondErr) {
+        const message =
+          secondErr instanceof Error
+            ? secondErr.message
+            : firstErr instanceof Error
+              ? firstErr.message
+              : "CMO brand-fit API error";
+        throw new Error(message);
+      }
+    }
+
+    // Organic severity: WARN/PASS must not park via brand-fit unless fit is truly poor.
+    const wantsPark =
+      decision.data.decision === "park" || decision.data.brand_fit === "poor";
+    if (
+      shouldParkForBrandFit({
+        decision: decision.data,
+        complianceStatus: compliance.status,
+      })
+    ) {
       const note =
         decision.data.park_reason?.trim() ||
         decision.data.rationale ||
@@ -425,7 +470,11 @@ export async function reviewContentItemAsCmo(params: {
           tokens_in: decision.tokensIn,
           tokens_out: decision.tokensOut,
           cost_pence: decision.costPence,
-          output: { outcome: result.outcome, decision: decision.data },
+          output: {
+            outcome: result.outcome,
+            decision: decision.data,
+            warn_park_overridden: wantsPark,
+          },
         })
         .eq("id", run.id);
     }
@@ -433,12 +482,28 @@ export async function reviewContentItemAsCmo(params: {
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : "CMO review failed";
+    // One retry already happens inside runClaudeJson for API 400s; park visibly.
+    try {
+      await parkItem({
+        organizationId: params.organizationId,
+        itemId: item.id,
+        beforeStatus: item.status,
+        note: `CMO review error — needs human: ${message.slice(0, 400)}`,
+        agentRunId: run?.id ?? null,
+      });
+    } catch {
+      // Keep original failure if park update also fails
+    }
     if (run) {
       await supabase
         .from("agent_runs")
         .update({ status: "failed", progress: 100, error: message })
         .eq("id", run.id);
     }
-    throw err;
+    return {
+      itemId: item.id,
+      outcome: "parked",
+      detail: message,
+    };
   }
 }
