@@ -263,15 +263,29 @@ export const runContentSingleGenerate = inngest.createFunction(
           .eq("id", agentRunId);
 
         if (ids.length > 0) {
-          const { notifyApprovalsNeeded } = await import(
-            "@/lib/notifications/notify"
-          );
-          await notifyApprovalsNeeded({
+          const { isCmoEnabledForBrand } = await import("@/lib/cmo/settings");
+          const cmoOn = await isCmoEnabledForBrand({
             organizationId,
-            title: `${ids.length} content draft${ids.length === 1 ? "" : "s"} need approval`,
-            body: topic.slice(0, 160),
-            link: "/content/queue",
+            brandId,
           });
+          if (cmoOn) {
+            const { queueCmoReviewForItems } = await import("@/lib/cmo/run");
+            await queueCmoReviewForItems({
+              organizationId,
+              brandId,
+              itemIds: ids,
+            });
+          } else {
+            const { notifyApprovalsNeeded } = await import(
+              "@/lib/notifications/notify"
+            );
+            await notifyApprovalsNeeded({
+              organizationId,
+              title: `${ids.length} content draft${ids.length === 1 ? "" : "s"} need approval`,
+              body: topic.slice(0, 160),
+              link: "/content/queue",
+            });
+          }
         }
 
         return ids;

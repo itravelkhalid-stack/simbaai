@@ -535,11 +535,21 @@ export async function approveContentItem(formData: FormData) {
       itemId: parsed.data.itemId,
     });
   }
+  const now = new Date().toISOString();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const humanLabel = profile?.full_name?.trim() || "team member";
   const { error } = await supabase
     .from("content_items")
     .update({
       status: nextStatus,
       rejection_reason: null,
+      cmo_note: null,
+      approval_label: `Approved by ${humanLabel}`,
+      approved_at: now,
     })
     .eq("id", parsed.data.itemId)
     .eq("organization_id", active.organization_id);
@@ -553,7 +563,11 @@ export async function approveContentItem(formData: FormData) {
     entityId: parsed.data.itemId,
     summary: `Content ${nextStatus}`,
     before: { status: item?.status },
-    after: { status: nextStatus },
+    after: {
+      status: nextStatus,
+      approval_label: `Approved by ${humanLabel}`,
+      approved_at: now,
+    },
   });
 
   revalidatePath("/content/queue");

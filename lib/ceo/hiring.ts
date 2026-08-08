@@ -12,6 +12,7 @@ export const ALWAYS_ON_AGENT_IDS = new Set([
   "daily-standup",
   "weekly-marketing",
   "chief-executive",
+  "chief-marketing-officer",
   "social-publish-due",
   "analytics-rollup",
 ]);

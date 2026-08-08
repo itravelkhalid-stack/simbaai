@@ -84,6 +84,12 @@ export type ContentItem = {
   publish_error: string | null;
   publish_attempts: number;
   last_publish_attempt_at: string | null;
+  /** e.g. "Approved by CMO (Simba)" */
+  approval_label: string | null;
+  approved_at: string | null;
+  /** Dashboard note when CMO parks for human */
+  cmo_note: string | null;
+  cmo_regeneration_attempted: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;

@@ -87,7 +87,18 @@ function QueueItemCard({
             {needsImage ? (
               <Badge variant="outline">Needs image</Badge>
             ) : null}
+            {item.approval_label ? (
+              <Badge variant="outline">{item.approval_label}</Badge>
+            ) : null}
           </div>
+          {item.cmo_note ? (
+            <Alert>
+              <AlertDescription>
+                <span className="font-medium">CMO note: </span>
+                {item.cmo_note}
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <div>
             <Link
               href={`/content/${item.id}`}
