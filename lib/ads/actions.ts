@@ -130,6 +130,54 @@ export async function setAdConnectionPaused(formData: FormData) {
   revalidatePath("/ads/connections");
 }
 
+/** Switch the active ad account for a connection that discovered multiple accounts via OAuth. */
+export async function selectAdConnectionAccount(formData: FormData) {
+  const { active } = await assertCanWrite();
+  if (active.role !== "org_owner" && active.role !== "org_admin") {
+    throw new Error("Only owners/admins can switch ad accounts");
+  }
+  const connectionId = String(formData.get("connectionId") ?? "");
+  const accountId = String(formData.get("accountId") ?? "").trim();
+  if (!connectionId || !accountId) throw new Error("Missing connection or account");
+
+  const supabase = await createClient();
+  const { data: connection, error: loadErr } = await supabase
+    .from("ad_connections")
+    .select("id, metadata")
+    .eq("id", connectionId)
+    .eq("organization_id", active.organization_id)
+    .single();
+  if (loadErr || !connection) throw new Error(loadErr?.message ?? "Connection not found");
+
+  const accounts = Array.isArray(
+    (connection.metadata as { accounts?: unknown } | null)?.accounts,
+  )
+    ? (
+        (connection.metadata as { accounts: Array<Record<string, unknown>> })
+          .accounts
+      )
+    : [];
+  const match = accounts.find(
+    (a) => String(a.accountId ?? "") === accountId,
+  );
+  if (!match) {
+    throw new Error("Selected account is not available on this connection");
+  }
+
+  const accountName = String(match.accountName ?? accountId);
+  const { error } = await supabase
+    .from("ad_connections")
+    .update({
+      account_id: accountId,
+      account_name: accountName,
+    })
+    .eq("id", connectionId)
+    .eq("organization_id", active.organization_id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/ads/connections");
+  revalidatePath("/ads/settings");
+}
+
 export async function startAdOAuth(formData: FormData) {
   // Kept for compatibility; UI now uses GET /api/ads/oauth/[platform]/start
   // because redirect() to an external URL from a fetch-based server action

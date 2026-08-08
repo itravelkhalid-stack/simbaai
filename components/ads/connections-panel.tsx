@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import {
   connectAdAccountManual,
   disconnectAdAccount,
+  selectAdConnectionAccount,
   setAdConnectionPaused,
   type AdsActionResult,
 } from "@/lib/ads/actions";
@@ -20,6 +21,25 @@ import { cn } from "@/lib/utils";
 import { fieldSelectClass } from "@/lib/ui/field";
 
 const initial: AdsActionResult = {};
+
+type DiscoveredAccount = {
+  accountId: string;
+  accountName: string;
+};
+
+function discoveredAccounts(c: AdConnection): DiscoveredAccount[] {
+  const raw = (c.metadata as { accounts?: unknown } | null)?.accounts;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      const accountId = String(row.accountId ?? "").trim();
+      const accountName = String(row.accountName ?? accountId).trim();
+      if (!accountId) return null;
+      return { accountId, accountName };
+    })
+    .filter((a): a is DiscoveredAccount => a != null);
+}
 
 function connectionHealth(c: AdConnection): {
   label: string;
@@ -197,6 +217,7 @@ export function ConnectionsPanel({
         <ul className="space-y-3">
           {connections.map((c) => {
             const health = connectionHealth(c);
+            const accounts = discoveredAccounts(c);
             return (
               <li
                 key={c.id}
@@ -215,6 +236,34 @@ export function ConnectionsPanel({
                   </p>
                   {c.last_error ? (
                     <p className="text-xs text-danger">{c.last_error}</p>
+                  ) : null}
+                  {accounts.length > 1 ? (
+                    <form
+                      action={selectAdConnectionAccount}
+                      className="mt-2 flex flex-wrap items-end gap-2"
+                    >
+                      <input type="hidden" name="connectionId" value={c.id} />
+                      <div className="space-y-1">
+                        <Label htmlFor={`account-${c.id}`} className="text-xs">
+                          Active ad account
+                        </Label>
+                        <select
+                          id={`account-${c.id}`}
+                          name="accountId"
+                          className={fieldSelectClass}
+                          defaultValue={c.account_id}
+                        >
+                          {accounts.map((a) => (
+                            <option key={a.accountId} value={a.accountId}>
+                              {a.accountName} ({a.accountId})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button type="submit" size="sm" variant="outline">
+                        Switch account
+                      </Button>
+                    </form>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
