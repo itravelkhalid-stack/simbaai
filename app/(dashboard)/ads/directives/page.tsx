@@ -1,11 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { AdsNav } from "@/components/ads/ads-nav";
 import { DirectiveCreateForm } from "@/components/ads/directive-create-form";
+import { RunPipelineButton } from "@/components/ads/run-pipeline-button";
 import { setAdDirectiveStatus } from "@/lib/ads/directives-actions";
-import { runFirstFlightPipelineAction } from "@/lib/ads/pipeline-actions";
 import { Button } from "@/components/ui/button";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
+
+/** Pipeline AI can take 1–3 minutes; keep the server action alive on Vercel. */
+export const maxDuration = 300;
 
 export default async function AdsDirectivesPage() {
   const { active } = await requireActiveOrg();
@@ -28,12 +31,15 @@ export default async function AdsDirectivesPage() {
         .limit(50)
     : { data: [] as Array<Record<string, unknown>> };
 
+  const today = new Date().toISOString().slice(0, 10);
   const directives = (directiveRows ?? []) as Array<{
     id: string;
     scope: string;
     title: string;
     focus_text: string;
     status: string;
+    starts_on: string | null;
+    ends_on: string | null;
   }>;
   const canManage = active.role !== "org_viewer";
 
@@ -62,51 +68,62 @@ export default async function AdsDirectivesPage() {
           <p className="text-sm text-muted-foreground">No directives yet.</p>
         ) : (
           <ul className="space-y-2">
-            {directives.map((d) => (
-              <li
-                key={d.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
-              >
-                <div>
-                  <p className="font-medium">
-                    [{d.scope}] {d.title}{" "}
-                    <span className="text-xs text-muted-foreground">
-                      · {d.status}
-                    </span>
-                  </p>
-                  <p className="text-sm text-muted-foreground">{d.focus_text}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {canManage && brandId && d.status === "active" ? (
-                    <form action={runFirstFlightPipelineAction}>
-                      <input type="hidden" name="brandId" value={brandId} />
-                      <input type="hidden" name="directiveId" value={d.id} />
-                      <input type="hidden" name="dailyBudgetPence" value="200" />
-                      <Button type="submit" size="sm">
-                        Run pipeline (£2/day)
-                      </Button>
-                    </form>
-                  ) : null}
-                  {d.status === "active" ? (
-                    <form action={setAdDirectiveStatus}>
-                      <input type="hidden" name="id" value={d.id} />
-                      <input type="hidden" name="status" value="paused" />
-                      <Button type="submit" size="sm" variant="outline">
-                        Pause
-                      </Button>
-                    </form>
-                  ) : (
-                    <form action={setAdDirectiveStatus}>
-                      <input type="hidden" name="id" value={d.id} />
-                      <input type="hidden" name="status" value="active" />
-                      <Button type="submit" size="sm" variant="outline">
-                        Activate
-                      </Button>
-                    </form>
-                  )}
-                </div>
-              </li>
-            ))}
+            {directives.map((d) => {
+              const notStarted =
+                d.starts_on != null && d.starts_on > today;
+              const ended = d.ends_on != null && d.ends_on < today;
+              return (
+                <li
+                  key={d.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
+                >
+                  <div>
+                    <p className="font-medium">
+                      [{d.scope}] {d.title}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        · {d.status}
+                        {notStarted ? ` · starts ${d.starts_on}` : ""}
+                        {ended ? ` · ended ${d.ends_on}` : ""}
+                      </span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">{d.focus_text}</p>
+                    {notStarted && d.status === "active" ? (
+                      <p className="mt-1 text-xs text-ink-soft">
+                        Timeframe starts {d.starts_on}. Run pipeline still binds
+                        this directive; leave Starts empty for immediate
+                        auto-selection.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-start gap-2">
+                    {canManage && brandId && d.status === "active" ? (
+                      <RunPipelineButton
+                        brandId={brandId}
+                        directiveId={d.id}
+                        dailyBudgetPence={200}
+                      />
+                    ) : null}
+                    {d.status === "active" ? (
+                      <form action={setAdDirectiveStatus}>
+                        <input type="hidden" name="id" value={d.id} />
+                        <input type="hidden" name="status" value="paused" />
+                        <Button type="submit" size="sm" variant="outline">
+                          Pause
+                        </Button>
+                      </form>
+                    ) : (
+                      <form action={setAdDirectiveStatus}>
+                        <input type="hidden" name="id" value={d.id} />
+                        <input type="hidden" name="status" value="active" />
+                        <Button type="submit" size="sm" variant="outline">
+                          Activate
+                        </Button>
+                      </form>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

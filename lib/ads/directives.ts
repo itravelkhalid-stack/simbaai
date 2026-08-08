@@ -60,13 +60,16 @@ export async function listActiveDirectives(params: {
     budget_share_pct: number | null;
     notes: string | null;
     destination_slug: string | null;
+    starts_on: string | null;
+    ends_on: string | null;
   }>
 > {
   const supabase = createAdminClient();
   const today = new Date().toISOString().slice(0, 10);
+  // Single .or / and so PostgREST does not drop one of the date clauses.
   const { data, error } = await adsTable(supabase, "ad_campaign_directives")
     .select(
-      "id, scope, title, focus_text, budget_share_pct, notes, destination_slug",
+      "id, scope, title, focus_text, budget_share_pct, notes, destination_slug, starts_on, ends_on",
     )
     .eq("organization_id", params.organizationId)
     .eq("brand_id", params.brandId)
@@ -83,5 +86,49 @@ export async function listActiveDirectives(params: {
     budget_share_pct: number | null;
     notes: string | null;
     destination_slug: string | null;
+    starts_on: string | null;
+    ends_on: string | null;
   }>;
+}
+
+/** Load a specific directive for an explicit Run-pipeline click (status=active). */
+export async function getAdDirectiveById(params: {
+  organizationId: string;
+  brandId: string;
+  directiveId: string;
+}): Promise<{
+  id: string;
+  scope: string;
+  title: string;
+  focus_text: string;
+  budget_share_pct: number | null;
+  notes: string | null;
+  destination_slug: string | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  status: string;
+} | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await adsTable(supabase, "ad_campaign_directives")
+    .select(
+      "id, scope, title, focus_text, budget_share_pct, notes, destination_slug, starts_on, ends_on, status",
+    )
+    .eq("organization_id", params.organizationId)
+    .eq("brand_id", params.brandId)
+    .eq("id", params.directiveId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return data as {
+    id: string;
+    scope: string;
+    title: string;
+    focus_text: string;
+    budget_share_pct: number | null;
+    notes: string | null;
+    destination_slug: string | null;
+    starts_on: string | null;
+    ends_on: string | null;
+    status: string;
+  };
 }

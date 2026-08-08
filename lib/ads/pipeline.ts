@@ -2,7 +2,7 @@ import "server-only";
 
 import { generateMediaPlan, generateAdCreatives } from "@/lib/agents/ads/generate";
 import { getBrandContext } from "@/lib/brand/context";
-import { listActiveDirectives } from "@/lib/ads/directives";
+import { listActiveDirectives, getAdDirectiveById } from "@/lib/ads/directives";
 import {
   ensureLaunchReview,
   runDeterministicLaunchChecks,
@@ -69,9 +69,35 @@ export async function runAdsPlanningPipeline(params: {
     organizationId: params.organizationId,
     brandId: params.brandId,
   });
-  const directive = params.directiveId
-    ? directives.find((d) => d.id === params.directiveId) ?? null
-    : directives[0] ?? null;
+
+  let directive: Awaited<ReturnType<typeof listActiveDirectives>>[number] | null =
+    params.directiveId ? null : (directives[0] ?? null);
+  let scheduleNote: string | null = null;
+
+  if (params.directiveId) {
+    const selected = await getAdDirectiveById({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      directiveId: params.directiveId,
+    });
+    if (!selected) {
+      throw new Error(
+        `Directive ${params.directiveId} was not found for this brand.`,
+      );
+    }
+    if (selected.status !== "active") {
+      throw new Error(
+        `Directive "${selected.title}" is ${selected.status}, not active. Activate it before running the pipeline.`,
+      );
+    }
+    // Explicit Run-pipeline clicks bind even if starts_on is in the future —
+    // date window gates auto-selection only, not human-triggered runs.
+    directive = selected;
+    const today = new Date().toISOString().slice(0, 10);
+    if (selected.starts_on && selected.starts_on > today) {
+      scheduleNote = `Directive timeframe starts ${selected.starts_on} (planning now; launch schedule should respect starts_on).`;
+    }
+  }
 
   const admissible = await getAdmissibleDestinations({
     organizationId: params.organizationId,
@@ -89,11 +115,13 @@ export async function runAdsPlanningPipeline(params: {
         ? `Budget share hint: ${directive.budget_share_pct}% of monthly`
         : null,
       directive.notes ? `Notes: ${directive.notes}` : null,
+      scheduleNote,
       "Build ONE Meta campaign around this directive. Optimisation: link clicks / landing page views (no conversion events — Meta Pixel not installed).",
     ]
       .filter(Boolean)
       .join("\n");
     evidence.push(`directive:${directive.id}:${directive.focus_text}`);
+    if (scheduleNote) evidence.push(`schedule:${scheduleNote}`);
   } else {
     const picks = admissible.slice(0, 5);
     evidence.push(
