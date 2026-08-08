@@ -3,8 +3,8 @@ import { z } from "zod";
 export const cmoApproveDecisionSchema = z.object({
   decision: z.enum(["approve", "park"]),
   brand_fit: z.enum(["strong", "acceptable", "poor"]),
-  rationale: z.string().min(8).max(800),
-  park_reason: z.string().max(500).optional().nullable(),
+  rationale: z.string().min(8).max(2500),
+  park_reason: z.string().max(1200).optional().nullable(),
 });
 
 export type CmoApproveDecision = z.infer<typeof cmoApproveDecisionSchema>;
