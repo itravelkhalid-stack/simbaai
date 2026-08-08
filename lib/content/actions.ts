@@ -33,19 +33,23 @@ async function assertCanWrite() {
   return ctx;
 }
 
-async function assertCanScheduleInstagram(params: {
+async function assertCanScheduleStoryMedia(params: {
   organizationId: string;
   itemId: string;
 }) {
   const supabase = await createClient();
   const { data: item } = await supabase
     .from("content_items")
-    .select("platform, media_urls, brand_id")
+    .select("platform, format, media_urls, brand_id")
     .eq("id", params.itemId)
     .eq("organization_id", params.organizationId)
     .maybeSingle();
   if (!item) throw new Error("Content item not found");
-  if (item.platform !== "instagram") return;
+
+  const needsImageGate =
+    item.platform === "instagram" ||
+    (item.platform === "facebook" && item.format === "story");
+  if (!needsImageGate) return;
 
   const media = (item.media_urls as string[] | null) ?? [];
   const { count: linkedCount } = await supabase
@@ -56,8 +60,40 @@ async function assertCanScheduleInstagram(params: {
 
   if (!media.length && !(linkedCount && linkedCount > 0)) {
     throw new Error(
-      "Instagram posts require at least one image before scheduling. Attach media from the brand library or upload an image on the content item, then try again.",
+      item.platform === "facebook"
+        ? "Facebook Stories require at least one image before scheduling. Attach a 9:16 library image, then try again."
+        : "Instagram posts require at least one image before scheduling. Attach media from the brand library or upload an image on the content item, then try again.",
     );
+  }
+
+  if (item.platform === "facebook") {
+    const { data: fbConnection } = await supabase
+      .from("social_connections")
+      .select("scopes, status")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", item.brand_id)
+      .eq("platform", "facebook")
+      .eq("status", "active")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!fbConnection) {
+      throw new Error(
+        "No active Facebook Page connection. Connect Meta in Social and select a Page.",
+      );
+    }
+    const {
+      connectionCanPublishFacebookStories,
+      FACEBOOK_STORY_SCOPE_REQUIRED_MESSAGE,
+    } = await import("@/lib/social/meta-capabilities");
+    if (
+      !connectionCanPublishFacebookStories({
+        scopes: fbConnection.scopes as string[] | null,
+      })
+    ) {
+      throw new Error(FACEBOOK_STORY_SCOPE_REQUIRED_MESSAGE);
+    }
+    return;
   }
 
   const { data: igConnection } = await supabase
@@ -459,7 +495,7 @@ export async function updateContentItem(
     const willSchedule = Boolean(parsed.data.scheduledAt);
     if (willSchedule) {
       try {
-        await assertCanScheduleInstagram({
+        await assertCanScheduleStoryMedia({
           organizationId: active.organization_id,
           itemId: parsed.data.itemId,
         });
@@ -530,7 +566,7 @@ export async function approveContentItem(formData: FormData) {
 
   const nextStatus = item?.scheduled_at ? "scheduled" : "approved";
   if (nextStatus === "scheduled") {
-    await assertCanScheduleInstagram({
+    await assertCanScheduleStoryMedia({
       organizationId: active.organization_id,
       itemId: parsed.data.itemId,
     });
@@ -700,7 +736,7 @@ export async function rescheduleContentItem(formData: FormData) {
   if (!parsed.success) throw new Error("Invalid reschedule");
 
   const { active } = await assertCanWrite();
-  await assertCanScheduleInstagram({
+  await assertCanScheduleStoryMedia({
     organizationId: active.organization_id,
     itemId: parsed.data.itemId,
   });
@@ -778,6 +814,7 @@ export async function saveContentCadence(
       },
       facebook: {
         feed_per_day: n("fbFeed", 1),
+        stories_per_day: n("fbStories", 0),
       },
       linkedin: {
         feed_per_day: n("liFeed", 1),

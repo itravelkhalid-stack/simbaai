@@ -48,9 +48,10 @@ export function ContentCadenceForm({
       <div>
         <h2 className="text-sm font-medium">Organic cadence — {brandName}</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Daily targets the cadence filler keeps covered 7 days ahead.
-          Instagram Stories publish via Graph{" "}
-          <code className="text-[10px]">media_type=STORIES</code>.
+          Daily targets the cadence filler keeps covered 7 days ahead. Stories
+          use 9:16 media — IG via{" "}
+          <code className="text-[10px]">media_type=STORIES</code>, Facebook via{" "}
+          <code className="text-[10px]">/{`{page-id}`}/photo_stories</code>.
         </p>
       </div>
       <input type="hidden" name="brandId" value={brandId} />
@@ -81,6 +82,14 @@ export function ContentCadenceForm({
             min={0}
             max={10}
             defaultValue={fb.feed_per_day ?? 1}
+          />
+          <Label className="text-xs">Facebook stories / day</Label>
+          <Input
+            name="fbStories"
+            type="number"
+            min={0}
+            max={10}
+            defaultValue={fb.stories_per_day ?? 0}
           />
         </div>
         <div className="space-y-2">

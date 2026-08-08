@@ -6,6 +6,7 @@ import {
   assetFitsSlot,
   canDeriveStoryFit,
   formatSlotForContent,
+  isStoryMediaSlot,
 } from "@/lib/media/format-fit";
 import { deriveStoryFittedAsset } from "@/lib/media/story-fit";
 import type { MediaAsset } from "@/lib/types/media";
@@ -133,7 +134,7 @@ export async function selectBestLibraryImage(params: {
   type Row = (typeof assets)[number];
   const candidates: Row[] = [];
   for (const asset of assets) {
-    if (asset.is_derived && slot !== "instagram_story") continue;
+    if (asset.is_derived && !isStoryMediaSlot(slot)) continue;
     // Never reuse within the 14-day window
     if (recentlyUsedIds.has(asset.id)) continue;
     if (slot) {
@@ -147,7 +148,7 @@ export async function selectBestLibraryImage(params: {
   const neverUsed = candidates.filter((a) => !everUsedIds.has(a.id));
   const pool = neverUsed.length > 0 ? neverUsed : candidates;
 
-  if (!pool.length && slot === "instagram_story") {
+  if (!pool.length && isStoryMediaSlot(slot)) {
     return null;
   }
   const searchPool = pool;
@@ -171,7 +172,7 @@ export async function selectBestLibraryImage(params: {
 }
 
 /**
- * Auto-attach a format-suitable library image. For IG stories without 9:16,
+ * Auto-attach a format-suitable library image. For IG/FB stories without 9:16,
  * derives a fitted asset when possible; otherwise sets awaiting note.
  */
 export async function autoAttachLibraryImage(params: {
@@ -200,7 +201,7 @@ export async function autoAttachLibraryImage(params: {
     preferUnused: true,
   });
 
-  if (!assetId && slot === "instagram_story") {
+  if (!assetId && isStoryMediaSlot(slot)) {
     // Pick any recent image we can derive from
     const { data: sources } = await supabase
       .from("media_assets")

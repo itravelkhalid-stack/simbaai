@@ -65,10 +65,12 @@ function topicForGap(params: {
       : "";
 
   if (params.kind === "story") {
+    const platformLabel =
+      params.platform === "facebook" ? "Facebook Story" : "Instagram Story";
     if (params.feedCopyHint) {
-      return `Light Instagram Story visual — different angle (${params.angle}) teasing: ${params.feedCopyHint.slice(0, 140)}. Keep caption under 80 chars.${avoid}`;
+      return `Light ${platformLabel} visual — different angle (${params.angle}) teasing: ${params.feedCopyHint.slice(0, 140)}. Keep caption under 80 chars.${avoid}`;
     }
-    return `Light Instagram Story moment for ${params.brandName}${params.pillarName ? ` (${params.pillarName} pillar)` : ""} on ${params.date}. Angle: ${params.angle}. Short hook, visual-first, under 80 chars.${avoid}`;
+    return `Light ${platformLabel} moment for ${params.brandName}${params.pillarName ? ` (${params.pillarName} pillar)` : ""} on ${params.date}. Angle: ${params.angle}. Short hook, visual-first, under 80 chars.${avoid}`;
   }
   return `${params.platform} feed post for ${params.brandName}${params.pillarName ? ` — pillar: ${params.pillarName}` : ""} scheduled ${params.date}. Fresh angle: ${params.angle}. Distinct title/topic from recent calendar.${avoid}`;
 }

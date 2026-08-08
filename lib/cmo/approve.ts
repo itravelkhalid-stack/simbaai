@@ -25,10 +25,11 @@ export type CmoReviewResult = {
   detail: string;
 };
 
-async function instagramCanSchedule(params: {
+async function storyNeedsImageGate(params: {
   organizationId: string;
   brandId: string;
   itemId: string;
+  platform: string;
   mediaUrls: string[] | null;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   const media = params.mediaUrls ?? [];
@@ -40,11 +41,45 @@ async function instagramCanSchedule(params: {
     .eq("organization_id", params.organizationId);
 
   if (!media.length && !(linkedCount && linkedCount > 0)) {
+    const who =
+      params.platform === "facebook" ? "Facebook Stories" : "Instagram";
     return {
       ok: false,
-      reason:
-        "Awaiting image — Instagram needs a library image before the CMO can schedule.",
+      reason: `Awaiting image — ${who} need a library image before the CMO can schedule.`,
     };
+  }
+
+  if (params.platform === "facebook") {
+    const { data: fbConnection } = await supabase
+      .from("social_connections")
+      .select("id, scopes, status")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .eq("platform", "facebook")
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    if (!fbConnection) {
+      return {
+        ok: false,
+        reason: "No active Facebook Page connection — parked for human.",
+      };
+    }
+    const { connectionCanPublishFacebookStories } = await import(
+      "@/lib/social/meta-capabilities"
+    );
+    if (
+      !connectionCanPublishFacebookStories({
+        scopes: fbConnection.scopes as string[] | null,
+      })
+    ) {
+      return {
+        ok: false,
+        reason:
+          "Facebook Page token missing Stories scopes (pages_manage_posts, pages_read_engagement, pages_show_list) — reconnect Meta.",
+      };
+    }
+    return { ok: true };
   }
 
   const { data: igConnection } = await supabase
@@ -162,11 +197,16 @@ async function applyApproval(params: {
     ? "scheduled"
     : "approved";
 
-  if (nextStatus === "scheduled" && item.platform === "instagram") {
-    const gate = await instagramCanSchedule({
+  if (
+    nextStatus === "scheduled" &&
+    (item.platform === "instagram" ||
+      (item.platform === "facebook" && item.format === "story"))
+  ) {
+    const gate = await storyNeedsImageGate({
       organizationId: params.organizationId,
       brandId: params.brandId,
       itemId: item.id,
+      platform: item.platform,
       mediaUrls: item.media_urls,
     });
     if (!gate.ok) {
