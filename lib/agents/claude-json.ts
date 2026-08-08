@@ -22,6 +22,7 @@ export function zodSchemaToToolInputSchema(
   const raw = z.toJSONSchema(schema) as Record<string, unknown>;
   // Anthropic rejects draft $schema and expects a plain object schema.
   const { $schema: _schema, ...rest } = raw;
+  void _schema;
   if (rest.type !== "object") {
     throw new Error("Structured output schema must be a Zod object");
   }

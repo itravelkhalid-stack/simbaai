@@ -110,7 +110,7 @@ async function applyApproval(params: {
   agentRunId: string | null;
 }): Promise<CmoReviewResult> {
   const item = params.item;
-  let nextStatus: "scheduled" | "approved" = item.scheduled_at
+  const nextStatus: "scheduled" | "approved" = item.scheduled_at
     ? "scheduled"
     : "approved";
 

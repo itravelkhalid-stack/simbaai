@@ -9,7 +9,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   extractUrlsFromText,
   findDisallowedUrls,
-  urlAllowedByList,
 } from "@/lib/content/link-allowlist-core";
 
 export {
