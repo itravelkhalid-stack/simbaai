@@ -359,12 +359,6 @@ export async function reviewContentItemAsCmo(params: {
       { admin: true },
     );
 
-    const brandContext = await getBrandContext(
-      params.organizationId,
-      params.brandId,
-      { admin: true },
-    );
-
     const promptInput = {
       brandName: brandContext.brand.name,
       brandVoice: brandContext.brand.brand_voice ?? "",
