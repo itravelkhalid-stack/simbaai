@@ -1,4 +1,10 @@
-import type { MediaPlanPayload } from "@/lib/types/ads";
+import {
+  platformDailyCapFromShare,
+  resolvePlatformShares,
+  type AdBudgetAllocationMode,
+  type PlatformAllocationRow,
+} from "@/lib/ads/budget-allocation";
+import type { AdPlatform, MediaPlanPayload } from "@/lib/types/ads";
 
 /** Nominal days for monthly → daily pacing. */
 export const BUDGET_PACE_DAYS = 30;
@@ -19,46 +25,98 @@ export function dailyPaceBounds(monthlyBudgetPence: number) {
 }
 
 /**
+ * Combined daily ceiling for the brand: monthly/30 × (1+flex), then org hard cap.
+ * This is the TOTAL across all platforms — never per-platform full pot.
+ */
+export function combinedDailyCeiling(params: {
+  monthlyBudgetPence: number;
+  orgMaxDailySpendPence?: number | null;
+}) {
+  const { max: paceMax } = dailyPaceBounds(params.monthlyBudgetPence);
+  let ceiling = paceMax;
+  if (
+    params.orgMaxDailySpendPence != null &&
+    params.orgMaxDailySpendPence > 0
+  ) {
+    ceiling = Math.min(ceiling, params.orgMaxDailySpendPence);
+  }
+  return ceiling;
+}
+
+/**
  * Re-allocate campaign daily budgets so they sum to the paced daily total,
- * respect platform_split when present, and clamp each row into ±20% of its share.
- * Hard-cap: never exceed orgMaxDailySpendPence (sum of dailies).
+ * respect allocation / platform_split hard constraints, and clamp into ±20%.
+ * Hard-cap: never exceed orgMaxDailySpendPence (sum of dailies across platforms).
  */
 export function applyBudgetPacingToPlan(params: {
   plan: MediaPlanPayload;
   monthlyBudgetPence: number;
   orgMaxDailySpendPence?: number | null;
   maxSingleCampaignDailyPence?: number | null;
+  allocationMode?: AdBudgetAllocationMode;
+  platformAllocations?: PlatformAllocationRow[];
 }): MediaPlanPayload {
-  const { target, max: flexMax } = dailyPaceBounds(params.monthlyBudgetPence);
-  let pool = target;
-  if (
-    params.orgMaxDailySpendPence != null &&
-    params.orgMaxDailySpendPence > 0
-  ) {
-    pool = Math.min(pool, params.orgMaxDailySpendPence);
-  }
+  const pool = combinedDailyCeiling({
+    monthlyBudgetPence: params.monthlyBudgetPence,
+    orgMaxDailySpendPence: params.orgMaxDailySpendPence,
+  });
+  const { max: flexMax } = dailyPaceBounds(params.monthlyBudgetPence);
 
   const campaigns = [...(params.plan.campaigns ?? [])];
   if (!campaigns.length) {
     return { ...params.plan, campaigns };
   }
 
-  const split = params.plan.platform_split ?? [];
-  const pctByPlatform = new Map(
-    split.map((s) => [s.platform, Number(s.budget_pct) || 0]),
-  );
-  const weights = campaigns.map((c) => {
-    const fromSplit = pctByPlatform.get(c.platform) ?? 0;
-    if (fromSplit > 0) return fromSplit;
-    return 1;
-  });
-  const weightSum = weights.reduce((s, w) => s + w, 0) || campaigns.length;
+  const platforms = [
+    ...new Set(campaigns.map((c) => c.platform)),
+  ] as AdPlatform[];
 
-  const paced = campaigns.map((c, i) => {
-    const share = pool * (weights[i]! / weightSum);
-    const shareMax = Math.round(share * (1 + BUDGET_PACE_FLEX));
-    const shareMin = Math.round(share * (1 - BUDGET_PACE_FLEX));
-    let daily = Math.round(share);
+  const mode = params.allocationMode ?? "ai_allocates";
+  const allocations = params.platformAllocations ?? [];
+
+  // Prefer explicit allocation hard constraints; fall back to plan.platform_split as AI proposal
+  const aiPct: Partial<Record<AdPlatform, number>> = {};
+  for (const row of params.plan.platform_split ?? []) {
+    aiPct[row.platform] = Number(row.budget_pct) || 0;
+  }
+
+  const shares = resolvePlatformShares({
+    monthlyBudgetPence: params.monthlyBudgetPence,
+    mode,
+    allocations,
+    platforms,
+    aiPctByPlatform: aiPct,
+  });
+  const dailyByPlatform = new Map(
+    shares.map((s) => {
+      const cap = platformDailyCapFromShare({
+        monthlySharePence: s.monthly_pence,
+        flex: BUDGET_PACE_FLEX,
+      });
+      // Platform share of the combined pool (target), not exceeding flex max
+      const shareOfPool = Math.min(
+        cap.target,
+        Math.round(pool * (s.pct / 100)),
+      );
+      return [s.platform, Math.max(0, shareOfPool)] as const;
+    }),
+  );
+
+  // Weight campaigns within each platform
+  const platformCampaignCounts = new Map<AdPlatform, number>();
+  for (const c of campaigns) {
+    platformCampaignCounts.set(
+      c.platform,
+      (platformCampaignCounts.get(c.platform) ?? 0) + 1,
+    );
+  }
+
+  const paced = campaigns.map((c) => {
+    const platformPool = dailyByPlatform.get(c.platform) ?? 0;
+    const n = platformCampaignCounts.get(c.platform) ?? 1;
+    let daily = Math.round(platformPool / n);
+    const shareMax = Math.round(daily * (1 + BUDGET_PACE_FLEX));
+    const shareMin = Math.round(daily * (1 - BUDGET_PACE_FLEX));
     daily = Math.max(shareMin, Math.min(shareMax, daily));
     if (
       params.maxSingleCampaignDailyPence != null &&
@@ -66,12 +124,10 @@ export function applyBudgetPacingToPlan(params: {
     ) {
       daily = Math.min(daily, params.maxSingleCampaignDailyPence);
     }
-    // Also never exceed overall flex max for a single day of total pace
-    daily = Math.min(daily, flexMax);
+    daily = Math.min(daily, flexMax, pool);
     return { ...c, daily_budget_pence: Math.max(0, daily) };
   });
 
-  // If sum still over pool (rounding / caps), scale down proportionally
   let sum = paced.reduce((s, c) => s + (c.daily_budget_pence ?? 0), 0);
   if (sum > pool && sum > 0) {
     const scale = pool / sum;
@@ -84,10 +140,23 @@ export function applyBudgetPacingToPlan(params: {
     sum = paced.reduce((s, c) => s + (c.daily_budget_pence ?? 0), 0);
   }
 
+  // Sync platform_split to resolved shares for transparency
+  const platform_split = shares.map((s) => ({
+    platform: s.platform,
+    budget_pct: Math.round(s.pct * 10) / 10,
+    rationale:
+      s.locked
+        ? `Hard ${s.source} allocation (manual constraint)`
+        : s.source === "ai"
+          ? "AI allocation within combined monthly pot"
+          : "Even split of unconstrained pot remainder",
+  }));
+
   return {
     ...params.plan,
     campaigns: paced,
-    summary: `${params.plan.summary ?? ""}\n\n[Budget pacing] Monthly £${(params.monthlyBudgetPence / 100).toFixed(0)} → ~£${(pool / 100).toFixed(2)}/day (±${BUDGET_PACE_FLEX * 100}% flex; org caps applied).`.trim(),
+    platform_split,
+    summary: `${params.plan.summary ?? ""}\n\n[Budget pacing] Combined monthly pot £${(params.monthlyBudgetPence / 100).toFixed(0)} → ~£${(pool / 100).toFixed(2)}/day across all platforms (±${BUDGET_PACE_FLEX * 100}% flex; org caps applied; mode=${mode}).`.trim(),
   };
 }
 
@@ -99,6 +168,23 @@ export function assertDailyBudgetsWithinOrgCap(params: {
   if (sum > params.orgMaxDailySpendPence) {
     throw new Error(
       `Plan daily spend £${(sum / 100).toFixed(2)} exceeds org_ad_limits max daily £${(params.orgMaxDailySpendPence / 100).toFixed(2)}`,
+    );
+  }
+}
+
+export function assertCombinedDailyWithinPot(params: {
+  dailyBudgetsPence: number[];
+  monthlyBudgetPence: number;
+  orgMaxDailySpendPence?: number | null;
+}) {
+  const sum = params.dailyBudgetsPence.reduce((s, n) => s + n, 0);
+  const ceiling = combinedDailyCeiling({
+    monthlyBudgetPence: params.monthlyBudgetPence,
+    orgMaxDailySpendPence: params.orgMaxDailySpendPence,
+  });
+  if (sum > ceiling) {
+    throw new Error(
+      `Combined daily spend £${(sum / 100).toFixed(2)} exceeds combined pot pacing ceiling £${(ceiling / 100).toFixed(2)} (monthly/30 ±20% and org limits).`,
     );
   }
 }

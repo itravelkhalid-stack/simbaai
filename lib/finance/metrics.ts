@@ -139,6 +139,92 @@ export async function getBudgetVsActual(params: {
     });
 }
 
+export type CombinedAdPotActual = {
+  year_month: string;
+  pot_pence: number | null;
+  pot_source: "schedule" | "default" | "none";
+  currency: string;
+  allocation_mode: string;
+  actual_ad_spend_pence: number;
+  projected_month_end_pence: number;
+  variance_pence: number | null;
+  pacing_label: string;
+  note: string;
+};
+
+/** Combined monthly ad pot (all platforms) vs actual ad spend — not per-channel silos. */
+export async function getCombinedAdPotActual(params: {
+  organizationId: string;
+  brandId: string;
+  asOf?: Date;
+}): Promise<CombinedAdPotActual> {
+  const { resolveMonthBudget } = await import("@/lib/ads/budget-schedule");
+  const { currentYearMonth } = await import("@/lib/ads/budget-allocation");
+  const asOf = params.asOf ?? new Date();
+  const yearMonth = currentYearMonth(asOf);
+  const monthBudget = await resolveMonthBudget({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+    yearMonth,
+    admin: true,
+  });
+
+  const monthStart = `${yearMonth}-01`;
+  const [y, m] = yearMonth.split("-").map(Number);
+  const monthEndDate = new Date(Date.UTC(y!, m!, 0));
+  const monthEnd = monthEndDate.toISOString().slice(0, 10);
+  const dayOfMonth = Math.min(asOf.getUTCDate(), monthEndDate.getUTCDate());
+  const daysInMonth = monthEndDate.getUTCDate();
+
+  const supabase = createAdminClient();
+  const [{ data: campaigns }, { data: metrics }] = await Promise.all([
+    supabase
+      .from("ad_campaigns")
+      .select("id")
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId),
+    supabase
+      .from("ad_metrics_daily")
+      .select("campaign_id, spend_pence")
+      .eq("organization_id", params.organizationId)
+      .gte("metric_date", monthStart)
+      .lte("metric_date", monthEnd),
+  ]);
+  const ids = new Set((campaigns ?? []).map((c) => c.id));
+  const actual = (metrics ?? [])
+    .filter((r) => ids.has(r.campaign_id))
+    .reduce((s, r) => s + Number(r.spend_pence ?? 0), 0);
+  const projected =
+    dayOfMonth > 0 ? Math.round((actual / dayOfMonth) * daysInMonth) : 0;
+  const pot = monthBudget.budgetPence;
+  const variance = pot != null ? actual - pot : null;
+  let pacing_label = "No combined ad pot set";
+  if (pot != null && pot > 0) {
+    const expected = pot * (dayOfMonth / daysInMonth);
+    const pct =
+      expected > 0
+        ? Math.round(((actual - expected) / expected) * 1000) / 10
+        : 0;
+    if (pct > 5) pacing_label = `Combined ad pot pacing ${pct}% over`;
+    else if (pct < -5)
+      pacing_label = `Combined ad pot pacing ${Math.abs(pct)}% under`;
+    else pacing_label = "Combined ad pot on pace";
+  }
+
+  return {
+    year_month: yearMonth,
+    pot_pence: pot,
+    pot_source: monthBudget.source,
+    currency: monthBudget.currency,
+    allocation_mode: monthBudget.allocationMode,
+    actual_ad_spend_pence: actual,
+    projected_month_end_pence: projected,
+    variance_pence: variance,
+    pacing_label,
+    note: "Monthly budget is a SINGLE pot across Meta/Google/all ad platforms — do not treat channel finance budgets as separate full pots.",
+  };
+}
+
 function channelLabel(c: FinanceChannel) {
   return c.charAt(0).toUpperCase() + c.slice(1);
 }

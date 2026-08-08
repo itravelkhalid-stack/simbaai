@@ -105,6 +105,12 @@ export async function gatherMeetingContext(params: {
     .eq("brand_id", params.brandId);
   const campaignIds = (brandCampaigns ?? []).map((c) => c.id);
 
+  const { getCombinedAdPotActual } = await import("@/lib/finance/metrics");
+  const combinedAdPot = await getCombinedAdPotActual({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+  });
+
   const [
     { data: publishedPosts },
     { data: emailCampaigns },
@@ -746,6 +752,13 @@ ${
         .join("\n")
     : "- None"
 }
+
+### Combined ad budget pot (ALL platforms share one monthly pot)
+- Month: ${combinedAdPot.year_month} (source: ${combinedAdPot.pot_source}, mode: ${combinedAdPot.allocation_mode})
+- Pot: £${((combinedAdPot.pot_pence ?? 0) / 100).toFixed(0)} · Spend MTD: £${(combinedAdPot.actual_ad_spend_pence / 100).toFixed(2)} · Projected month-end: £${(combinedAdPot.projected_month_end_pence / 100).toFixed(2)}
+- Pacing: ${combinedAdPot.pacing_label}
+- ${combinedAdPot.note}
+- When proposing shift_budget, keep the SUM of daily budgets across Meta+Google (and future platforms) within this pot's daily pace (monthly/30 ±20%) and org_ad_limits.
 
 ### Finance rollups
 ${

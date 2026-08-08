@@ -179,6 +179,33 @@ export type OrgAdLimits = {
   updated_at: string;
 };
 
+export type AdBudgetAllocationMode =
+  | "manual_pct"
+  | "manual_amount"
+  | "ai_allocates";
+
+export type PlatformAllocationRow = {
+  platform: AdPlatform;
+  pct?: number | null;
+  amount_pence?: number | null;
+  locked?: boolean;
+};
+
+/** Per-month TOTAL ad pot (all platforms) for a brand. */
+export type BrandBudgetMonth = {
+  id: string;
+  organization_id: string;
+  brand_id: string;
+  year_month: string;
+  budget_pence: number;
+  currency: string;
+  allocation_mode: AdBudgetAllocationMode;
+  platform_allocations: PlatformAllocationRow[];
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AdCreative = {
   id: string;
   organization_id: string;

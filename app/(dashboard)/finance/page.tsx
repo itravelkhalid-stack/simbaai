@@ -12,6 +12,7 @@ import {
   buildFinanceCsv,
   getBlendedMetrics,
   getBudgetVsActual,
+  getCombinedAdPotActual,
   getMonthlyPnL,
 } from "@/lib/finance/metrics";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -69,7 +70,8 @@ export default async function FinanceDashboardPage({
     );
   }
 
-  const [budgetActual, blended, pnl, { data: summaries }] = await Promise.all([
+  const [budgetActual, blended, pnl, { data: summaries }, combinedAdPot] =
+    await Promise.all([
     getBudgetVsActual({
       organizationId: active.organization_id,
       brandId,
@@ -94,6 +96,10 @@ export default async function FinanceDashboardPage({
       .eq("brand_id", brandId)
       .order("week_start", { ascending: false })
       .limit(1),
+    getCombinedAdPotActual({
+      organizationId: active.organization_id,
+      brandId,
+    }),
   ]);
 
   const csv = buildFinanceCsv({ budgetActual, blended, pnl });
@@ -113,6 +119,25 @@ export default async function FinanceDashboardPage({
         }
       />
       <FinanceNav current="/finance" />
+
+      <div className="rounded-[12px] border border-[var(--sem-border)] bg-[var(--sem-highlight)] p-4">
+        <p className="text-xs uppercase tracking-wide text-[var(--sem-ink-soft)]">
+          Combined ad pot · {combinedAdPot.year_month}
+        </p>
+        <p className="mt-1 font-heading text-xl font-semibold tabular-nums text-[var(--sem-ink)]">
+          £{((combinedAdPot.pot_pence ?? 0) / 100).toFixed(0)} shared across all
+          platforms
+        </p>
+        <p className="mt-1 text-sm text-[var(--sem-ink-soft)]">
+          Spend MTD £{(combinedAdPot.actual_ad_spend_pence / 100).toFixed(2)} ·
+          Projected £
+          {(combinedAdPot.projected_month_end_pence / 100).toFixed(2)} ·{" "}
+          {combinedAdPot.pacing_label}.{" "}
+          <Link href="/ads/budgets" className="text-[var(--sem-primary)] underline">
+            Manage in Ads → Budgets
+          </Link>
+        </p>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {(brands ?? []).map((b) => (

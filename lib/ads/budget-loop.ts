@@ -3,8 +3,15 @@ import "server-only";
 import { generateMediaPlan } from "@/lib/agents/ads/generate";
 import {
   applyBudgetPacingToPlan,
+  assertCombinedDailyWithinPot,
   assertDailyBudgetsWithinOrgCap,
 } from "@/lib/ads/budget-pacing";
+import {
+  addMonthsToYearMonth,
+  currentYearMonth,
+  yearMonthLabel,
+} from "@/lib/ads/budget-allocation";
+import { resolveMonthBudget } from "@/lib/ads/budget-schedule";
 import { loadEffectiveOrgAdLimits } from "@/lib/ads/org-limits";
 import {
   authorizeAgentAction,
@@ -45,16 +52,6 @@ export async function runBrandBudgetAdsLoop(params: {
     monthly_ad_budget_currency?: string;
   };
 
-  const monthly = brandRow.monthly_ad_budget_pence ?? null;
-  if (monthly == null || monthly < 100) {
-    return {
-      planId: null,
-      mode: brandRow.autonomy_mode,
-      status: "skipped",
-      detail: "monthly_ad_budget_pence not set",
-    };
-  }
-
   if (brandRow.agent_activity_paused) {
     return {
       planId: null,
@@ -64,9 +61,37 @@ export async function runBrandBudgetAdsLoop(params: {
     };
   }
 
+  const yearMonth = currentYearMonth();
+  const monthBudget = await resolveMonthBudget({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+    yearMonth,
+    admin: true,
+  });
+  const monthly = monthBudget.budgetPence;
+  if (monthly == null || monthly < 100) {
+    return {
+      planId: null,
+      mode: brandRow.autonomy_mode,
+      status: "skipped",
+      detail: `No combined monthly ad pot for ${yearMonth} (schedule or default)`,
+    };
+  }
+
   const autonomy = parseBrandAutonomy(brandRow);
   const adsMode = effectiveAutonomyMode(autonomy, "ads");
-  const currency = brandRow.monthly_ad_budget_currency ?? "GBP";
+  const currency = monthBudget.currency || brandRow.monthly_ad_budget_currency || "GBP";
+
+  const nextMonth = await resolveMonthBudget({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+    yearMonth: addMonthsToYearMonth(yearMonth, 1),
+    admin: true,
+  });
+  const nextMonthHint =
+    nextMonth.budgetPence != null
+      ? `${yearMonthLabel(nextMonth.yearMonth)} budget is £${(nextMonth.budgetPence / 100).toFixed(0)} — structure pacing accordingly.`
+      : `${yearMonthLabel(addMonthsToYearMonth(yearMonth, 1))} has no scheduled pot yet.`;
 
   const monthStart = new Date();
   monthStart.setUTCDate(1);
@@ -117,9 +142,14 @@ export async function runBrandBudgetAdsLoop(params: {
     .single();
 
   try {
+    const allocationHint =
+      monthBudget.allocationMode === "ai_allocates"
+        ? `Allocation mode: AI allocates across platforms from the COMBINED pot. Respect any locked manual rows: ${JSON.stringify(monthBudget.platformAllocations)}.`
+        : `Allocation mode: ${monthBudget.allocationMode} — treat platform allocations as HARD constraints: ${JSON.stringify(monthBudget.platformAllocations)}.`;
+
     const generated = await generateMediaPlan({
       brandContext,
-      goalBrief: `Budget-only autonomy: allocate the brand's monthly ad budget of ${(monthly / 100).toFixed(0)} ${currency} across connected platforms for performance growth. Human sets budget only.`,
+      goalBrief: `Budget-only autonomy: the brand has a single COMBINED monthly ad pot of ${(monthly / 100).toFixed(0)} ${currency} covering ALL platforms (not per-platform). ${allocationHint} ${nextMonthHint} Human sets the pot + optional splits; never assign the full pot to each platform.`,
       monthlyBudgetPence: monthly,
       currency,
       targetRoas: brandRow.autonomy_min_roas ?? null,
@@ -141,12 +171,21 @@ export async function runBrandBudgetAdsLoop(params: {
       monthlyBudgetPence: monthly,
       orgMaxDailySpendPence: limits.max_daily_spend_pence,
       maxSingleCampaignDailyPence: limits.max_single_campaign_daily_budget_pence,
+      allocationMode: monthBudget.allocationMode,
+      platformAllocations: monthBudget.platformAllocations,
     });
 
     assertDailyBudgetsWithinOrgCap({
       dailyBudgetsPence: (planPayload.campaigns ?? []).map(
         (c) => c.daily_budget_pence ?? 0,
       ),
+      orgMaxDailySpendPence: limits.max_daily_spend_pence,
+    });
+    assertCombinedDailyWithinPot({
+      dailyBudgetsPence: (planPayload.campaigns ?? []).map(
+        (c) => c.daily_budget_pence ?? 0,
+      ),
+      monthlyBudgetPence: monthly,
       orgMaxDailySpendPence: limits.max_daily_spend_pence,
     });
 
@@ -347,27 +386,41 @@ export async function runBrandBudgetAdsLoop(params: {
 
 export async function runBudgetAdsLoopsForAllBrands() {
   const supabase = createAdminClient();
-  const { data: brands } = await supabase
-    .from("brands")
-    .select("id, organization_id, monthly_ad_budget_pence, agent_activity_paused")
-    .not("monthly_ad_budget_pence", "is", null)
-    .gte("monthly_ad_budget_pence", 100)
-    .eq("agent_activity_paused", false)
-    .limit(100);
+  const ym = currentYearMonth();
+  const [{ data: withDefault }, { data: withSchedule }] = await Promise.all([
+    supabase
+      .from("brands")
+      .select("id, organization_id")
+      .eq("agent_activity_paused", false)
+      .not("monthly_ad_budget_pence", "is", null)
+      .gte("monthly_ad_budget_pence", 100)
+      .limit(100),
+    supabase
+      .from("brand_budget_months")
+      .select("brand_id, organization_id")
+      .eq("year_month", ym)
+      .gte("budget_pence", 100)
+      .limit(100),
+  ]);
+
+  const brandMap = new Map<string, string>();
+  for (const b of withDefault ?? []) {
+    brandMap.set(b.id, b.organization_id);
+  }
+  for (const row of withSchedule ?? []) {
+    brandMap.set(row.brand_id, row.organization_id);
+  }
 
   const results = [];
-  for (const b of brands ?? []) {
+  for (const [brandId, organizationId] of brandMap) {
     try {
       results.push({
-        brandId: b.id,
-        ...(await runBrandBudgetAdsLoop({
-          organizationId: b.organization_id,
-          brandId: b.id,
-        })),
+        brandId,
+        ...(await runBrandBudgetAdsLoop({ organizationId, brandId })),
       });
     } catch (err) {
       results.push({
-        brandId: b.id,
+        brandId,
         planId: null,
         mode: "?",
         status: "error",

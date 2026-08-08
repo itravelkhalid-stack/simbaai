@@ -226,11 +226,30 @@ export type Database = {
           content_cadence?: Record<string, unknown>;
           monthly_ad_budget_pence?: number | null;
           monthly_ad_budget_currency?: string;
+          ad_budget_allocation_mode?: import("@/lib/types/ads").AdBudgetAllocationMode;
+          ad_budget_platform_allocations?: import("@/lib/types/ads").PlatformAllocationRow[];
           allowed_link_urls?: string[];
           created_at?: string;
           updated_at?: string;
         },
         Partial<Brand>
+      >;
+      brand_budget_months: TableDef<
+        import("@/lib/types/ads").BrandBudgetMonth,
+        {
+          id?: string;
+          organization_id: string;
+          brand_id: string;
+          year_month: string;
+          budget_pence: number;
+          currency?: string;
+          allocation_mode?: import("@/lib/types/ads").AdBudgetAllocationMode;
+          platform_allocations?: import("@/lib/types/ads").PlatformAllocationRow[];
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        },
+        Partial<import("@/lib/types/ads").BrandBudgetMonth>
       >;
       brand_audiences: TableDef<
         BrandAudience,

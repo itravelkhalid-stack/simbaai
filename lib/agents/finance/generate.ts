@@ -8,6 +8,7 @@ import type {
   ChannelBudgetActual,
   FinanceBlendedMetrics,
 } from "@/lib/types/finance";
+import type { CombinedAdPotActual } from "@/lib/finance/metrics";
 
 export async function generateFinanceWeeklyAnalysis(params: {
   brandContext: BrandContext;
@@ -15,6 +16,7 @@ export async function generateFinanceWeeklyAnalysis(params: {
   budgetActual: ChannelBudgetActual[];
   blended: FinanceBlendedMetrics;
   priorBlended?: FinanceBlendedMetrics | null;
+  combinedAdPot?: CombinedAdPotActual | null;
 }) {
   return runClaudeJson({
     system: financeAnalystPrompt.system,
@@ -23,7 +25,10 @@ export async function generateFinanceWeeklyAnalysis(params: {
 ## Period
 ${params.periodLabel}
 
-## Budget vs actual / pacing
+## Combined ad pot (ALL platforms share this pot — primary budget control)
+${JSON.stringify(params.combinedAdPot ?? {}, null, 2)}
+
+## Channel budget vs actual / pacing (ledger channels; reallocations must still respect the combined pot)
 ${JSON.stringify(params.budgetActual, null, 2)}
 
 ## Blended metrics

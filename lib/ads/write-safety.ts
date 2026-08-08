@@ -1,5 +1,15 @@
 import "server-only";
 
+import {
+  platformDailyCapFromShare,
+  resolvePlatformShares,
+  type PlatformAllocationRow,
+} from "@/lib/ads/budget-allocation";
+import {
+  combinedDailyCeiling,
+  dailyPaceBounds,
+} from "@/lib/ads/budget-pacing";
+import { resolveMonthBudget } from "@/lib/ads/budget-schedule";
 import { writeAuditEvent } from "@/lib/compliance/audit";
 import { adsWritesEnabled } from "@/lib/ads/providers/types";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -31,7 +41,21 @@ export type AdWriteAuthorization = {
   effectiveMaxDailySpendPence: number;
   effectiveMaxSingleCampaignDailyBudgetPence: number;
   projectedActiveDailySpendPence: number;
+  /** Brand-level combined pot ceiling (monthly/30 ±20% ∩ org limit). */
+  combinedPotDailyCeilingPence: number | null;
+  projectedBrandCommittedDailyPence: number;
 };
+
+/** Live or already created on a platform — counts against the combined pot. */
+function isCommittedCampaign(row: {
+  id: string;
+  status: string;
+  platform_campaign_id?: string | null;
+}) {
+  if (row.status === "active") return true;
+  if (row.status === "paused" && row.platform_campaign_id) return true;
+  return false;
+}
 
 function isSafetyReducing(input: AuthorizationInput) {
   if (input.action === "pause" || input.action === "archive") return true;
@@ -153,32 +177,74 @@ export async function authorizeAdWrite(
     );
   }
 
-  const { data: activeRows, error: activeError } = await supabase
+  const { data: campaignRows, error: campaignsError } = await supabase
     .from("ad_campaigns")
-    .select("id, brand_id, daily_budget_pence")
+    .select("id, brand_id, platform, status, daily_budget_pence, platform_campaign_id")
     .eq("organization_id", input.organizationId)
-    .eq("status", "active");
-  if (activeError) {
-    return rejectWrite(input, `Unable to verify active spend: ${activeError.message}`);
+    .in("status", ["active", "paused"]);
+  if (campaignsError) {
+    return rejectWrite(
+      input,
+      `Unable to verify campaign spend: ${campaignsError.message}`,
+    );
   }
 
-  const orgSpendWithoutCurrent = (activeRows ?? [])
+  const rowsAll = campaignRows ?? [];
+  const activeRows = rowsAll.filter((row) => row.status === "active");
+  const orgSpendWithoutCurrent = activeRows
     .filter((row) => row.id !== input.campaignId)
     .reduce((sum, row) => sum + Number(row.daily_budget_pence ?? 0), 0);
-  const brandSpendWithoutCurrent = (activeRows ?? [])
+  const brandActiveWithoutCurrent = activeRows
     .filter(
       (row) => row.id !== input.campaignId && row.brand_id === input.brandId,
     )
     .reduce((sum, row) => sum + Number(row.daily_budget_pence ?? 0), 0);
 
+  const brandCommittedWithoutCurrent = rowsAll
+    .filter(
+      (row) =>
+        row.id !== input.campaignId &&
+        row.brand_id === input.brandId &&
+        isCommittedCampaign(row),
+    )
+    .reduce((sum, row) => sum + Number(row.daily_budget_pence ?? 0), 0);
+
+  const brandCommittedPlatformWithoutCurrent = rowsAll
+    .filter(
+      (row) =>
+        row.id !== input.campaignId &&
+        row.brand_id === input.brandId &&
+        row.platform === input.platform &&
+        isCommittedCampaign(row),
+    )
+    .reduce((sum, row) => sum + Number(row.daily_budget_pence ?? 0), 0);
+
+  // create_paused commits a remote budget (paused). activate / budget_update on
+  // live or committed campaigns also affect the combined pot.
+  const currentIsCommitted = rowsAll.some(
+    (row) => row.id === input.campaignId && isCommittedCampaign(row),
+  );
+  const countsTowardCombinedPot =
+    input.action === "activate" ||
+    input.action === "create_paused" ||
+    (input.action === "budget_update" &&
+      (currentIsCommitted ||
+        activeRows.some((row) => row.id === input.campaignId)));
+
   const affectsActiveSpend =
     input.action === "activate" ||
     (input.action === "budget_update" &&
-      (activeRows ?? []).some((row) => row.id === input.campaignId));
+      activeRows.some((row) => row.id === input.campaignId));
+
   const projectedActiveDailySpendPence =
     orgSpendWithoutCurrent + (affectsActiveSpend ? proposed : 0);
-  const projectedBrandDailySpendPence =
-    brandSpendWithoutCurrent + (affectsActiveSpend ? proposed : 0);
+  const projectedBrandActiveDailySpendPence =
+    brandActiveWithoutCurrent + (affectsActiveSpend ? proposed : 0);
+  const projectedBrandCommittedDailyPence =
+    brandCommittedWithoutCurrent + (countsTowardCombinedPot ? proposed : 0);
+  const projectedPlatformCommittedDailyPence =
+    brandCommittedPlatformWithoutCurrent +
+    (countsTowardCombinedPot ? proposed : 0);
 
   if (
     affectsActiveSpend &&
@@ -194,13 +260,74 @@ export async function authorizeAdWrite(
   if (
     affectsActiveSpend &&
     brandLimits &&
-    projectedBrandDailySpendPence > brandLimits.max_daily_spend_pence &&
+    projectedBrandActiveDailySpendPence > brandLimits.max_daily_spend_pence &&
     !safetyReducing
   ) {
     return rejectWrite(
       input,
-      `Projected brand daily spend ${projectedBrandDailySpendPence}p exceeds the brand cap of ${brandLimits.max_daily_spend_pence}p.`,
+      `Projected brand daily spend ${projectedBrandActiveDailySpendPence}p exceeds the brand cap of ${brandLimits.max_daily_spend_pence}p.`,
     );
+  }
+
+  // Combined monthly pot pacing (all platforms share one pot).
+  let combinedPotDailyCeilingPence: number | null = null;
+  if (countsTowardCombinedPot && !safetyReducing) {
+    const monthBudget = await resolveMonthBudget({
+      organizationId: input.organizationId,
+      brandId: input.brandId,
+      admin: true,
+    });
+    if (monthBudget.budgetPence != null && monthBudget.budgetPence > 0) {
+      combinedPotDailyCeilingPence = combinedDailyCeiling({
+        monthlyBudgetPence: monthBudget.budgetPence,
+        orgMaxDailySpendPence: effectiveMaxDailySpendPence,
+      });
+      if (projectedBrandCommittedDailyPence > combinedPotDailyCeilingPence) {
+        const { max: paceMax } = dailyPaceBounds(monthBudget.budgetPence);
+        return rejectWrite(
+          input,
+          `Projected combined daily spend £${(projectedBrandCommittedDailyPence / 100).toFixed(2)} across all platforms exceeds the monthly pot pacing ceiling £${(combinedPotDailyCeilingPence / 100).toFixed(2)} (monthly/30 ±20% = £${(paceMax / 100).toFixed(2)}, org cap £${(effectiveMaxDailySpendPence / 100).toFixed(2)}). Other platforms' committed budgets count against the shared pot.`,
+        );
+      }
+
+      // Respect hard per-platform allocation when mode is manual or rows are pinned.
+      const shares = resolvePlatformShares({
+        monthlyBudgetPence: monthBudget.budgetPence,
+        mode: monthBudget.allocationMode,
+        allocations: monthBudget.platformAllocations as PlatformAllocationRow[],
+        platforms: [
+          ...new Set(
+            rowsAll
+              .filter((r) => r.brand_id === input.brandId)
+              .map((r) => r.platform as AdPlatform)
+              .concat(input.platform),
+          ),
+        ],
+      });
+      const share = shares.find((s) => s.platform === input.platform);
+      if (share && (share.locked || monthBudget.allocationMode !== "ai_allocates")) {
+        const platformCeiling = Math.min(
+          platformDailyCapFromShare({
+            monthlySharePence: share.monthly_pence,
+          }).max,
+          combinedPotDailyCeilingPence,
+        );
+        if (projectedPlatformCommittedDailyPence > platformCeiling) {
+          return rejectWrite(
+            input,
+            `Projected ${input.platform} daily spend £${(projectedPlatformCommittedDailyPence / 100).toFixed(2)} exceeds its allocation ceiling £${(platformCeiling / 100).toFixed(2)} within the shared monthly pot.`,
+          );
+        }
+      }
+    } else if (
+      monthBudget.source === "none" &&
+      (input.action === "activate" || input.action === "create_paused")
+    ) {
+      return rejectWrite(
+        input,
+        "No monthly ad budget pot set for this month (schedule or default). Set Ads → Budgets before launching.",
+      );
+    }
   }
 
   return {
@@ -209,6 +336,8 @@ export async function authorizeAdWrite(
     effectiveMaxDailySpendPence,
     effectiveMaxSingleCampaignDailyBudgetPence,
     projectedActiveDailySpendPence,
+    combinedPotDailyCeilingPence,
+    projectedBrandCommittedDailyPence,
   };
 }
 

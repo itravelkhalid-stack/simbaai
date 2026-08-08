@@ -4,6 +4,7 @@ import { generateFinanceWeeklyAnalysis } from "@/lib/agents/finance/generate";
 import {
   getBlendedMetrics,
   getBudgetVsActual,
+  getCombinedAdPotActual,
 } from "@/lib/finance/metrics";
 import { platformToFinanceChannel } from "@/lib/types/finance";
 
@@ -49,7 +50,7 @@ export async function runWeeklyFinanceAnalyst() {
       .maybeSingle();
     if (existing) continue;
 
-    const [budgetActual, blended, priorBlended] = await Promise.all([
+    const [budgetActual, blended, priorBlended, combinedAdPot] = await Promise.all([
       getBudgetVsActual({
         organizationId: brand.organization_id,
         brandId: brand.id,
@@ -67,6 +68,10 @@ export async function runWeeklyFinanceAnalyst() {
         brandId: brand.id,
         periodStart: prior.start,
         periodEnd: prior.end,
+      }),
+      getCombinedAdPotActual({
+        organizationId: brand.organization_id,
+        brandId: brand.id,
       }),
     ]);
 
@@ -103,6 +108,7 @@ export async function runWeeklyFinanceAnalyst() {
         budgetActual,
         blended,
         priorBlended,
+        combinedAdPot,
       });
 
       const { data: summary, error } = await supabase
