@@ -1,9 +1,42 @@
+"use client";
+
+import { useActionState } from "react";
+
 import { saveOrgAdLimits } from "@/lib/ads/launch-actions";
 import type { OrgAdLimits } from "@/lib/types/ads";
+import {
+  isStaleServerActionError,
+  STALE_SERVER_ACTION_USER_MESSAGE,
+} from "@/lib/ui/stale-server-action";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+type LimitsActionResult = {
+  error?: string;
+  success?: string;
+  stale?: boolean;
+};
+
+const initial: LimitsActionResult = {};
+
+async function saveLimitsAction(
+  prev: LimitsActionResult,
+  formData: FormData,
+): Promise<LimitsActionResult> {
+  try {
+    return await saveOrgAdLimits(prev, formData);
+  } catch (error) {
+    if (isStaleServerActionError(error)) {
+      return { error: STALE_SERVER_ACTION_USER_MESSAGE, stale: true };
+    }
+    return {
+      error:
+        error instanceof Error ? error.message : "Failed to save hard limits",
+    };
+  }
+}
 
 export function AdLimitsForm({
   limits,
@@ -14,8 +47,16 @@ export function AdLimitsForm({
   brandId?: string;
   brandName?: string;
 }) {
+  const [state, action, pending] = useActionState(saveLimitsAction, initial);
+  const formKey = brandId ?? "org";
+  // Org defaults pause-on for fail-closed. Brand overrides default pause-off so
+  // saving a new brand row does not invent a brand-level kill switch.
+  const defaultPaused = brandId
+    ? (limits?.writes_paused ?? false)
+    : (limits?.writes_paused ?? true);
+
   return (
-    <form action={saveOrgAdLimits} className="space-y-4 rounded-xl border p-4">
+    <form action={action} className="space-y-4 rounded-xl border p-4">
       {brandId ? <input type="hidden" name="brandId" value={brandId} /> : null}
       <div>
         <h2 className="font-medium">
@@ -23,7 +64,7 @@ export function AdLimitsForm({
         </h2>
         <p className="text-sm text-muted-foreground">
           {brandName
-            ? "Optional stricter brand override; effective limits are the lower of organization and brand."
+            ? "Optional stricter brand override; effective limits are the lower of organization and brand. Master pause at either level blocks writes."
             : "Checked server-side before every platform mutation. Missing limits block all writes. TikTok, X, and Bing remain blocked."}
         </p>
       </div>
@@ -42,11 +83,11 @@ export function AdLimitsForm({
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="maxDailySpendMajor">
+          <Label htmlFor={`maxDailySpendMajor-${formKey}`}>
             Maximum active daily spend (£)
           </Label>
           <Input
-            id="maxDailySpendMajor"
+            id={`maxDailySpendMajor-${formKey}`}
             name="maxDailySpendMajor"
             type="number"
             min={0}
@@ -56,11 +97,11 @@ export function AdLimitsForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="maxSingleMajor">
+          <Label htmlFor={`maxSingleMajor-${formKey}`}>
             Maximum one-campaign daily budget (£)
           </Label>
           <Input
-            id="maxSingleMajor"
+            id={`maxSingleMajor-${formKey}`}
             name="maxSingleMajor"
             type="number"
             min={0}
@@ -76,7 +117,7 @@ export function AdLimitsForm({
         <input
           type="checkbox"
           name="writesPaused"
-          defaultChecked={limits?.writes_paused ?? true}
+          defaultChecked={defaultPaused}
         />
         Master pause: block creates, launches, and budget increases
       </label>
@@ -98,7 +139,26 @@ export function AdLimitsForm({
           Kill switch: Google
         </label>
       </div>
-      <Button type="submit">Save hard limits</Button>
+      {state.error || state.success ? (
+        <Alert variant={state.error ? "destructive" : "default"}>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>{state.error || state.success}</span>
+            {state.stale ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => window.location.reload()}
+              >
+                Reload page
+              </Button>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <Button type="submit" disabled={pending}>
+        {pending ? "Saving…" : "Save hard limits"}
+      </Button>
     </form>
   );
 }

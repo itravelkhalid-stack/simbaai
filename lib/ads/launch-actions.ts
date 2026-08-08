@@ -588,88 +588,104 @@ export async function archiveAdCampaign(formData: FormData) {
   revalidatePath(`/ads/campaigns/${campaign.id}`);
 }
 
-export async function saveOrgAdLimits(formData: FormData) {
-  const { user, active } = await requireActiveOrg();
-  if (active.role !== "org_owner" && active.role !== "org_admin") {
-    throw new Error("Only organization owners/admins can change ad limits");
-  }
-  const maxDaily = Math.round(Number(formData.get("maxDailySpendMajor")) * 100);
-  const maxSingle = Math.round(Number(formData.get("maxSingleMajor")) * 100);
-  if (
-    !Number.isFinite(maxDaily) ||
-    !Number.isFinite(maxSingle) ||
-    maxDaily < 0 ||
-    maxSingle < 0
-  ) {
-    throw new Error("Limits must be valid non-negative amounts");
-  }
-  if (maxSingle > maxDaily) {
-    throw new Error("Single-campaign cap cannot exceed the organization daily cap");
-  }
+export async function saveOrgAdLimits(
+  _prev: { error?: string; success?: string },
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  try {
+    const { user, active } = await requireActiveOrg();
+    if (active.role !== "org_owner" && active.role !== "org_admin") {
+      return { error: "Only organization owners/admins can change ad limits" };
+    }
+    const maxDaily = Math.round(Number(formData.get("maxDailySpendMajor")) * 100);
+    const maxSingle = Math.round(Number(formData.get("maxSingleMajor")) * 100);
+    if (
+      !Number.isFinite(maxDaily) ||
+      !Number.isFinite(maxSingle) ||
+      maxDaily < 0 ||
+      maxSingle < 0
+    ) {
+      return { error: "Limits must be valid non-negative amounts" };
+    }
+    if (maxSingle > maxDaily) {
+      return {
+        error: "Single-campaign cap cannot exceed the organization daily cap",
+      };
+    }
 
-  const supabase = await createClient();
-  const brandId = String(formData.get("brandId") ?? "").trim() || null;
-  if (brandId) {
-    const { data: brand } = await supabase
-      .from("brands")
-      .select("id")
-      .eq("id", brandId)
-      .eq("organization_id", active.organization_id)
-      .maybeSingle();
-    if (!brand) throw new Error("Brand does not belong to this organization");
-  }
-  const existingResult = brandId
-    ? await supabase
-        .from("org_ad_limits")
+    const supabase = await createClient();
+    const brandId = String(formData.get("brandId") ?? "").trim() || null;
+    if (brandId) {
+      const { data: brand } = await supabase
+        .from("brands")
         .select("id")
+        .eq("id", brandId)
         .eq("organization_id", active.organization_id)
-        .eq("brand_id", brandId)
-        .maybeSingle()
-    : await supabase
-        .from("org_ad_limits")
-        .select("id")
-        .eq("organization_id", active.organization_id)
-        .is("brand_id", null)
         .maybeSingle();
-  const values = {
-    organization_id: active.organization_id,
-    brand_id: brandId,
-    max_daily_spend_pence: maxDaily,
-    max_single_campaign_daily_budget_pence: maxSingle,
-    writes_paused: formData.get("writesPaused") === "on",
-    platform_kill_switches: {
-      meta: formData.get("killMeta") === "on",
-      google: formData.get("killGoogle") === "on",
-      tiktok: true,
-      x: true,
-      bing: true,
-    },
-    updated_by: user.id,
-  };
-  const resolvedExisting = existingResult.data;
-  const result = resolvedExisting
-    ? await supabase
-        .from("org_ad_limits")
-        .update(values)
-        .eq("id", resolvedExisting.id)
-    : await supabase
-        .from("org_ad_limits")
-        .insert({ ...values, created_by: user.id });
-  if (result.error) throw new Error(result.error.message);
+      if (!brand) return { error: "Brand does not belong to this organization" };
+    }
+    const existingResult = brandId
+      ? await supabase
+          .from("org_ad_limits")
+          .select("id")
+          .eq("organization_id", active.organization_id)
+          .eq("brand_id", brandId)
+          .maybeSingle()
+      : await supabase
+          .from("org_ad_limits")
+          .select("id")
+          .eq("organization_id", active.organization_id)
+          .is("brand_id", null)
+          .maybeSingle();
+    const values = {
+      organization_id: active.organization_id,
+      brand_id: brandId,
+      max_daily_spend_pence: maxDaily,
+      max_single_campaign_daily_budget_pence: maxSingle,
+      writes_paused: formData.get("writesPaused") === "on",
+      platform_kill_switches: {
+        meta: formData.get("killMeta") === "on",
+        google: formData.get("killGoogle") === "on",
+        tiktok: true,
+        x: true,
+        bing: true,
+      },
+      updated_by: user.id,
+    };
+    const resolvedExisting = existingResult.data;
+    const result = resolvedExisting
+      ? await supabase
+          .from("org_ad_limits")
+          .update(values)
+          .eq("id", resolvedExisting.id)
+      : await supabase
+          .from("org_ad_limits")
+          .insert({ ...values, created_by: user.id });
+    if (result.error) return { error: result.error.message };
 
-  const { writeAuditEvent } = await import("@/lib/compliance/audit");
-  await writeAuditEvent({
-    organizationId: active.organization_id,
-    actorUserId: user.id,
-    action: "ad_limits_update",
-    entityType: brandId ? "brand_ad_limits" : "org_ad_limits",
-    entityId: brandId ?? active.organization_id,
-    summary: brandId
-      ? "Updated brand ad safety limits"
-      : "Updated organization ad safety limits",
-    after: values as unknown as Record<string, unknown>,
-  });
-  revalidatePath("/ads/settings");
+    const { writeAuditEvent } = await import("@/lib/compliance/audit");
+    await writeAuditEvent({
+      organizationId: active.organization_id,
+      actorUserId: user.id,
+      action: "ad_limits_update",
+      entityType: brandId ? "brand_ad_limits" : "org_ad_limits",
+      entityId: brandId ?? active.organization_id,
+      summary: brandId
+        ? "Updated brand ad safety limits"
+        : "Updated organization ad safety limits",
+      after: values as unknown as Record<string, unknown>,
+    });
+    revalidatePath("/ads/settings");
+    return {
+      success: values.writes_paused
+        ? "Hard limits saved (master pause ON — remote creates/launches blocked)."
+        : "Hard limits saved (master pause off).",
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Failed to save hard limits",
+    };
+  }
 }
 
 export async function getOrgAdLimits(
