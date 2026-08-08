@@ -11,14 +11,40 @@ import {
   resolveContentCadence,
   type CadenceSlotKind,
 } from "@/lib/content/cadence";
+import {
+  assignScheduleSlotUnderCadence,
+  CADENCE_COVERAGE_STATUSES,
+  loadCadenceOccupancyCounts,
+} from "@/lib/content/schedule-slots";
+import {
+  findRecentNearDuplicate,
+  loadRecentTopicsForDedupe,
+} from "@/lib/content/topic-dedupe";
+import { isNearDuplicateTopic } from "@/lib/content/topic-similarity";
 import { autoAttachLibraryImage } from "@/lib/media/select";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 import type { Brand } from "@/lib/types/research";
 
 const HORIZON_DAYS = 7;
-/** Cap Claude spend per brand per cron tick. */
-const MAX_GAPS_PER_BRAND = 14;
+/**
+ * Cap Claude spend per brand per cron tick.
+ * 1/1/1/1 across 4 platforms × 7 days = 28; leave headroom for backfill.
+ */
+const MAX_GAPS_PER_BRAND = 28;
+
+const DIVERSITY_ANGLES = [
+  "guest experience tip",
+  "destination highlight",
+  "value / price transparency",
+  "booking confidence (deposit, cancellation)",
+  "local culture moment",
+  "packing / travel prep",
+  "behind-the-scenes brand story",
+  "myth-busting with a fresh claim (not previously used)",
+  "seasonal timing hook",
+  "social proof / traveler story angle",
+];
 
 function topicForGap(params: {
   brandName: string;
@@ -27,14 +53,24 @@ function topicForGap(params: {
   pillarName: string | null;
   date: string;
   feedCopyHint?: string | null;
+  angle: string;
+  avoidTopics: string[];
 }) {
+  const avoid =
+    params.avoidTopics.length > 0
+      ? ` Do NOT reuse these recent topics/titles (or close paraphrases): ${params.avoidTopics
+          .slice(0, 12)
+          .map((t) => `"${t.slice(0, 80)}"`)
+          .join("; ")}.`
+      : "";
+
   if (params.kind === "story") {
     if (params.feedCopyHint) {
-      return `Light Instagram Story visual — repurpose or tease this feed idea: ${params.feedCopyHint.slice(0, 180)}. Keep caption under 80 chars.`;
+      return `Light Instagram Story visual — different angle (${params.angle}) teasing: ${params.feedCopyHint.slice(0, 140)}. Keep caption under 80 chars.${avoid}`;
     }
-    return `Light Instagram Story moment for ${params.brandName}${params.pillarName ? ` (${params.pillarName} pillar)` : ""} on ${params.date}. Short hook, visual-first, under 80 chars.`;
+    return `Light Instagram Story moment for ${params.brandName}${params.pillarName ? ` (${params.pillarName} pillar)` : ""} on ${params.date}. Angle: ${params.angle}. Short hook, visual-first, under 80 chars.${avoid}`;
   }
-  return `${params.platform} feed post for ${params.brandName}${params.pillarName ? ` — pillar: ${params.pillarName}` : ""} scheduled ${params.date}.`;
+  return `${params.platform} feed post for ${params.brandName}${params.pillarName ? ` — pillar: ${params.pillarName}` : ""} scheduled ${params.date}. Fresh angle: ${params.angle}. Distinct title/topic from recent calendar.${avoid}`;
 }
 
 export async function fillBrandContentCadence(params: {
@@ -94,28 +130,45 @@ export async function fillBrandContentCadence(params: {
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + HORIZON_DAYS);
 
+  // Only committed calendar items count toward the 7-day target.
+  const counts = await loadCadenceOccupancyCounts({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+    fromDate: from,
+    horizonDays: HORIZON_DAYS,
+    statuses: CADENCE_COVERAGE_STATUSES,
+  });
+
+  // Feed hints + avoid list may include pending (for copy context / diversity).
   const { data: existing } = await supabase
     .from("content_items")
-    .select("id, platform, format, scheduled_at, status, copy")
+    .select("id, platform, format, scheduled_at, status, copy, title")
     .eq("organization_id", params.organizationId)
     .eq("brand_id", params.brandId)
-    .not("status", "eq", "rejected")
+    .in("status", [
+      ...CADENCE_COVERAGE_STATUSES,
+      "pending_approval",
+    ])
     .gte("scheduled_at", start.toISOString())
     .lt("scheduled_at", end.toISOString())
     .limit(2000);
 
-  const counts = new Map<string, number>();
   const feedHints = new Map<string, string>();
   for (const item of existing ?? []) {
     if (!item.scheduled_at) continue;
     const date = item.scheduled_at.slice(0, 10);
     const kind = formatBucket(item.format as ContentFormat);
-    const key = `${date}|${item.platform}|${kind}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
     if (kind === "feed" && item.copy && !feedHints.has(date)) {
       feedHints.set(date, String(item.copy));
     }
   }
+
+  const recentTopics = await loadRecentTopicsForDedupe({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+    days: 14,
+  });
+  const avoidTopics = recentTopics.map((t) => t.title);
 
   const gaps = computeCadenceGaps({
     targets,
@@ -140,17 +193,21 @@ export async function fillBrandContentCadence(params: {
   );
   const pillars = brandContext.pillars;
   let pillarIdx = 0;
+  let angleIdx = 0;
 
   let filled = 0;
   let skipped = 0;
   const errors: string[] = [];
   const createdIds: string[] = [];
+  const sessionTitles: string[] = [...avoidTopics];
 
   for (const gap of toFill) {
     const pillar = pillars.length
       ? pillars[pillarIdx % pillars.length]!
       : null;
     pillarIdx += 1;
+    const angle = DIVERSITY_ANGLES[angleIdx % DIVERSITY_ANGLES.length]!;
+    angleIdx += 1;
 
     try {
       const { data: agentRun, error: runErr } = await supabase
@@ -165,6 +222,7 @@ export async function fillBrandContentCadence(params: {
             brandId: params.brandId,
             gap,
             pillarId: pillar?.id ?? null,
+            angle,
           },
         })
         .select("id")
@@ -181,6 +239,8 @@ export async function fillBrandContentCadence(params: {
         date: gap.date,
         feedCopyHint:
           gap.kind === "story" ? (feedHints.get(gap.date) ?? null) : null,
+        angle,
+        avoidTopics: sessionTitles,
       });
 
       const generated = await generateSinglePostVariants({
@@ -196,6 +256,53 @@ export async function fillBrandContentCadence(params: {
         throw new Error("No variants returned");
       }
 
+      const title =
+        variant.title ??
+        `${gap.platform} ${gap.kind} ${gap.date}`.slice(0, 80);
+
+      const dupInSession = sessionTitles.find((t) =>
+        isNearDuplicateTopic(title, t),
+      );
+      if (dupInSession) {
+        await supabase
+          .from("agent_runs")
+          .update({
+            status: "failed",
+            progress: 100,
+            error: `Near-duplicate topic skipped: similar to "${dupInSession.slice(0, 80)}"`,
+            output: { skipped: "near_duplicate", title },
+          })
+          .eq("id", agentRun.id);
+        skipped += 1;
+        errors.push(
+          `${gap.date} ${gap.platform}/${gap.kind}: near-duplicate of "${dupInSession.slice(0, 60)}"`,
+        );
+        continue;
+      }
+
+      const dupRecent = await findRecentNearDuplicate({
+        organizationId: params.organizationId,
+        brandId: params.brandId,
+        title,
+        copy: variant.copy,
+      });
+      if (dupRecent) {
+        await supabase
+          .from("agent_runs")
+          .update({
+            status: "failed",
+            progress: 100,
+            error: `Near-duplicate of recent item ${dupRecent.id}`,
+            output: { skipped: "near_duplicate", match: dupRecent },
+          })
+          .eq("id", agentRun.id);
+        skipped += 1;
+        errors.push(
+          `${gap.date} ${gap.platform}/${gap.kind}: near-duplicate of "${dupRecent.title.slice(0, 60)}"`,
+        );
+        continue;
+      }
+
       const status = "pending_approval" as const;
 
       const { data: item, error: itemErr } = await supabase
@@ -207,9 +314,7 @@ export async function fillBrandContentCadence(params: {
           platform: gap.platform,
           format: gap.format,
           status,
-          title:
-            variant.title ??
-            `${gap.platform} ${gap.kind} ${gap.date}`.slice(0, 80),
+          title,
           copy: variant.copy,
           hashtags: gap.kind === "story" ? [] : variant.hashtags,
           structured: {
@@ -217,6 +322,7 @@ export async function fillBrandContentCadence(params: {
             rationale: variant.rationale,
             cadence_fill: true,
             cadence_kind: gap.kind,
+            cadence_angle: angle,
           },
           ai_generated: true,
           scheduled_at: gap.scheduledAt,
@@ -228,12 +334,31 @@ export async function fillBrandContentCadence(params: {
         throw new Error(itemErr?.message ?? "content insert failed");
       }
 
+      // Re-place under daily cap (pending backlog occupies slots).
+      const placed = await assignScheduleSlotUnderCadence({
+        organizationId: params.organizationId,
+        brandId: params.brandId,
+        itemId: item.id,
+        platform: gap.platform,
+        format: gap.format,
+        preferredAt: gap.scheduledAt,
+        forceWrite: true,
+      });
+      if (!placed.ok) {
+        await supabase
+          .from("content_items")
+          .delete()
+          .eq("id", item.id)
+          .eq("organization_id", params.organizationId);
+        throw new Error(placed.reason);
+      }
+
       await runEntityComplianceCheck({
         organizationId: params.organizationId,
         brandId: params.brandId,
         entityType: "content",
         entityId: item.id,
-        title: variant.title ?? null,
+        title,
         body: variant.copy,
         extra: {
           platform: gap.platform,
@@ -250,7 +375,7 @@ export async function fillBrandContentCadence(params: {
           brandId: params.brandId,
           contentItemId: item.id,
           topic,
-          title: variant.title,
+          title,
           copy: variant.copy,
           hardExcludeRecentDays: 14,
           platform: gap.platform,
@@ -261,6 +386,7 @@ export async function fillBrandContentCadence(params: {
       }
 
       createdIds.push(item.id);
+      sessionTitles.push(title);
 
       await supabase
         .from("agent_runs")
@@ -271,7 +397,13 @@ export async function fillBrandContentCadence(params: {
           tokens_in: generated.tokensIn,
           tokens_out: generated.tokensOut,
           cost_pence: generated.costPence,
-          output: { itemId: item.id, status, gap, cmoOwnsApproval },
+          output: {
+            itemId: item.id,
+            status,
+            gap,
+            scheduledAt: placed.scheduledAt,
+            cmoOwnsApproval,
+          },
         })
         .eq("id", agentRun.id);
 

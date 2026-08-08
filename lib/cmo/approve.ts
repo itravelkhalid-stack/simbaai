@@ -13,6 +13,8 @@ import { writeAuditEvent } from "@/lib/compliance/audit";
 import { runEntityComplianceCheck } from "@/lib/compliance/check";
 import { shouldParkForBrandFit } from "@/lib/cmo/severity";
 import { CMO_APPROVAL_LABEL } from "@/lib/cmo/settings";
+import { assignScheduleSlotUnderCadence } from "@/lib/content/schedule-slots";
+import { findRecentNearDuplicate } from "@/lib/content/topic-dedupe";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ContentFormat, ContentItem, ContentPlatform } from "@/lib/types/content";
 import type { ComplianceCheck } from "@/lib/types/compliance";
@@ -110,7 +112,53 @@ async function applyApproval(params: {
   agentRunId: string | null;
 }): Promise<CmoReviewResult> {
   const item = params.item;
-  const nextStatus: "scheduled" | "approved" = item.scheduled_at
+
+  const dup = await findRecentNearDuplicate({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+    title: item.title,
+    copy: item.copy,
+    excludeItemId: item.id,
+    days: 14,
+  });
+  if (dup) {
+    const note = `Near-duplicate of recent content (“${dup.title.slice(0, 80)}”) — parked. Diversify topic before rescheduling.`;
+    await parkItem({
+      organizationId: params.organizationId,
+      itemId: item.id,
+      beforeStatus: item.status,
+      note,
+      agentRunId: params.agentRunId,
+    });
+    return { itemId: item.id, outcome: "parked", detail: note };
+  }
+
+  // Always place under daily cadence caps when scheduling (or when we have a preferred day).
+  let scheduledAt = item.scheduled_at;
+  if (scheduledAt) {
+    const placed = await assignScheduleSlotUnderCadence({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      itemId: item.id,
+      platform: item.platform as ContentPlatform,
+      format: item.format as ContentFormat,
+      preferredAt: scheduledAt,
+      forceWrite: true,
+    });
+    if (!placed.ok) {
+      await parkItem({
+        organizationId: params.organizationId,
+        itemId: item.id,
+        beforeStatus: item.status,
+        note: placed.reason,
+        agentRunId: params.agentRunId,
+      });
+      return { itemId: item.id, outcome: "parked", detail: placed.reason };
+    }
+    scheduledAt = placed.scheduledAt;
+  }
+
+  const nextStatus: "scheduled" | "approved" = scheduledAt
     ? "scheduled"
     : "approved";
 
@@ -139,6 +187,7 @@ async function applyApproval(params: {
     .from("content_items")
     .update({
       status: nextStatus,
+      scheduled_at: scheduledAt,
       rejection_reason: null,
       cmo_note: null,
       approval_label: CMO_APPROVAL_LABEL,
@@ -155,9 +204,10 @@ async function applyApproval(params: {
     entityType: "content",
     entityId: item.id,
     summary: `${CMO_APPROVAL_LABEL} → ${nextStatus}`,
-    before: { status: item.status },
+    before: { status: item.status, scheduled_at: item.scheduled_at },
     after: {
       status: nextStatus,
+      scheduled_at: scheduledAt,
       approval_label: CMO_APPROVAL_LABEL,
       approved_at: now,
     },
