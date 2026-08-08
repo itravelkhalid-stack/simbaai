@@ -14,6 +14,7 @@ import {
   type ContentItem,
   type ContentPlatform,
 } from "@/lib/types/content";
+import { localDayKey, localDayKeyFromIso } from "@/lib/datetime/local";
 import { statusTone } from "@/lib/ui/status";
 import { cn } from "@/lib/utils";
 
@@ -40,10 +41,6 @@ function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
-}
-
-function dayKey(date: Date) {
-  return date.toISOString().slice(0, 10);
 }
 
 function isSameMonth(a: Date, b: Date) {
@@ -84,7 +81,7 @@ export function ContentCalendar({
     const map = new Map<string, ContentItem[]>();
     for (const item of items) {
       if (!item.scheduled_at) continue;
-      const key = item.scheduled_at.slice(0, 10);
+      const key = localDayKeyFromIso(item.scheduled_at);
       const list = map.get(key) ?? [];
       list.push(item);
       map.set(key, list);
@@ -218,11 +215,11 @@ export function ContentCalendar({
           )}
         >
           {days.map((day) => {
-            const key = dayKey(day);
+            const key = localDayKey(day);
             const dayItems = itemsByDay.get(key) ?? [];
             const outside =
               mode === "month" && !isSameMonth(day, monthCursor);
-            const isToday = dayKey(new Date()) === key;
+            const isToday = localDayKey(new Date()) === key;
             const isOver = overDay === key && draggingId;
 
             return (

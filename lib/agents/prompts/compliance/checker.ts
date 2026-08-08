@@ -27,6 +27,7 @@ Rules:
 - If required disclaimers are missing from the text, flag missing_disclaimers as critical when the profile lists them and claims warrant them OR industry is regulated.
 - Match banned_claims / banned_terms case-insensitively (including close paraphrases).
 - Do not rewrite the copy; only return findings.
+- Do not invent an INDUSTRY_MISMATCH finding. Use the profile industry as given; never second-guess whether the brand "should" be in a different industry.
 - If clean, return findings: [].
 
 Return JSON only:
