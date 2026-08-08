@@ -26,6 +26,9 @@ export const UNMETERED_AGENT_NAMES = new Set([
   "pipeline_review",
   "finance_analyst",
   "integration_health",
+  "cmo_auto_approve",
+  "chief_executive",
+  "content_cadence_fill",
 ]);
 
 export function isMeteredAgentName(agentName: string): boolean {

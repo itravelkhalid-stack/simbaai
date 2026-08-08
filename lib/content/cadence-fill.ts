@@ -129,7 +129,8 @@ export async function fillBrandContentCadence(params: {
   const autonomy = parseBrandAutonomy(brandRow);
   const organicMode = effectiveAutonomyMode(autonomy, "organic_social");
   const contentMode = effectiveAutonomyMode(autonomy, "content");
-  const preferSchedule =
+  // Autonomous brands still land in pending_approval — CMO reviews and schedules.
+  const cmoOwnsApproval =
     organicMode === "autonomous" || contentMode === "autonomous";
 
   const brandContext = await getBrandContext(
@@ -143,6 +144,7 @@ export async function fillBrandContentCadence(params: {
   let filled = 0;
   let skipped = 0;
   const errors: string[] = [];
+  const createdIds: string[] = [];
 
   for (const gap of toFill) {
     const pillar = pillars.length
@@ -194,9 +196,7 @@ export async function fillBrandContentCadence(params: {
         throw new Error("No variants returned");
       }
 
-      let status: "pending_approval" | "scheduled" = preferSchedule
-        ? "scheduled"
-        : "pending_approval";
+      const status = "pending_approval" as const;
 
       const { data: item, error: itemErr } = await supabase
         .from("content_items")
@@ -228,7 +228,7 @@ export async function fillBrandContentCadence(params: {
         throw new Error(itemErr?.message ?? "content insert failed");
       }
 
-      const compliance = await runEntityComplianceCheck({
+      await runEntityComplianceCheck({
         organizationId: params.organizationId,
         brandId: params.brandId,
         entityType: "content",
@@ -244,18 +244,6 @@ export async function fillBrandContentCadence(params: {
         syncContentFlags: true,
       });
 
-      const critical = compliance.findings.some(
-        (f) => f.severity === "critical",
-      );
-
-      if (status === "scheduled" && critical) {
-        status = "pending_approval";
-        await supabase
-          .from("content_items")
-          .update({ status: "pending_approval" })
-          .eq("id", item.id);
-      }
-
       try {
         await autoAttachLibraryImage({
           organizationId: params.organizationId,
@@ -270,17 +258,7 @@ export async function fillBrandContentCadence(params: {
         // media optional for feed; IG story without image will fail at publish
       }
 
-      if (status === "pending_approval") {
-        const { notifyApprovalsNeeded } = await import(
-          "@/lib/notifications/notify"
-        );
-        await notifyApprovalsNeeded({
-          organizationId: params.organizationId,
-          title: "Cadence fill awaiting approval",
-          body: `${gap.platform} ${gap.kind} for ${gap.date}`,
-          link: `/content/${item.id}`,
-        }).catch(() => undefined);
-      }
+      createdIds.push(item.id);
 
       await supabase
         .from("agent_runs")
@@ -291,7 +269,7 @@ export async function fillBrandContentCadence(params: {
           tokens_in: generated.tokensIn,
           tokens_out: generated.tokensOut,
           cost_pence: generated.costPence,
-          output: { itemId: item.id, status, gap },
+          output: { itemId: item.id, status, gap, cmoOwnsApproval },
         })
         .eq("id", agentRun.id);
 
@@ -304,6 +282,27 @@ export async function fillBrandContentCadence(params: {
       errors.push(
         `${gap.date} ${gap.platform}/${gap.kind}: ${err instanceof Error ? err.message : "failed"}`,
       );
+    }
+  }
+
+  if (createdIds.length > 0) {
+    if (cmoOwnsApproval) {
+      const { queueCmoReviewForItems } = await import("@/lib/cmo/run");
+      await queueCmoReviewForItems({
+        organizationId: params.organizationId,
+        brandId: params.brandId,
+        itemIds: createdIds,
+      });
+    } else {
+      const { notifyApprovalsNeeded } = await import(
+        "@/lib/notifications/notify"
+      );
+      await notifyApprovalsNeeded({
+        organizationId: params.organizationId,
+        title: `${createdIds.length} cadence items awaiting approval`,
+        body: "Review the content queue to keep the calendar filled.",
+        link: "/content/queue",
+      }).catch(() => undefined);
     }
   }
 

@@ -80,7 +80,16 @@ export default async function ContentItemPage({
           <Badge variant="outline">{FORMAT_LABELS[typed.format]}</Badge>
           <Badge>{STATUS_LABELS[typed.status]}</Badge>
           {typed.ai_generated ? <Badge variant="secondary">AI</Badge> : null}
+          {typed.approval_label ? (
+            <Badge variant="outline">{typed.approval_label}</Badge>
+          ) : null}
         </div>
+        {typed.cmo_note ? (
+          <p className="text-sm text-warning">
+            <span className="font-medium">CMO note: </span>
+            {typed.cmo_note}
+          </p>
+        ) : null}
         <h1 className="text-3xl font-semibold tracking-tight">
           {typed.title || "Content item"}
         </h1>

@@ -105,6 +105,7 @@ export type AgentRunNowKind =
   | "organic_growth"
   | "content_cadence_fill"
   | "ceo_check"
+  | "cmo_review"
   | "ads_budget_loop"
   | "finance_ingest"
   | "finance_analyst"
@@ -158,6 +159,21 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
     agentNames: ["chief_executive"],
     runNow: { kind: "ceo_check", requiresBrand: true },
     moduleHref: "/meetings",
+  },
+  {
+    id: "chief-marketing-officer",
+    displayName: "Chief Marketing Officer",
+    roleTitle: "CMO / Content Approver",
+    department: "executive",
+    responsibility:
+      "In autonomous mode: compliance + brand-fit review, one regen attempt, then approve/schedule or park for human.",
+    trigger: { kind: "event", event: "content/cmo.review" },
+    module: "content",
+    executionPath: "lib/cmo/approve.ts",
+    inngestId: "content/cmo-review",
+    agentNames: ["cmo_auto_approve"],
+    runNow: { kind: "cmo_review", requiresBrand: true },
+    moduleHref: "/content/queue",
   },
   {
     id: "daily-standup",

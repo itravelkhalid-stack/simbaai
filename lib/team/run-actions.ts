@@ -166,6 +166,20 @@ export async function runAgentNow(
       return { success: "CEO check queued" };
     }
 
+    if (kind === "cmo_review" && brandId) {
+      await inngest.send({
+        name: "content/cmo.review",
+        data: {
+          organizationId: active.organization_id,
+          brandId,
+          backfill: true,
+        },
+      });
+      revalidatePath("/team");
+      revalidatePath("/content/queue");
+      return { success: "CMO review (queue backfill) queued" };
+    }
+
     if (kind === "ads_budget_loop" && brandId) {
       await inngest.send({
         name: "ads/budget-loop.run",

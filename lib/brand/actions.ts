@@ -568,9 +568,49 @@ export async function saveBrandAutonomy(
     }
   }
 
+  // When switching into autonomous content/organic, drain queue via CMO
+  const beforeCmo = before
+    ? (
+        await import("@/lib/cmo/settings")
+      ).isCmoEnabledForBrandRow(before)
+    : false;
+  const afterCmo = (
+    await import("@/lib/cmo/settings")
+  ).isCmoEnabledForBrandRow({
+    autonomy_mode: parsed.data.autonomy_mode,
+    channel_modes,
+    agent_activity_paused: parsed.data.agent_activity_paused,
+  });
+  if (afterCmo && !beforeCmo) {
+    try {
+      const { inngest } = await import("@/lib/inngest/client");
+      await inngest.send({
+        name: "content/cmo.review",
+        data: {
+          organizationId: active.organization_id,
+          brandId: parsed.data.brandId,
+          backfill: true,
+        },
+      });
+    } catch {
+      /* non-blocking */
+    }
+    try {
+      const { runCmoBackfillForBrand } = await import("@/lib/cmo/run");
+      await runCmoBackfillForBrand({
+        organizationId: active.organization_id,
+        brandId: parsed.data.brandId,
+        limit: 50,
+      });
+    } catch {
+      /* non-blocking when Claude/keys unavailable */
+    }
+  }
+
   revalidatePath("/brand");
   revalidatePath("/brand/autonomy");
   revalidatePath("/ads");
+  revalidatePath("/content/queue");
   return { success: "Autonomy settings saved" };
 }
 

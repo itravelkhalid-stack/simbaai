@@ -20,6 +20,7 @@ import { notificationsFunctions } from "@/lib/inngest/functions/notifications";
 import { jobsFunctions } from "@/lib/inngest/functions/jobs";
 import { growthFunctions } from "@/lib/inngest/functions/growth";
 import { ceoFunctions } from "@/lib/inngest/functions/ceo";
+import { cmoFunctions } from "@/lib/cmo/inngest";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -43,5 +44,6 @@ export const { GET, POST, PUT } = serve({
     ...jobsFunctions,
     ...growthFunctions,
     ...ceoFunctions,
+    ...cmoFunctions,
   ],
 });
