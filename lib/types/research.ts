@@ -43,9 +43,14 @@ export type Brand = {
   enabled_channels: string[];
   /** Organic cadence quotas; empty uses platform defaults. */
   content_cadence: Record<string, unknown>;
-  /** Human-set monthly ad budget (minor units). Null = budget loop off. */
+  /**
+   * Default monthly TOTAL ad pot across all platforms (minor units).
+   * Used when brand_budget_months has no row for a month. Null = ads idle.
+   */
   monthly_ad_budget_pence: number | null;
   monthly_ad_budget_currency: string;
+  ad_budget_allocation_mode?: import("@/lib/types/ads").AdBudgetAllocationMode;
+  ad_budget_platform_allocations?: import("@/lib/types/ads").PlatformAllocationRow[];
   created_at: string;
   updated_at: string;
 };

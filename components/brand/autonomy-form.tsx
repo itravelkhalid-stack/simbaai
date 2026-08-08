@@ -132,9 +132,10 @@ export function BrandAutonomyForm({
           value={monthlyAdBudgetCurrency || "GBP"}
         />
         <p className="text-xs text-muted-foreground">
-          The only ads input required in budget-only mode. Daily pacing =
-          monthly/30 ±20%, always capped by Ads → Settings org limits. Leave
-          blank to disable the budget loop for this brand.
+          Default combined monthly pot across all ad platforms (not per-platform).
+          Prefer Ads → Budgets for per-month schedule (e.g. Aug £500, Sep £800) and
+          optional Meta/Google splits. Daily pacing = monthly/30 ±20%, always capped
+          by Ads → Settings org limits. Leave blank to disable the default fallback.
         </p>
       </div>
 
