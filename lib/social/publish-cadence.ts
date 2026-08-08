@@ -71,24 +71,6 @@ export async function enforcePublishCadenceOrReschedule(params: {
 
   for (let attempt = 0; attempt < 21; attempt++) {
     const dayEnd = addDaysUtc(day, 1);
-    const { data: publishedOrDue } = await supabase
-      .from("content_items")
-      .select("id, scheduled_at, published_at, status")
-      .eq("organization_id", params.organizationId)
-      .eq("brand_id", params.brandId)
-      .eq("platform", params.platform)
-      .neq("id", params.itemId)
-      .in("status", ["scheduled", "published", "approved"])
-      .gte("scheduled_at", day.toISOString())
-      .lt("scheduled_at", dayEnd.toISOString())
-      .order("scheduled_at", { ascending: true });
-
-    const sameKind = (publishedOrDue ?? []).filter((row) => {
-      // approximate: stories vs feed by format on item would need format column
-      return true;
-    });
-
-    // Re-query with format for accurate cap
     const { data: sameFormatDay } = await supabase
       .from("content_items")
       .select("id, scheduled_at, published_at")

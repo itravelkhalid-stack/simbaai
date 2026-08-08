@@ -226,6 +226,7 @@ export type Database = {
           content_cadence?: Record<string, unknown>;
           monthly_ad_budget_pence?: number | null;
           monthly_ad_budget_currency?: string;
+          allowed_link_urls?: string[];
           created_at?: string;
           updated_at?: string;
         },
@@ -287,6 +288,9 @@ export type Database = {
           ai_style?: string | null;
           ai_colors?: string[];
           suitable_for?: string[];
+          suitable_formats?: string[];
+          is_derived?: boolean;
+          derived_from_asset_id?: string | null;
           ai_tagged_at?: string | null;
           source?: import("@/lib/types/media").MediaAssetSource;
           created_by?: string | null;
@@ -294,6 +298,41 @@ export type Database = {
           updated_at?: string;
         },
         Partial<import("@/lib/types/media").MediaAsset>
+      >;
+      media_asset_usages: TableDef<
+        {
+          id: string;
+          organization_id: string;
+          brand_id: string;
+          media_asset_id: string;
+          content_item_id: string;
+          platform: string;
+          format: string;
+          used_at: string;
+          engagement_score: number | null;
+        },
+        {
+          id?: string;
+          organization_id: string;
+          brand_id: string;
+          media_asset_id: string;
+          content_item_id: string;
+          platform: string;
+          format: string;
+          used_at?: string;
+          engagement_score?: number | null;
+        },
+        Partial<{
+          id: string;
+          organization_id: string;
+          brand_id: string;
+          media_asset_id: string;
+          content_item_id: string;
+          platform: string;
+          format: string;
+          used_at: string;
+          engagement_score: number | null;
+        }>
       >;
       content_item_media: TableDef<
         import("@/lib/types/media").ContentItemMedia,
