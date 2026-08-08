@@ -6,6 +6,7 @@ import { ensureFreshAdAccessToken } from "@/lib/ads/connections";
 import { getAdsProvider } from "@/lib/ads/providers";
 import { auditAdWrite, authorizeAdWrite } from "@/lib/ads/write-safety";
 import { requireActiveOrg } from "@/lib/org/require";
+import { adsTable } from "@/lib/ads/db";
 import { createClient } from "@/lib/supabase/server";
 import type {
   AdCampaign,
@@ -177,6 +178,30 @@ export async function createCampaignsPaused(formData: FormData) {
     !creatives.some((creative) => creative.media_urls?.length)
   ) {
     throw new Error("Meta creation requires an approved creative with an image");
+  }
+
+  // Launch review board + CMO gate (Meta Ads pipeline)
+  {
+    const { data: review } = await adsTable(supabase, "ad_launch_reviews")
+      .select("id, all_passed, cmo_approved_at, status")
+      .eq("campaign_id", campaign.id)
+      .eq("organization_id", active.organization_id)
+      .maybeSingle();
+    if (!review) {
+      throw new Error(
+        "Launch review board missing — run launch checks on the campaign before Meta create",
+      );
+    }
+    if (!review.all_passed) {
+      throw new Error(
+        `Launch review not fully passed (status=${review.status}). All departments must pass before create.`,
+      );
+    }
+    if (!review.cmo_approved_at) {
+      throw new Error(
+        "CMO approval required before creating a PAUSED campaign on Meta",
+      );
+    }
   }
 
   await authorizeAdWrite({

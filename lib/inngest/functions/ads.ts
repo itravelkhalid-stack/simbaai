@@ -67,9 +67,61 @@ export const syncAdCampaignMetricsNow = inngest.createFunction(
   },
 );
 
+/** Quarterly destination seasonality refresh for brands with ads enabled. */
+export const refreshAdsSeasonalityQuarterly = inngest.createFunction(
+  {
+    id: "ads/seasonality-quarterly",
+    retries: 1,
+    triggers: [
+      { cron: "0 6 1 1,4,7,10 *" },
+      { event: "ads/seasonality.refresh" },
+    ],
+  },
+  async ({ event, step }) => {
+    const data = (event?.data ?? {}) as {
+      organizationId?: string;
+      brandId?: string;
+    };
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const { runDestinationSeasonalityResearch } = await import(
+      "@/lib/ads/seasonality-research"
+    );
+    const supabase = createAdminClient();
+    if (data.organizationId && data.brandId) {
+      return step.run("one", () =>
+        runDestinationSeasonalityResearch({
+          organizationId: data.organizationId!,
+          brandId: data.brandId!,
+        }),
+      );
+    }
+    const { data: brands } = await supabase
+      .from("brands")
+      .select("id, organization_id, agent_activity_paused")
+      .eq("agent_activity_paused", false)
+      .limit(100);
+    const results = [];
+    for (const b of brands ?? []) {
+      results.push(
+        await step.run(`brand-${b.id}`, () =>
+          runDestinationSeasonalityResearch({
+            organizationId: b.organization_id,
+            brandId: b.id,
+          }).catch((err: unknown) => ({
+            brandId: b.id,
+            error: err instanceof Error ? err.message : "failed",
+          })),
+        ),
+      );
+    }
+    return results;
+  },
+);
+
 export const adsFunctions = [
   ingestDailyAdMetrics,
   runDailyAdsOptimisation,
   runAdsBudgetLoop,
   syncAdCampaignMetricsNow,
+  refreshAdsSeasonalityQuarterly,
 ];

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { notFound } from "next/navigation";
 
 import { AdsNav } from "@/components/ads/ads-nav";
@@ -14,6 +15,10 @@ import {
   setCampaignLive,
   updateAdCampaignBudget,
 } from "@/lib/ads/launch-actions";
+import {
+  cmoApproveCampaignAction,
+  rerunLaunchReviewAction,
+} from "@/lib/ads/pipeline-actions";
 import { aggregateMetrics } from "@/lib/ads/metrics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +41,7 @@ export default async function AdsCampaignDetailPage({
   const { campaignId } = await params;
   const { active } = await requireActiveOrg();
   const supabase = await createClient();
+  const db = supabase as any;
 
   const { data: campaign } = await supabase
     .from("ad_campaigns")
@@ -54,6 +60,7 @@ export default async function AdsCampaignDetailPage({
     { data: creatives },
     { data: connections },
     { data: brand },
+    { data: review },
   ] =
     await Promise.all([
       supabase
@@ -78,7 +85,35 @@ export default async function AdsCampaignDetailPage({
         .eq("id", c.brand_id)
         .eq("organization_id", active.organization_id)
         .maybeSingle(),
+      db
+        .from("ad_launch_reviews")
+        .select("*, ad_launch_review_signoffs(*)")
+        .eq("campaign_id", campaignId)
+        .maybeSingle(),
     ]);
+
+  type DirectiveRow = { scope: string; title: string; focus_text: string };
+  type BriefRow = { summary: string; rationale: string };
+
+  let directive: DirectiveRow | null = null;
+  if (c.directive_id) {
+    const { data } = await db
+      .from("ad_campaign_directives")
+      .select("scope, title, focus_text")
+      .eq("id", c.directive_id)
+      .maybeSingle();
+    directive = data as DirectiveRow | null;
+  }
+
+  let brief: BriefRow | null = null;
+  if (c.targeting_brief_id) {
+    const { data } = await db
+      .from("ad_targeting_briefs")
+      .select("summary, rationale")
+      .eq("id", c.targeting_brief_id)
+      .maybeSingle();
+    brief = data as BriefRow | null;
+  }
 
   const rows = (metrics ?? []) as AdMetricDaily[];
   const agg = aggregateMetrics(rows);
@@ -96,6 +131,16 @@ export default async function AdsCampaignDetailPage({
   const connection = ((connections ?? []) as AdConnection[]).find(
     (item) => item.id === c.connection_id,
   );
+  const launchReview = review as {
+    status: string;
+    all_passed: boolean;
+    cmo_approved_at: string | null;
+    ad_launch_review_signoffs?: Array<{
+      department: string;
+      result: string;
+      notes: string | null;
+    }>;
+  } | null;
   const platformLink = c.platform_campaign_id
     ? c.platform === "meta"
       ? `https://www.facebook.com/adsmanager/manage/campaigns?act=${encodeURIComponent((connection?.account_id ?? "").replace(/^act_/, ""))}&selected_campaign_ids=${encodeURIComponent(c.platform_campaign_id)}`
@@ -112,8 +157,96 @@ export default async function AdsCampaignDetailPage({
         <p className="text-sm text-muted-foreground">
           {AD_PLATFORM_LABELS[c.platform]} · {c.status}
           {c.objective ? ` · ${c.objective}` : ""}
+          {c.optimization_goal ? ` · goal ${c.optimization_goal}` : ""}
         </p>
       </div>
+
+      {(directive || brief || launchReview) && (
+        <section className="space-y-3 rounded-xl border p-4">
+          <h2 className="font-medium">Pipeline record</h2>
+          {directive ? (
+            <div className="text-sm">
+              <p className="font-medium">Directive</p>
+              <p className="text-muted-foreground">
+                [{directive.scope}] {directive.title} — {directive.focus_text}
+              </p>
+            </div>
+          ) : null}
+          {brief ? (
+            <div className="text-sm">
+              <p className="font-medium">Targeting brief</p>
+              <p className="text-muted-foreground">{brief.summary}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {brief.rationale}
+              </p>
+            </div>
+          ) : null}
+          {launchReview ? (
+            <div className="space-y-2 text-sm">
+              <p className="font-medium">
+                Launch review — {launchReview.status}
+                {launchReview.all_passed ? " · all departments passed" : ""}
+                {launchReview.cmo_approved_at
+                  ? ` · CMO approved ${new Date(launchReview.cmo_approved_at).toLocaleString()}`
+                  : " · awaiting CMO"}
+              </p>
+              <ul className="space-y-1">
+                {(launchReview.ad_launch_review_signoffs ?? []).map((s) => (
+                  <li key={s.department}>
+                    <span className="font-medium capitalize">
+                      {s.department}
+                    </span>
+                    : {s.result}
+                    {s.notes ? (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — {s.notes}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              {canWrite ? (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <form action={rerunLaunchReviewAction}>
+                    <input type="hidden" name="campaignId" value={c.id} />
+                    <Button type="submit" size="sm" variant="outline">
+                      Re-run checks
+                    </Button>
+                  </form>
+                  {launchReview.all_passed && !launchReview.cmo_approved_at ? (
+                    <form action={cmoApproveCampaignAction} className="flex gap-2">
+                      <input type="hidden" name="campaignId" value={c.id} />
+                      <Input
+                        name="note"
+                        placeholder="CMO note (optional)"
+                        className="h-8 w-48"
+                      />
+                      <Button type="submit" size="sm">
+                        CMO approve for paused create
+                      </Button>
+                    </form>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {Array.isArray(c.setup_blockers) && c.setup_blockers.length > 0 ? (
+            <div className="text-sm text-amber-800 dark:text-amber-200">
+              <p className="font-medium">Setup blockers</p>
+              <ul className="list-disc pl-5">
+                {(c.setup_blockers as Array<{ code?: string; title?: string; body?: string }>).map(
+                  (b, i) => (
+                    <li key={b.code ?? i}>
+                      {b.title ?? b.code}: {b.body}
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+      )}
 
       <MetricCards
         spend={agg.spend_pence}
