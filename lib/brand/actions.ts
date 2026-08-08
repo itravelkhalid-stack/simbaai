@@ -97,10 +97,17 @@ export async function saveBrandBasics(
     tagline: formData.get("tagline") || "",
     positioning: formData.get("positioning") || "",
     target_audience: formData.get("target_audience") || "",
+    allowed_link_urls: formData.get("allowed_link_urls") || "",
   });
   if (!brandId || !parsed.success) {
     return { error: parsed.success ? "Missing brand" : parsed.error.issues[0]?.message };
   }
+
+  const allowedLinks = (parsed.data.allowed_link_urls ?? "")
+    .split(/[\n,]+/)
+    .map((u) => u.trim())
+    .filter(Boolean)
+    .slice(0, 40);
 
   try {
     const { active } = await assertCanWrite();
@@ -113,6 +120,7 @@ export async function saveBrandBasics(
         tagline: parsed.data.tagline || null,
         positioning: parsed.data.positioning || null,
         target_audience: parsed.data.target_audience || null,
+        allowed_link_urls: allowedLinks,
       })
       .eq("id", brandId)
       .eq("organization_id", active.organization_id);

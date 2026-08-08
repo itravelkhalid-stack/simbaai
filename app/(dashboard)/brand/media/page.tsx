@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 
 import { BrandAssetSlots } from "@/components/brand/brand-asset-slots";
 import { BrandNav } from "@/components/brand/brand-nav";
+import { ImageLibraryHealthCard } from "@/components/brand/image-library-health-card";
 import { MediaLibraryPanel } from "@/components/brand/media-library-panel";
+import { computeMediaInventoryHealth } from "@/lib/media/inventory";
 import { requireActiveOrg } from "@/lib/org/require";
 import { createClient } from "@/lib/supabase/server";
 import type { Brand } from "@/lib/types/research";
@@ -43,14 +45,34 @@ export default async function BrandMediaPage({
   if (!brand) notFound();
 
   const typedBrand = brand as Brand;
-  const { data: assets } = await supabase
-    .from("media_assets")
-    .select("*")
-    .eq("organization_id", active.organization_id)
-    .eq("brand_id", typedBrand.id)
-    .order("created_at", { ascending: false });
+  const [{ data: assets }, { data: usageRows }, health] = await Promise.all([
+    supabase
+      .from("media_assets")
+      .select("*")
+      .eq("organization_id", active.organization_id)
+      .eq("brand_id", typedBrand.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("media_asset_usages")
+      .select("media_asset_id")
+      .eq("organization_id", active.organization_id)
+      .eq("brand_id", typedBrand.id),
+    computeMediaInventoryHealth({
+      organizationId: active.organization_id,
+      brandId: typedBrand.id,
+    }),
+  ]);
 
-  const list = (assets ?? []) as MediaAsset[];
+  const list = (assets ?? []).map((a) => ({
+    ...a,
+    suitable_formats: (a as MediaAsset).suitable_formats ?? [],
+    is_derived: (a as MediaAsset).is_derived ?? false,
+    derived_from_asset_id: (a as MediaAsset).derived_from_asset_id ?? null,
+  })) as MediaAsset[];
+
+  const usedAssetIds = Array.from(
+    new Set((usageRows ?? []).map((u) => u.media_asset_id as string)),
+  );
 
   // Private bucket: mint short-lived signed URLs for dashboard previews.
   const { createBrandMediaSignedUrl } = await import("@/lib/media/storage");
@@ -75,6 +97,7 @@ export default async function BrandMediaPage({
         </p>
       </div>
       <BrandNav current="/brand/media" />
+      <ImageLibraryHealthCard rows={health} />
       <BrandAssetSlots
         brandId={typedBrand.id}
         organizationId={active.organization_id}
@@ -85,6 +108,7 @@ export default async function BrandMediaPage({
         brandId={typedBrand.id}
         organizationId={active.organization_id}
         assets={signed}
+        usedAssetIds={usedAssetIds}
         canWrite={canWrite}
       />
     </div>

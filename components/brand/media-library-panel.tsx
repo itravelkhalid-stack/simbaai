@@ -13,6 +13,10 @@ import {
   type MediaActionResult,
 } from "@/lib/media/actions";
 import {
+  MEDIA_FORMAT_SLOT_LABELS,
+  type MediaFormatSlot,
+} from "@/lib/media/format-fit";
+import {
   MEDIA_TYPE_LABELS,
   type MediaAsset,
   type MediaAssetType,
@@ -33,6 +37,8 @@ const TYPE_FILTERS: Array<MediaAssetType | "all"> = [
   "font",
 ];
 
+type UsageFilter = "all" | "available" | "used";
+
 function isPreviewable(asset: MediaAsset) {
   return (
     asset.type === "image" ||
@@ -44,7 +50,6 @@ function isPreviewable(asset: MediaAsset) {
 function collectDroppedFiles(dataTransfer: DataTransfer): File[] {
   const fromList = Array.from(dataTransfer.files ?? []);
   if (fromList.length) return fromList;
-  // Fallback for some browsers that only populate items
   const fromItems: File[] = [];
   for (const item of Array.from(dataTransfer.items ?? [])) {
     if (item.kind === "file") {
@@ -55,20 +60,31 @@ function collectDroppedFiles(dataTransfer: DataTransfer): File[] {
   return fromItems;
 }
 
+function formatBadgeLabel(slot: string): string {
+  return (
+    MEDIA_FORMAT_SLOT_LABELS[slot as MediaFormatSlot] ??
+    slot.replace(/_/g, " ")
+  );
+}
+
 export function MediaLibraryPanel({
   brandId,
   organizationId,
   assets,
+  usedAssetIds,
   canWrite,
 }: {
   brandId: string;
   organizationId: string;
   assets: MediaAsset[];
+  /** Asset IDs that have been used at least once. */
+  usedAssetIds: string[];
   canWrite: boolean;
 }) {
   const router = useRouter();
   const uploadRef = useRef<DirectMediaUploadHandle>(null);
   const [typeFilter, setTypeFilter] = useState<MediaAssetType | "all">("all");
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
   const [tagQuery, setTagQuery] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [tagState, tagAction, tagPending] = useActionState(
@@ -76,20 +92,26 @@ export function MediaLibraryPanel({
     initial,
   );
 
+  const usedSet = useMemo(() => new Set(usedAssetIds), [usedAssetIds]);
+
   const filtered = useMemo(() => {
     const q = tagQuery.trim().toLowerCase();
     return assets.filter((a) => {
       if (typeFilter !== "all" && a.type !== typeFilter) return false;
+      const used = usedSet.has(a.id);
+      if (usageFilter === "available" && used) return false;
+      if (usageFilter === "used" && !used) return false;
       if (!q) return true;
       return (
         a.filename.toLowerCase().includes(q) ||
         (a.description ?? "").toLowerCase().includes(q) ||
         (a.ai_subject ?? "").toLowerCase().includes(q) ||
         (a.tags ?? []).some((t) => t.toLowerCase().includes(q)) ||
-        (a.suitable_for ?? []).some((t) => t.toLowerCase().includes(q))
+        (a.suitable_for ?? []).some((t) => t.toLowerCase().includes(q)) ||
+        (a.suitable_formats ?? []).some((t) => t.toLowerCase().includes(q))
       );
     });
-  }, [assets, typeFilter, tagQuery]);
+  }, [assets, typeFilter, usageFilter, tagQuery, usedSet]);
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -117,7 +139,8 @@ export function MediaLibraryPanel({
             <h2 className="font-medium">Upload media</h2>
             <p className="text-sm text-muted-foreground">
               Drag and drop multiple files, or choose several at once. Uploads
-              go directly to private storage (max 25MB each).
+              go directly to private storage (max 25MB each). Format fit is
+              classified from dimensions on upload.
             </p>
           </div>
           <DirectMediaUpload
@@ -134,6 +157,28 @@ export function MediaLibraryPanel({
       ) : null}
 
       <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-2">
+          <Label>Usage</Label>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["all", "All"],
+                ["available", "Available"],
+                ["used", "Used"],
+              ] as const
+            ).map(([id, label]) => (
+              <Button
+                key={id}
+                type="button"
+                size="sm"
+                variant={usageFilter === id ? "default" : "outline"}
+                onClick={() => setUsageFilter(id)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
         <div className="space-y-2">
           <Label>Type</Label>
           <div className="flex flex-wrap gap-2">
@@ -180,92 +225,118 @@ export function MediaLibraryPanel({
           </p>
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((asset) => (
-              <li key={asset.id} className="space-y-3 rounded-xl border p-3">
-                <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
-                  {isPreviewable(asset) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={asset.public_url}
-                      alt={asset.filename}
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                      {MEDIA_TYPE_LABELS[asset.type]}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <p className="truncate text-sm font-medium">{asset.filename}</p>
-                  {asset.description ? (
-                    <p className="line-clamp-2 text-xs text-muted-foreground">
-                      {asset.description}
-                    </p>
-                  ) : asset.ai_tagged_at ? null : (
-                    <p className="text-xs text-muted-foreground">
-                      AI tagging pending…
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-1">
-                    <Badge variant="outline">
-                      {MEDIA_TYPE_LABELS[asset.type]}
-                    </Badge>
-                    {(asset.tags ?? []).map((tag) => (
-                      <Badge key={tag} variant="secondary">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {Math.round(asset.size_bytes / 1024)} KB
-                  </p>
-                </div>
-                {canWrite ? (
-                  <div className="space-y-2">
-                    <form action={tagAction} className="flex gap-2">
-                      <input type="hidden" name="assetId" value={asset.id} />
-                      <Input
-                        name="tags"
-                        defaultValue={(asset.tags ?? []).join(", ")}
-                        placeholder="tags"
-                        className="h-8"
+            {filtered.map((asset) => {
+              const used = usedSet.has(asset.id);
+              const formats = asset.suitable_formats ?? [];
+              return (
+                <li key={asset.id} className="space-y-3 rounded-xl border p-3">
+                  <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+                    {isPreviewable(asset) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={asset.public_url}
+                        alt={asset.filename}
+                        className="h-full w-full object-contain"
                       />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        variant="outline"
-                        disabled={tagPending}
-                      >
-                        Save
-                      </Button>
-                    </form>
-                    {tagState.error ? (
-                      <p className="text-xs text-destructive">{tagState.error}</p>
-                    ) : null}
-                    <div className="flex gap-2">
-                      <a
-                        href={asset.public_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs underline"
-                      >
-                        Open
-                      </a>
-                      <form action={deleteMediaAsset}>
-                        <input type="hidden" name="assetId" value={asset.id} />
-                        <button
-                          type="submit"
-                          className="text-xs text-destructive underline"
-                        >
-                          Delete
-                        </button>
-                      </form>
-                    </div>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                        {MEDIA_TYPE_LABELS[asset.type]}
+                      </div>
+                    )}
                   </div>
-                ) : null}
-              </li>
-            ))}
+                  <div className="space-y-1">
+                    <p className="truncate text-sm font-medium">
+                      {asset.filename}
+                    </p>
+                    {asset.description ? (
+                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                        {asset.description}
+                      </p>
+                    ) : asset.ai_tagged_at ? null : (
+                      <p className="text-xs text-muted-foreground">
+                        AI tagging pending…
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-1">
+                      <Badge variant="outline">
+                        {MEDIA_TYPE_LABELS[asset.type]}
+                      </Badge>
+                      <Badge variant={used ? "secondary" : "default"}>
+                        {used ? "Used" : "Available"}
+                      </Badge>
+                      {asset.is_derived ? (
+                        <Badge variant="outline">Derived</Badge>
+                      ) : null}
+                      {formats.map((slot) => (
+                        <Badge key={slot} variant="secondary">
+                          {formatBadgeLabel(slot)}
+                        </Badge>
+                      ))}
+                      {(asset.tags ?? []).map((tag) => (
+                        <Badge key={tag} variant="secondary">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {asset.width && asset.height
+                        ? `${asset.width}×${asset.height} · `
+                        : ""}
+                      {Math.round(asset.size_bytes / 1024)} KB
+                    </p>
+                  </div>
+                  {canWrite ? (
+                    <div className="space-y-2">
+                      <form action={tagAction} className="flex gap-2">
+                        <input type="hidden" name="assetId" value={asset.id} />
+                        <Input
+                          name="tags"
+                          defaultValue={(asset.tags ?? []).join(", ")}
+                          placeholder="tags"
+                          className="h-8"
+                        />
+                        <Button
+                          type="submit"
+                          size="sm"
+                          variant="outline"
+                          disabled={tagPending}
+                        >
+                          Save
+                        </Button>
+                      </form>
+                      {tagState.error ? (
+                        <p className="text-xs text-destructive">
+                          {tagState.error}
+                        </p>
+                      ) : null}
+                      <div className="flex gap-2">
+                        <a
+                          href={asset.public_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs underline"
+                        >
+                          Open
+                        </a>
+                        <form action={deleteMediaAsset}>
+                          <input
+                            type="hidden"
+                            name="assetId"
+                            value={asset.id}
+                          />
+                          <button
+                            type="submit"
+                            className="text-xs text-destructive underline"
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

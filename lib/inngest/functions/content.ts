@@ -54,6 +54,8 @@ async function maybeAutoAttachMedia(params: {
   topic: string;
   title?: string | null;
   copy?: string | null;
+  platform?: import("@/lib/types/content").ContentPlatform;
+  format?: import("@/lib/types/content").ContentFormat;
 }) {
   try {
     await autoAttachLibraryImage({
@@ -63,6 +65,9 @@ async function maybeAutoAttachMedia(params: {
       topic: params.topic,
       title: params.title,
       copy: params.copy,
+      platform: params.platform,
+      format: params.format,
+      hardExcludeRecentDays: 14,
     });
   } catch {
     // Suggestion only — generation must not fail if library is empty/misconfigured
@@ -197,6 +202,8 @@ export const runContentSingleGenerate = inngest.createFunction(
             topic,
             title: generated.result.data.title ?? topic.slice(0, 80),
             copy: generated.result.data.caption,
+            platform,
+            format,
           });
         } else {
           for (const variant of generated.result.data.variants) {
@@ -244,6 +251,8 @@ export const runContentSingleGenerate = inngest.createFunction(
               topic,
               title: variant.title ?? topic,
               copy: variant.copy,
+              platform,
+              format,
             });
           }
         }
@@ -586,6 +595,8 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
             topic: slot.topic,
             title,
             copy,
+            platform: slot.platform,
+            format: slot.format,
           });
 
           await supabase
@@ -767,6 +778,8 @@ export const runContentRepurpose = inngest.createFunction(
             topic: adaptation.title ?? source.title ?? source.copy.slice(0, 80),
             title: adaptation.title,
             copy: adaptation.copy,
+            platform: adaptation.platform,
+            format: adaptation.format,
           });
         }
 

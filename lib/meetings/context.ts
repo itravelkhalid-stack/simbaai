@@ -571,10 +571,39 @@ Include a dedicated "CEO accountability" section in minutes covering department 
 - No CEO check yet for this brand. Note the gap; do not invent accountability results.
 `;
 
+  let mediaInventorySection = "";
+  if (params.type === "daily_standup") {
+    const { computeMediaInventoryHealth } = await import(
+      "@/lib/media/inventory"
+    );
+    const inventory = await computeMediaInventoryHealth({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+    });
+    const asks = inventory.filter((r) => r.ask).map((r) => `- ${r.ask}`);
+    mediaInventorySection = `
+### Image library inventory
+${inventory
+  .map(
+    (r) =>
+      `- ${r.label}: ${r.unusedCount} unused / ${r.suitableCount} suitable${
+        r.daysRemaining != null ? ` (~${r.daysRemaining} days at cadence)` : ""
+      }`,
+  )
+  .join("\n")}
+${
+  asks.length
+    ? `\n### Upload asks (action for the team)\n${asks.join("\n")}`
+    : "\n- No urgent upload asks"
+}
+`;
+  }
+
   const markdown = `
 ## Period: ${label} (${fromDate} → ${toDate})
 ${emptyDisclosure}
 ${ceoSection}
+${mediaInventorySection}
 
 ### Brand KPI targets vs actuals
 ${

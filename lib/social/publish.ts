@@ -148,6 +148,85 @@ export async function publishContentItem(itemId: string) {
     throw new Error(message);
   }
 
+  if (
+    typed.platform === "linkedin" &&
+    (!(typed.media_urls ?? []).length)
+  ) {
+    const message =
+      "LinkedIn publishing requires an image. Attach a library image or hold until one is available.";
+    await supabase
+      .from("content_items")
+      .update({
+        publish_error: message,
+        status: "pending_approval",
+        cmo_note: "awaiting image",
+      })
+      .eq("id", itemId);
+    await notifyPublishFailure({
+      organizationId: typed.organization_id,
+      contentItemId: itemId,
+      platform: typed.platform,
+      message,
+      tokenError: false,
+    });
+    return { skipped: true as const, reason: message };
+  }
+
+  // Link integrity — allowlist + live HEAD checks
+  {
+    const { validateContentLinks } = await import(
+      "@/lib/content/link-allowlist"
+    );
+    const linkCheck = await validateContentLinks({
+      organizationId: typed.organization_id,
+      brandId: typed.brand_id,
+      copy: typed.copy,
+      title: typed.title,
+    });
+    if (linkCheck.disallowed.length || linkCheck.unreachable.length) {
+      const parts = [
+        ...linkCheck.disallowed.map((u) => `not allowlisted: ${u}`),
+        ...linkCheck.unreachable.map(
+          (u) => `unreachable (${u.status ?? u.error ?? "?"}): ${u.url}`,
+        ),
+      ];
+      const message = `Publish blocked — link integrity failed. ${parts.join("; ")}`;
+      await supabase
+        .from("content_items")
+        .update({
+          publish_error: message,
+          status: "pending_approval",
+        })
+        .eq("id", itemId);
+      await notifyPublishFailure({
+        organizationId: typed.organization_id,
+        contentItemId: itemId,
+        platform: typed.platform,
+        message,
+        tokenError: false,
+      });
+      return { skipped: true as const, reason: message };
+    }
+  }
+
+  // Daily cadence + 2h spacing — reschedule excess instead of dumping same-day
+  {
+    const { enforcePublishCadenceOrReschedule } = await import(
+      "@/lib/social/publish-cadence"
+    );
+    const cadence = await enforcePublishCadenceOrReschedule({
+      organizationId: typed.organization_id,
+      brandId: typed.brand_id,
+      itemId,
+      platform: typed.platform,
+      format: typed.format,
+      scheduledAt: typed.scheduled_at,
+    });
+    if (cadence.action === "rescheduled") {
+      return { skipped: true as const, reason: cadence.reason };
+    }
+  }
+
   const attempts = (typed.publish_attempts ?? 0) + 1;
   await supabase
     .from("content_items")
@@ -226,6 +305,21 @@ export async function publishContentItem(itemId: string) {
         publish_error: null,
       })
       .eq("id", itemId);
+
+    try {
+      const { recordUsagesForContentItem } = await import(
+        "@/lib/media/inventory"
+      );
+      await recordUsagesForContentItem({
+        organizationId: typed.organization_id,
+        brandId: typed.brand_id,
+        contentItemId: itemId,
+        platform: typed.platform,
+        format: typed.format,
+      });
+    } catch {
+      // non-blocking
+    }
 
     if (auth.mode === "autonomous") {
       await recordAutonomousAction({

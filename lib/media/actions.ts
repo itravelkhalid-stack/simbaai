@@ -166,6 +166,15 @@ export async function registerUploadedMediaAsset(
       return { error: error?.message ?? "Failed to save asset" };
     }
 
+    try {
+      const { probeAndUpdateAssetDimensions } = await import(
+        "@/lib/media/story-fit"
+      );
+      await probeAndUpdateAssetDimensions(asset.id);
+    } catch {
+      // dimensions optional at register
+    }
+
     if (reserved === BRAND_ASSET_TAGS.logoPrimary) {
       await supabase
         .from("brands")

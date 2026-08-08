@@ -9,6 +9,7 @@ describe("brand context builder", () => {
       brand: {
         name: "Acme",
         website: "https://acme.test",
+        allowed_link_urls: ["https://acme.test/terms"],
         positioning: "Practical tools",
         brand_voice: "Clear and confident",
         target_audience: "Operators",
@@ -37,6 +38,7 @@ describe("brand context builder", () => {
           category: "saas",
           price_pence: 2900,
           currency: "GBP",
+          url: "https://acme.test/starter",
         },
       ],
       competitors: [
@@ -58,6 +60,9 @@ describe("brand context builder", () => {
     expect(md).toContain("Rival");
     expect(md).toContain("How-to (40%)");
     expect(md).toContain("Guidelines digest:");
+    expect(md).toContain("## Allowed links");
+    expect(md).toContain("https://acme.test/terms");
+    expect(md).toContain("https://acme.test/starter");
   });
 
   it("includes logo URLs and color palette when provided", () => {
@@ -66,6 +71,7 @@ describe("brand context builder", () => {
       brand: {
         name: "Acme",
         website: null,
+        allowed_link_urls: [],
         positioning: null,
         brand_voice: null,
         target_audience: null,
@@ -105,6 +111,7 @@ describe("brand context builder", () => {
       brand: {
         name: "Solo",
         website: null,
+        allowed_link_urls: [],
         positioning: null,
         brand_voice: null,
         target_audience: null,

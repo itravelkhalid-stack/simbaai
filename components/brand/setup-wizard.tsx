@@ -141,6 +141,20 @@ function BasicsForm({ brand }: { brand: Brand }) {
           />
         </div>
         <div className="space-y-2">
+          <Label htmlFor="allowed_link_urls">Allowed links (one per line)</Label>
+          <Textarea
+            id="allowed_link_urls"
+            name="allowed_link_urls"
+            rows={3}
+            defaultValue={(brand.allowed_link_urls ?? []).join("\n")}
+            placeholder="https://example.com/terms&#10;https://example.com/shop"
+          />
+          <p className="text-xs text-muted-foreground">
+            Content may only link to the website root, product URLs, and these
+            extra landing/terms URLs. Invented URLs are blocked at publish.
+          </p>
+        </div>
+        <div className="space-y-2">
           <Label htmlFor="tagline">Tagline</Label>
           <Input
             id="tagline"
