@@ -125,7 +125,8 @@ export function addUtcDays(from: Date, days: number) {
 
 /**
  * Compute missing slots for the next `horizonDays` (inclusive of today).
- * Counts any non-rejected item with scheduled_at in the day toward its bucket.
+ * Callers should build `existingCounts` from scheduled/approved/published only
+ * (see CADENCE_COVERAGE_STATUSES) so pending backlog does not fake coverage.
  */
 export function computeCadenceGaps(params: {
   targets: CadenceTarget[];

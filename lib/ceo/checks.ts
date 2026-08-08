@@ -1,6 +1,10 @@
 import "server-only";
 
-import { resolveContentCadence, formatBucket } from "@/lib/content/cadence";
+import { resolveContentCadence } from "@/lib/content/cadence";
+import {
+  CADENCE_COVERAGE_STATUSES,
+  loadCadenceOccupancyCounts,
+} from "@/lib/content/schedule-slots";
 import { getBrandEnabledContentPlatforms } from "@/lib/brand/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
@@ -73,27 +77,15 @@ export async function runDeterministicCeoChecks(params: {
     const targets = resolveContentCadence(brandRow.content_cadence, enabled);
     const horizonStart = new Date();
     horizonStart.setUTCHours(0, 0, 0, 0);
-    const horizonEnd = new Date(horizonStart);
-    horizonEnd.setUTCDate(horizonEnd.getUTCDate() + 7);
 
-    const { data: items } = await supabase
-      .from("content_items")
-      .select("platform, format, scheduled_at, status")
-      .eq("organization_id", organizationId)
-      .eq("brand_id", brandId)
-      .not("status", "eq", "rejected")
-      .gte("scheduled_at", horizonStart.toISOString())
-      .lt("scheduled_at", horizonEnd.toISOString())
-      .limit(2000);
-
-    const counts = new Map<string, number>();
-    for (const item of items ?? []) {
-      if (!item.scheduled_at) continue;
-      const date = item.scheduled_at.slice(0, 10);
-      const kind = formatBucket(item.format as "story" | "post");
-      const key = `${date}|${item.platform}|${kind}`;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
+    // Match cadence fill: only scheduled/approved/published count as coverage.
+    const counts = await loadCadenceOccupancyCounts({
+      organizationId,
+      brandId,
+      fromDate: horizonStart,
+      horizonDays: 7,
+      statuses: CADENCE_COVERAGE_STATUSES,
+    });
 
     let needed = 0;
     let have = 0;

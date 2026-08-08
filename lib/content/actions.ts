@@ -534,6 +534,44 @@ export async function approveContentItem(formData: FormData) {
       organizationId: active.organization_id,
       itemId: parsed.data.itemId,
     });
+
+    const { data: full } = await supabase
+      .from("content_items")
+      .select("id, brand_id, platform, format, title, copy, scheduled_at")
+      .eq("id", parsed.data.itemId)
+      .eq("organization_id", active.organization_id)
+      .single();
+    if (full) {
+      const { findRecentNearDuplicate } = await import(
+        "@/lib/content/topic-dedupe"
+      );
+      const dup = await findRecentNearDuplicate({
+        organizationId: active.organization_id,
+        brandId: full.brand_id,
+        title: full.title,
+        copy: full.copy,
+        excludeItemId: full.id,
+        days: 14,
+      });
+      if (dup) {
+        throw new Error(
+          `Too similar to recent content (“${dup.title.slice(0, 80)}”). Pick a different topic before scheduling.`,
+        );
+      }
+      const { assignScheduleSlotUnderCadence } = await import(
+        "@/lib/content/schedule-slots"
+      );
+      const placed = await assignScheduleSlotUnderCadence({
+        organizationId: active.organization_id,
+        brandId: full.brand_id,
+        itemId: full.id,
+        platform: full.platform,
+        format: full.format,
+        preferredAt: full.scheduled_at,
+        forceWrite: true,
+      });
+      if (!placed.ok) throw new Error(placed.reason);
+    }
   }
   const now = new Date().toISOString();
   const { data: profile } = await supabase
@@ -667,11 +705,50 @@ export async function rescheduleContentItem(formData: FormData) {
     itemId: parsed.data.itemId,
   });
   const supabase = await createClient();
-  const scheduledAt = new Date(parsed.data.scheduledAt).toISOString();
+  const { data: full } = await supabase
+    .from("content_items")
+    .select("id, brand_id, platform, format, title, copy")
+    .eq("id", parsed.data.itemId)
+    .eq("organization_id", active.organization_id)
+    .single();
+  if (!full) throw new Error("Item not found");
+
+  const { findRecentNearDuplicate } = await import(
+    "@/lib/content/topic-dedupe"
+  );
+  const dup = await findRecentNearDuplicate({
+    organizationId: active.organization_id,
+    brandId: full.brand_id,
+    title: full.title,
+    copy: full.copy,
+    excludeItemId: full.id,
+    days: 14,
+  });
+  if (dup) {
+    throw new Error(
+      `Too similar to recent content (“${dup.title.slice(0, 80)}”). Diversify before scheduling.`,
+    );
+  }
+
+  const preferredAt = new Date(parsed.data.scheduledAt).toISOString();
+  const { assignScheduleSlotUnderCadence } = await import(
+    "@/lib/content/schedule-slots"
+  );
+  const placed = await assignScheduleSlotUnderCadence({
+    organizationId: active.organization_id,
+    brandId: full.brand_id,
+    itemId: full.id,
+    platform: full.platform,
+    format: full.format,
+    preferredAt,
+    forceWrite: true,
+  });
+  if (!placed.ok) throw new Error(placed.reason);
+
   const { error } = await supabase
     .from("content_items")
     .update({
-      scheduled_at: scheduledAt,
+      scheduled_at: placed.scheduledAt,
       status: "scheduled",
     })
     .eq("id", parsed.data.itemId)
