@@ -3,8 +3,10 @@ import {
   getActiveConnection,
 } from "@/lib/social/connections";
 import {
+  connectionCanPublishFacebookStories,
   connectionCanPublishInstagram,
   getMetaPublishCapabilities,
+  FACEBOOK_STORY_SCOPE_REQUIRED_MESSAGE,
   INSTAGRAM_SCOPE_REQUIRED_MESSAGE,
 } from "@/lib/social/meta-capabilities";
 import { isMetaTokenError } from "@/lib/social/meta";
@@ -149,6 +151,31 @@ export async function publishContentItem(itemId: string) {
   }
 
   if (
+    typed.platform === "facebook" &&
+    typed.format === "story" &&
+    (!(typed.media_urls ?? []).length)
+  ) {
+    const message =
+      "Facebook Stories require a publicly reachable 9:16 image. Attach media before publishing.";
+    await supabase
+      .from("content_items")
+      .update({
+        publish_error: message,
+        status: "pending_approval",
+        cmo_note: "awaiting story-format image",
+      })
+      .eq("id", itemId);
+    await notifyPublishFailure({
+      organizationId: typed.organization_id,
+      contentItemId: itemId,
+      platform: typed.platform,
+      message,
+      tokenError: false,
+    });
+    return { skipped: true as const, reason: message };
+  }
+
+  if (
     typed.platform === "linkedin" &&
     (!(typed.media_urls ?? []).length)
   ) {
@@ -276,6 +303,12 @@ export async function publishContentItem(itemId: string) {
         })
       ) {
         throw new Error(INSTAGRAM_SCOPE_REQUIRED_MESSAGE);
+      }
+    }
+
+    if (typed.platform === "facebook" && typed.format === "story") {
+      if (!connectionCanPublishFacebookStories({ scopes: connection.scopes })) {
+        throw new Error(FACEBOOK_STORY_SCOPE_REQUIRED_MESSAGE);
       }
     }
 

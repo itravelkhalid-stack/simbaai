@@ -76,7 +76,15 @@ describe("format fit", () => {
 
   it("maps platform/format to slots", () => {
     expect(formatSlotForContent("instagram", "story")).toBe("instagram_story");
-    expect(formatSlotForContent("linkedin", "feed")).toBe("linkedin_feed");
+    expect(formatSlotForContent("facebook", "story")).toBe("facebook_story");
+    expect(formatSlotForContent("facebook", "post")).toBe("facebook_feed");
+    expect(formatSlotForContent("linkedin", "post")).toBe("linkedin_feed");
+  });
+
+  it("tags 9:16 for both IG and FB story slots", () => {
+    expect(suitableFormatsForDimensions(1080, 1920)).toEqual(
+      expect.arrayContaining(["instagram_story", "facebook_story"]),
+    );
   });
 
   it("allows derive for large enough sources", () => {

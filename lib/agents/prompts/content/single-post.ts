@@ -24,7 +24,7 @@ Shape:
   ]
 }
 Always return exactly 3 variants with meaningfully different hooks/angles.
-When format is "story", write short (under 80 characters) visual-first copy suitable for Instagram Stories — no long paragraphs, minimal hashtags.
+When format is "story", write short (under 80 characters) visual-first copy suitable for Instagram or Facebook Stories — no long paragraphs, minimal hashtags.
 LINK RULE: Only use URLs listed under "## Allowed links" in the brand context (website root and explicitly listed landing/terms URLs). Never invent paths, pages, or domains. If no allowed link fits, omit the URL entirely.`,
   buildUserPrompt(input: {
     brandContextMarkdown: string;

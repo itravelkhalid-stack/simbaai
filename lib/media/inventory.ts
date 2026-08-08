@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 import {
+  assetFitsSlot,
   formatSlotForContent,
   type MediaFormatSlot,
   MEDIA_FORMAT_SLOT_LABELS,
@@ -109,13 +110,14 @@ export async function computeMediaInventoryHealth(params: {
   const slots: MediaFormatSlot[] = [
     "instagram_story",
     "instagram_feed",
+    "facebook_story",
     "facebook_feed",
     "linkedin_feed",
   ];
 
   return slots.map((slot) => {
     const suitable = (assets ?? []).filter((a) =>
-      ((a.suitable_formats as string[]) ?? []).includes(slot),
+      assetFitsSlot((a.suitable_formats as string[]) ?? [], slot),
     );
     const unused = suitable.filter((a) => !recentlyUsed.has(a.id));
     const perDay = targets
@@ -126,8 +128,9 @@ export async function computeMediaInventoryHealth(params: {
     let ask: string | null = null;
     if (perDay > 0 && unused.length <= perDay) {
       const need = Math.max(perDay * 3 - unused.length, perDay);
-      if (slot === "instagram_story") {
-        ask = `IG stories: ${unused.length} suitable image${unused.length === 1 ? "" : "s"} left (~${daysRemaining ?? 0} days at cadence) — add ~${need} more 9:16 images`;
+      if (slot === "instagram_story" || slot === "facebook_story") {
+        const label = slot === "instagram_story" ? "IG" : "FB";
+        ask = `${label} stories: ${unused.length} suitable image${unused.length === 1 ? "" : "s"} left (~${daysRemaining ?? 0} days at cadence) — add ~${need} more 9:16 images`;
       } else {
         ask = `${MEDIA_FORMAT_SLOT_LABELS[slot]}: ${unused.length} left (~${daysRemaining ?? 0} days) — add ~${need} more`;
       }

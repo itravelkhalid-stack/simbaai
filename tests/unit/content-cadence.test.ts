@@ -29,7 +29,27 @@ describe("resolveContentCadence", () => {
         }),
       ]),
     );
+    expect(
+      targets.find((t) => t.platform === "facebook" && t.kind === "story"),
+    ).toBeUndefined();
     expect(targets.find((t) => t.platform === "linkedin")).toBeUndefined();
+  });
+
+  it("emits Facebook story slots when configured", () => {
+    const targets = resolveContentCadence(
+      { facebook: { feed_per_day: 1, stories_per_day: 1 } },
+      ["facebook"],
+    );
+    expect(
+      targets.find((t) => t.platform === "facebook" && t.kind === "story"),
+    ).toEqual(
+      expect.objectContaining({
+        platform: "facebook",
+        kind: "story",
+        format: "story",
+        perDay: 1,
+      }),
+    );
   });
 
   it("respects brand overrides and skips disabled LinkedIn", () => {

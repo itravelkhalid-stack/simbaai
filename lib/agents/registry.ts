@@ -536,7 +536,7 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
     roleTitle: "Organic Engine",
     department: "content",
     responsibility:
-      "Keeps the next 7 days of organic slots filled to brand cadence (feed + Instagram stories).",
+      "Keeps the next 7 days of organic slots filled to brand cadence (feed + Instagram/Facebook stories).",
     trigger: { kind: "cron", schedule: "30 5 * * *" },
     module: "content",
     executionPath: "lib/content/cadence-fill.ts",

@@ -79,6 +79,14 @@ export function resolveContentCadence(
         perDay: fb.feed_per_day!,
       });
     }
+    if ((fb.stories_per_day ?? 0) > 0) {
+      targets.push({
+        platform: "facebook",
+        kind: "story",
+        format: "story",
+        perDay: fb.stories_per_day!,
+      });
+    }
   }
 
   if (enabled.has("linkedin")) {

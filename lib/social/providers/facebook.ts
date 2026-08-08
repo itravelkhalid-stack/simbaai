@@ -6,6 +6,9 @@ import { readJson, requireEnv } from "@/lib/social/providers/http";
  * Meta Graph API — Facebook Pages.
  * OAuth code exchange + page selection is handled in the Meta connect flow
  * (`lib/social/meta.ts` + `/social/meta/select`). This provider only publishes/metrics.
+ *
+ * Facebook Stories (photo): upload unpublished photo → POST /{page-id}/photo_stories.
+ * @see https://developers.facebook.com/docs/page-stories-api/
  */
 export const facebookProvider: SocialProvider = {
   id: "facebook",
@@ -39,6 +42,10 @@ export const facebookProvider: SocialProvider = {
   },
 
   async publishPost(input) {
+    if (input.format === "story") {
+      return publishFacebookPhotoStory(input);
+    }
+
     const message = [input.copy, input.hashtags.map((h) => `#${h}`).join(" ")]
       .filter(Boolean)
       .join("\n\n");
@@ -117,6 +124,59 @@ export const facebookProvider: SocialProvider = {
     };
   },
 };
+
+async function publishFacebookPhotoStory(input: {
+  accessToken: string;
+  accountId: string;
+  mediaUrls: string[];
+  copy: string;
+}): Promise<{ platformPostId: string }> {
+  const imageUrl = input.mediaUrls[0];
+  if (!imageUrl) {
+    throw new Error(
+      "Facebook Stories require a publicly reachable image URL (9:16 preferred).",
+    );
+  }
+
+  // Step 1 — upload photo unpublished (required by Page Stories API)
+  const uploadBody = new URLSearchParams({
+    url: imageUrl,
+    published: "false",
+    access_token: input.accessToken,
+  });
+  const uploaded = (await readJson(
+    await fetch(`https://graph.facebook.com/v21.0/${input.accountId}/photos`, {
+      method: "POST",
+      body: uploadBody,
+    }),
+  )) as { id?: string };
+  if (!uploaded.id) {
+    throw new Error("Facebook Stories: photo upload returned no photo id");
+  }
+
+  // Step 2 — publish as photo story
+  const storyBody = new URLSearchParams({
+    photo_id: uploaded.id,
+    access_token: input.accessToken,
+  });
+  const published = (await readJson(
+    await fetch(
+      `https://graph.facebook.com/v21.0/${input.accountId}/photo_stories`,
+      {
+        method: "POST",
+        body: storyBody,
+      },
+    ),
+  )) as { success?: boolean; post_id?: string };
+
+  if (published.success === false) {
+    throw new Error("Facebook Stories: photo_stories returned success=false");
+  }
+
+  return {
+    platformPostId: published.post_id || uploaded.id,
+  };
+}
 
 /** @deprecated Token assembly happens in meta select flow */
 export type FacebookTokenSet = TokenSet;
