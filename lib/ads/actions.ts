@@ -21,7 +21,7 @@ import type {
   AdPlatform,
   MediaPlanPayload,
 } from "@/lib/types/ads";
-import { AD_PLATFORMS } from "@/lib/ads/providers";
+import { AD_PLATFORMS } from "@/lib/types/ads";
 
 export type AdsActionResult = { error?: string; success?: string };
 

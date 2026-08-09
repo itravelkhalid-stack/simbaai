@@ -1,5 +1,11 @@
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  brandMediaStoragePathFromUrl,
+  validateMetaAdImage,
+} from "@/lib/ads/meta-image";
 import { googleAdsProvider } from "@/lib/ads/providers/google";
 import { metaAdsProvider } from "@/lib/ads/providers/meta";
 
@@ -11,6 +17,10 @@ afterEach(() => {
   delete process.env.ADS_WRITES_GOOGLE;
   delete process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
 });
+
+const beachPng = readFileSync(
+  resolve(__dirname, "../fixtures/meta-ad-700.png"),
+);
 
 const approvedCreatives = [
   {
@@ -39,6 +49,31 @@ const approvedCreatives = [
   },
 ];
 
+describe("Meta ad image helpers", () => {
+  it("parses brand-media public and signed URLs", () => {
+    expect(
+      brandMediaStoragePathFromUrl(
+        "https://xyz.supabase.co/storage/v1/object/public/brand-media/org/brand/file.png",
+      ),
+    ).toBe("org/brand/file.png");
+    expect(
+      brandMediaStoragePathFromUrl(
+        "https://xyz.supabase.co/storage/v1/object/sign/brand-media/org/brand/file.png?token=abc",
+      ),
+    ).toBe("org/brand/file.png");
+    expect(
+      brandMediaStoragePathFromUrl("https://cdn.example.test/beach.jpg"),
+    ).toBeNull();
+  });
+
+  it("validates Meta image minimums", async () => {
+    const ok = await validateMetaAdImage(beachPng);
+    expect(ok.width).toBe(700);
+    expect(ok.height).toBe(700);
+    expect(ok.mimeType).toBe("image/png");
+  });
+});
+
 describe("Meta Ads writes", () => {
   it("fails closed when writes are disabled", async () => {
     await expect(
@@ -56,23 +91,24 @@ describe("Meta Ads writes", () => {
 
   it("creates campaign, ad set, creative and ad PAUSED", async () => {
     process.env.ADS_WRITES_ENABLED = "true";
-    const writes: Array<{ url: string; body: URLSearchParams }> = [];
+    const writes: Array<{ url: string; body: FormData | URLSearchParams }> = [];
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url === "https://cdn.example.test/beach.jpg") {
-          return new Response(new Uint8Array([1, 2, 3]), {
+          return new Response(beachPng, {
             status: 200,
-            headers: { "content-type": "image/jpeg" },
+            headers: { "content-type": "image/png" },
           });
         }
-        const body = init?.body as URLSearchParams;
+        const body = init?.body as FormData | URLSearchParams;
         writes.push({ url, body });
         if (url.endsWith("/campaigns")) {
           return Response.json({ id: "campaign_1" });
         }
         if (url.endsWith("/adsets")) return Response.json({ id: "adset_1" });
         if (url.endsWith("/adimages")) {
+          expect(body).toBeInstanceOf(FormData);
           return Response.json({ images: { upload: { hash: "hash_1" } } });
         }
         if (url.endsWith("/adcreatives")) {
@@ -103,15 +139,64 @@ describe("Meta Ads writes", () => {
       platformAdId: "ad_1",
       status: "PAUSED",
     });
-    expect(writes.find((row) => row.url.endsWith("/campaigns"))?.body.get("status"))
-      .toBe("PAUSED");
-    expect(writes.find((row) => row.url.endsWith("/adsets"))?.body.get("status"))
-      .toBe("PAUSED");
-    expect(writes.find((row) => row.url.endsWith("/ads"))?.body.get("status"))
-      .toBe("PAUSED");
-    expect(
-      writes.find((row) => row.url.endsWith("/adsets"))?.body.get("daily_budget"),
-    ).toBe("100");
+    const campaignsBody = writes.find((row) => row.url.endsWith("/campaigns"))
+      ?.body as URLSearchParams;
+    const adsetsBody = writes.find((row) => row.url.endsWith("/adsets"))
+      ?.body as URLSearchParams;
+    const adsBody = writes.find((row) => row.url.endsWith("/ads"))
+      ?.body as URLSearchParams;
+    expect(campaignsBody.get("status")).toBe("PAUSED");
+    expect(adsetsBody.get("status")).toBe("PAUSED");
+    expect(adsBody.get("status")).toBe("PAUSED");
+    expect(adsetsBody.get("daily_budget")).toBe("100");
+  });
+
+  it("surfaces full Meta adimages error payload", async () => {
+    process.env.ADS_WRITES_ENABLED = "true";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://cdn.example.test/beach.jpg") {
+        return new Response(beachPng, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
+      }
+      if (url.endsWith("/campaigns")) {
+        return Response.json({ id: "campaign_1" });
+      }
+      if (url.endsWith("/adsets")) return Response.json({ id: "adset_1" });
+      if (url.endsWith("/adimages")) {
+        return Response.json(
+          {
+            error: {
+              message: "Invalid parameter",
+              type: "OAuthException",
+              code: 100,
+              error_user_msg: "Your image is too small.",
+              fbtrace_id: "TRACE123",
+            },
+          },
+          { status: 400 },
+        );
+      }
+      if (url.match(/\/campaign_1$/)) {
+        return Response.json({ success: true });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      metaAdsProvider.createCampaign({
+        accessToken: "token",
+        accountId: "123",
+        name: "Test campaign",
+        dailyBudgetPence: 100,
+        finalUrl: "https://example.test/offer",
+        creatives: approvedCreatives,
+        metadata: { page_id: "page_1" },
+      }),
+    ).rejects.toThrow(/Your image is too small[\s\S]*fbtrace_id=TRACE123/);
   });
 });
 
