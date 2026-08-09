@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AdsMutateForm } from "@/components/ads/ads-mutate-form";
 import { AdsNav } from "@/components/ads/ads-nav";
 import {
   ApprovalCardShell,
@@ -149,14 +150,14 @@ export default async function AdsApprovalsPage() {
                     <p>Budget: {campaign.platform_budget_id ?? "—"}</p>
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-                    <form action={setCampaignLive}>
+                    <AdsMutateForm action={setCampaignLive}>
                       <input
                         type="hidden"
                         name="campaignId"
                         value={campaign.id}
                       />
                       <Button type="submit">Approve & set live</Button>
-                    </form>
+                    </AdsMutateForm>
                     <Link
                       href={`/ads/campaigns/${campaign.id}`}
                       className={cn(

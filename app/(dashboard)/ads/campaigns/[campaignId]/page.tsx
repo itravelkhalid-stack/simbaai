@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { notFound } from "next/navigation";
 
+import { AdsMutateForm } from "@/components/ads/ads-mutate-form";
 import { AdsNav } from "@/components/ads/ads-nav";
+import { CreateCampaignsButton } from "@/components/ads/create-campaigns-button";
 import { MetricCards, SpendBars } from "@/components/ads/metrics-widgets";
 import {
   generateCreativesForCampaign,
@@ -10,7 +12,6 @@ import {
 } from "@/lib/ads/actions";
 import {
   archiveAdCampaign,
-  createCampaignsPaused,
   pauseAdCampaign,
   setCampaignLive,
   updateAdCampaignBudget,
@@ -148,6 +149,17 @@ export default async function AdsCampaignDetailPage({
         ? `https://ads.google.com/aw/campaigns?campaignId=${encodeURIComponent(c.platform_campaign_id)}&ocid=${encodeURIComponent(connection?.account_id ?? "")}`
         : null
     : null;
+  const reviewFailed =
+    launchReview &&
+    (launchReview.status === "failed" || !launchReview.all_passed);
+  const reviewReadyForCmo =
+    launchReview?.all_passed &&
+    launchReview.status === "passed" &&
+    !launchReview.cmo_approved_at;
+  const reviewReadyForCreate =
+    launchReview?.all_passed &&
+    launchReview.status === "passed" &&
+    Boolean(launchReview.cmo_approved_at);
 
   return (
     <div className="space-y-6">
@@ -190,6 +202,28 @@ export default async function AdsCampaignDetailPage({
                   ? ` · CMO approved ${new Date(launchReview.cmo_approved_at).toLocaleString()}`
                   : " · awaiting CMO"}
               </p>
+              {reviewFailed ? (
+                <div className="rounded-lg bg-danger-soft px-3 py-2 text-danger ring-1 ring-danger/25">
+                  <p className="font-medium">Launch review failed</p>
+                  <p className="text-sm">
+                    Fix failed departments below (often Brand needs approved
+                    creatives with images), then click Re-run checks. After all
+                    pass, get CMO approval before Create campaigns PAUSED.
+                  </p>
+                </div>
+              ) : null}
+              {reviewReadyForCmo ? (
+                <div className="rounded-lg bg-warning-soft px-3 py-2 text-ink ring-1 ring-warning/30">
+                  Departments passed — CMO approval is still required before
+                  creating PAUSED campaigns.
+                </div>
+              ) : null}
+              {reviewReadyForCreate ? (
+                <div className="rounded-lg bg-success-soft px-3 py-2 text-ink ring-1 ring-success/30">
+                  Launch review passed and CMO-approved — ready to Create
+                  campaigns PAUSED.
+                </div>
+              ) : null}
               <ul className="space-y-1">
                 {(launchReview.ad_launch_review_signoffs ?? []).map((s) => (
                   <li key={s.department}>
@@ -214,8 +248,11 @@ export default async function AdsCampaignDetailPage({
                       Re-run checks
                     </Button>
                   </form>
-                  {launchReview.all_passed && !launchReview.cmo_approved_at ? (
-                    <form action={cmoApproveCampaignAction} className="flex gap-2">
+                  {reviewReadyForCmo ? (
+                    <form
+                      action={cmoApproveCampaignAction}
+                      className="flex gap-2"
+                    >
                       <input type="hidden" name="campaignId" value={c.id} />
                       <Input
                         name="note"
@@ -235,13 +272,17 @@ export default async function AdsCampaignDetailPage({
             <div className="text-sm text-amber-800 dark:text-amber-200">
               <p className="font-medium">Setup blockers</p>
               <ul className="list-disc pl-5">
-                {(c.setup_blockers as Array<{ code?: string; title?: string; body?: string }>).map(
-                  (b, i) => (
-                    <li key={b.code ?? i}>
-                      {b.title ?? b.code}: {b.body}
-                    </li>
-                  ),
-                )}
+                {(
+                  c.setup_blockers as Array<{
+                    code?: string;
+                    title?: string;
+                    body?: string;
+                  }>
+                ).map((b, i) => (
+                  <li key={b.code ?? i}>
+                    {b.title ?? b.code}: {b.body}
+                  </li>
+                ))}
               </ul>
             </div>
           ) : null}
@@ -314,25 +355,37 @@ export default async function AdsCampaignDetailPage({
               {((c.daily_budget_pence ?? 0) / 100).toFixed(2)} · Local status:{" "}
               {c.status}
             </p>
+            {c.last_error ? (
+              <div className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger ring-1 ring-danger/25">
+                {c.last_error}
+              </div>
+            ) : null}
             {c.status === "pending_approval" || c.status === "paused" ? (
-              <form action={setCampaignLive}>
+              <AdsMutateForm action={setCampaignLive}>
                 <input type="hidden" name="campaignId" value={c.id} />
                 <Button type="submit" disabled={!canWrite}>
                   Approve & set live
                 </Button>
-              </form>
+              </AdsMutateForm>
             ) : null}
             {c.status === "active" ? (
-              <form action={pauseAdCampaign}>
+              <AdsMutateForm action={pauseAdCampaign}>
                 <input type="hidden" name="campaignId" value={c.id} />
-                <Button type="submit" variant="destructive" disabled={!canWrite}>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={!canWrite}
+                >
                   Pause campaign
                 </Button>
-              </form>
+              </AdsMutateForm>
             ) : null}
             {c.status !== "archived" ? (
               <div className="flex flex-wrap gap-2">
-                <form action={updateAdCampaignBudget} className="flex gap-2">
+                <AdsMutateForm
+                  action={updateAdCampaignBudget}
+                  className="flex gap-2"
+                >
                   <input type="hidden" name="campaignId" value={c.id} />
                   <Input
                     name="dailyBudgetMajor"
@@ -346,57 +399,29 @@ export default async function AdsCampaignDetailPage({
                   <Button type="submit" variant="outline" disabled={!canWrite}>
                     Update budget
                   </Button>
-                </form>
-                <form action={archiveAdCampaign}>
+                </AdsMutateForm>
+                <AdsMutateForm action={archiveAdCampaign}>
                   <input type="hidden" name="campaignId" value={c.id} />
                   <Button type="submit" variant="outline" disabled={!canWrite}>
                     Archive
                   </Button>
-                </form>
+                </AdsMutateForm>
               </div>
             ) : null}
           </div>
         ) : c.platform === "meta" || c.platform === "google" ? (
-          <form action={createCampaignsPaused} className="space-y-3">
-            <input type="hidden" name="campaignId" value={c.id} />
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="finalUrl">Final destination URL</Label>
-                <Input
-                  id="finalUrl"
-                  name="finalUrl"
-                  type="url"
-                  required
-                  defaultValue={finalUrl}
-                  placeholder="https://example.com/offer"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="countries">Country codes</Label>
-                <Input
-                  id="countries"
-                  name="countries"
-                  defaultValue={
-                    Array.isArray(c.targeting?.countries)
-                      ? (c.targeting.countries as string[]).join(", ")
-                      : "GB"
-                  }
-                  placeholder="GB, US"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {approvedCreatives.length} approved creative(s). Meta requires one
-              with an image. Google RSA requires 3 distinct headlines and 2
-              descriptions from approved variants.
-            </p>
-            <Button
-              type="submit"
-              disabled={!canWrite || approvedCreatives.length === 0}
-            >
-              Create campaigns PAUSED
-            </Button>
-          </form>
+          <CreateCampaignsButton
+            campaignId={c.id}
+            finalUrl={finalUrl}
+            countries={
+              Array.isArray(c.targeting?.countries)
+                ? (c.targeting.countries as string[]).join(", ")
+                : "GB"
+            }
+            approvedCreativesCount={approvedCreatives.length}
+            canWrite={canWrite}
+            persistedLastError={c.last_error}
+          />
         ) : (
           <p className="text-sm text-muted-foreground">
             Real writes remain stubbed for {AD_PLATFORM_LABELS[c.platform]}.
@@ -404,7 +429,10 @@ export default async function AdsCampaignDetailPage({
         )}
       </section>
 
-      <form action={linkCampaignToPlatform} className="space-y-3 rounded-xl border p-4">
+      <form
+        action={linkCampaignToPlatform}
+        className="space-y-3 rounded-xl border p-4"
+      >
         <p className="text-sm font-medium">Link platform campaign</p>
         <input type="hidden" name="campaignId" value={c.id} />
         <div className="grid gap-3 md:grid-cols-2">
@@ -455,7 +483,9 @@ export default async function AdsCampaignDetailPage({
         <div className="border-b p-3 text-sm font-medium">Creatives</div>
         <ul className="divide-y">
           {creativeList.length === 0 ? (
-            <li className="p-4 text-sm text-muted-foreground">No creatives yet.</li>
+            <li className="p-4 text-sm text-muted-foreground">
+              No creatives yet.
+            </li>
           ) : (
             creativeList.map((cr) => (
               <li key={cr.id} className="space-y-1 p-4 text-sm">

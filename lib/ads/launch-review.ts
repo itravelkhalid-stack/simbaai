@@ -55,6 +55,19 @@ export async function ensureLaunchReview(params: {
       .from("ad_campaigns")
       .update({ launch_review_id: reviewId })
       .eq("id", params.campaignId);
+  } else {
+    // Re-run resets department checks; require a fresh CMO approval afterward.
+    await adsTable(supabase, "ad_launch_reviews")
+      .update({
+        status: "pending",
+        all_passed: false,
+        cmo_approved_at: null,
+        cmo_approved_by: null,
+        cmo_note: null,
+        cmo_agent_run_id: null,
+      })
+      .eq("id", reviewId)
+      .eq("organization_id", params.organizationId);
   }
 
   for (const department of LAUNCH_REVIEW_DEPARTMENTS) {

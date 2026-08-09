@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 
 import { ensureFreshAdAccessToken } from "@/lib/ads/connections";
 import { getAdsProvider } from "@/lib/ads/providers";
+import { AdsWriteDisabledError } from "@/lib/ads/providers/types";
 import { auditAdWrite, authorizeAdWrite } from "@/lib/ads/write-safety";
 import { requireActiveOrg } from "@/lib/org/require";
 import { adsTable } from "@/lib/ads/db";
@@ -16,12 +18,91 @@ import type {
   OrgAdLimits,
 } from "@/lib/types/ads";
 
+export type AdsMutateState = {
+  error?: string;
+  success?: string;
+  gate?: string;
+  fbtraceId?: string;
+  stale?: boolean;
+};
+
+export type CreateCampaignsState = AdsMutateState;
+
+class AdsGateError extends Error {
+  gate: string;
+  fbtraceId?: string;
+  constructor(gate: string, message: string, fbtraceId?: string) {
+    super(message);
+    this.name = "AdsGateError";
+    this.gate = gate;
+    this.fbtraceId = fbtraceId;
+  }
+}
+
 async function assertCanManageAds() {
   const ctx = await requireActiveOrg();
   if (ctx.active.role === "org_viewer") {
-    throw new Error("Viewers cannot modify ad campaigns");
+    throw new AdsGateError(
+      "authorize",
+      "Viewers cannot modify ad campaigns. Ask an org member or admin.",
+    );
   }
   return ctx;
+}
+
+function classifyAdsError(error: unknown): {
+  gate: string;
+  message: string;
+  fbtraceId?: string;
+} {
+  if (error instanceof AdsGateError) {
+    return {
+      gate: error.gate,
+      message: error.message,
+      fbtraceId: error.fbtraceId,
+    };
+  }
+  if (error instanceof AdsWriteDisabledError) {
+    return { gate: "ads_writes_disabled", message: error.message };
+  }
+  const message =
+    error instanceof Error ? error.message : "Unexpected ads write failure";
+  const fbtraceMatch = message.match(/fbtrace_id=([A-Za-z0-9_-]+)/);
+  const fbtraceId = fbtraceMatch?.[1];
+  if (/ADS_WRITES_ENABLED|ADS_WRITES_META|ADS_WRITES_GOOGLE|writes are disabled/i.test(message)) {
+    return { gate: "ads_writes_disabled", message, fbtraceId };
+  }
+  if (/master pause|writes_paused|kill switch|hard limits|org_ad_limits/i.test(message)) {
+    return { gate: "ads_writes_disabled", message, fbtraceId };
+  }
+  if (/below Meta|daily budget|META_MIN|ad set minimum/i.test(message)) {
+    return { gate: "meta_budget", message, fbtraceId };
+  }
+  if (/Ads API|Graph API|fbtrace_id|OAuthException/i.test(message)) {
+    return { gate: "meta_api", message, fbtraceId };
+  }
+  if (/connection/i.test(message)) {
+    return { gate: "connection", message, fbtraceId };
+  }
+  return { gate: "unknown", message, fbtraceId };
+}
+
+async function persistCampaignLastError(
+  organizationId: string,
+  campaignId: string | null | undefined,
+  message: string,
+) {
+  if (!campaignId) return;
+  try {
+    const supabase = await createClient();
+    await supabase
+      .from("ad_campaigns")
+      .update({ last_error: message.slice(0, 2000) })
+      .eq("id", campaignId)
+      .eq("organization_id", organizationId);
+  } catch {
+    // Best-effort — never mask the original failure.
+  }
 }
 
 export async function attachMediaAssetToAdCreative(formData: FormData) {
@@ -131,220 +212,308 @@ function platformWriteMetadata(campaign: AdCampaign, connection: AdConnection) {
   };
 }
 
-export async function createCampaignsPaused(formData: FormData) {
-  const { user, active } = await assertCanManageAds();
-  const campaignId = String(formData.get("campaignId") ?? "");
-  const finalUrl = String(formData.get("finalUrl") ?? "").trim();
-  const countries = String(formData.get("countries") ?? "GB")
-    .split(",")
-    .map((value) => value.trim().toUpperCase())
-    .filter(Boolean);
-  if (!campaignId) throw new Error("Missing campaign");
+export async function createCampaignsPaused(
+  _prev: CreateCampaignsState,
+  formData: FormData,
+): Promise<CreateCampaignsState> {
+  let campaignId = String(formData.get("campaignId") ?? "");
+  let organizationId: string | null = null;
+
   try {
-    const parsed = new URL(finalUrl);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      throw new Error("Unsupported protocol");
+    const { user, active } = await assertCanManageAds();
+    organizationId = active.organization_id;
+    campaignId = String(formData.get("campaignId") ?? "");
+    const finalUrl = String(formData.get("finalUrl") ?? "").trim();
+    const countries = String(formData.get("countries") ?? "GB")
+      .split(",")
+      .map((value) => value.trim().toUpperCase())
+      .filter(Boolean);
+    if (!campaignId) {
+      throw new AdsGateError("validation", "Missing campaign id.");
     }
-  } catch {
-    throw new Error("A valid final destination URL is required");
-  }
+    try {
+      const parsed = new URL(finalUrl);
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        throw new Error("Unsupported protocol");
+      }
+    } catch {
+      throw new AdsGateError(
+        "validation",
+        "A valid final destination URL is required (http or https).",
+      );
+    }
 
-  const { supabase, campaign, connection } = await loadCampaignContext(
-    active.organization_id,
-    campaignId,
-  );
-  if (campaign.platform !== "meta" && campaign.platform !== "google") {
-    throw new Error("Phase C supports real writes for Meta and Google only");
-  }
-  if (campaign.platform_campaign_id) {
-    throw new Error("Campaign has already been created on the platform");
-  }
-  if (!campaign.daily_budget_pence || campaign.daily_budget_pence <= 0) {
-    throw new Error("Set a positive daily budget before platform creation");
-  }
-  if (campaign.platform === "meta") {
-    assertMetaCreateDailyBudget(campaign.daily_budget_pence);
-  }
+    const { supabase, campaign, connection } = await loadCampaignContext(
+      active.organization_id,
+      campaignId,
+    );
+    if (campaign.platform !== "meta" && campaign.platform !== "google") {
+      throw new AdsGateError(
+        "validation",
+        "Phase C supports real writes for Meta and Google only.",
+      );
+    }
+    if (campaign.platform_campaign_id) {
+      throw new AdsGateError(
+        "validation",
+        "Campaign has already been created on the platform.",
+      );
+    }
+    if (!campaign.daily_budget_pence || campaign.daily_budget_pence <= 0) {
+      throw new AdsGateError(
+        "meta_budget",
+        "Set a positive daily budget before platform creation.",
+      );
+    }
+    if (campaign.platform === "meta") {
+      try {
+        assertMetaCreateDailyBudget(campaign.daily_budget_pence);
+      } catch (error) {
+        throw new AdsGateError(
+          "meta_budget",
+          error instanceof Error ? error.message : "Meta daily budget too low.",
+        );
+      }
+    }
 
-  const { data: creativeRows } = await supabase
-    .from("ad_creatives")
-    .select("*")
-    .eq("campaign_id", campaign.id)
-    .eq("organization_id", active.organization_id)
-    .eq("status", "approved")
-    .order("approved_at", { ascending: true });
-  const creatives = (creativeRows ?? []) as AdCreative[];
-  if (!creatives.length) {
-    throw new Error("Approve at least one creative before platform creation");
-  }
-  if (
-    campaign.platform === "meta" &&
-    !creatives.some((creative) => creative.media_urls?.length)
-  ) {
-    throw new Error("Meta creation requires an approved creative with an image");
-  }
-
-  // Launch review board + CMO gate (Meta Ads pipeline)
-  {
-    const { data: review } = await adsTable(supabase, "ad_launch_reviews")
-      .select("id, all_passed, cmo_approved_at, status")
+    const { data: creativeRows } = await supabase
+      .from("ad_creatives")
+      .select("*")
       .eq("campaign_id", campaign.id)
       .eq("organization_id", active.organization_id)
-      .maybeSingle();
-    if (!review) {
-      throw new Error(
-        "Launch review board missing — run launch checks on the campaign before Meta create",
+      .eq("status", "approved")
+      .order("approved_at", { ascending: true });
+    const creatives = (creativeRows ?? []) as AdCreative[];
+    if (!creatives.length) {
+      throw new AdsGateError(
+        "creatives",
+        "Approve at least one creative variant before platform creation. Open Ads → Approvals, approve creatives with images attached, then re-run Launch review.",
       );
     }
-    if (!review.all_passed) {
-      throw new Error(
-        `Launch review not fully passed (status=${review.status}). All departments must pass before create.`,
+    if (
+      campaign.platform === "meta" &&
+      !creatives.some((creative) => creative.media_urls?.length)
+    ) {
+      throw new AdsGateError(
+        "creatives",
+        "Meta creation requires an approved creative with an attached image. Attach media on the creative, then re-run Launch review.",
       );
     }
-    if (!review.cmo_approved_at) {
-      throw new Error(
-        "CMO approval required before creating a PAUSED campaign on Meta",
-      );
-    }
-  }
 
-  await authorizeAdWrite({
-    organizationId: active.organization_id,
-    brandId: campaign.brand_id,
-    platform: campaign.platform,
-    action: "create_paused",
-    campaignId: campaign.id,
-    actorUserId: user.id,
-    proposedDailyBudgetPence: campaign.daily_budget_pence,
-  });
+    // Launch review board + CMO gate (Meta Ads pipeline)
+    {
+      const { data: review } = await adsTable(supabase, "ad_launch_reviews")
+        .select("id, all_passed, cmo_approved_at, status")
+        .eq("campaign_id", campaign.id)
+        .eq("organization_id", active.organization_id)
+        .maybeSingle();
+      if (!review) {
+        throw new AdsGateError(
+          "launch_review",
+          "Launch review board missing — click “Re-run checks” on this campaign, then get CMO approval before creating PAUSED.",
+        );
+      }
+      if (!review.all_passed || review.status !== "passed") {
+        const { data: signoffs } = await adsTable(
+          supabase,
+          "ad_launch_review_signoffs",
+        )
+          .select("department, result, notes")
+          .eq("review_id", review.id)
+          .eq("organization_id", active.organization_id);
+        const failed = (signoffs ?? []).filter(
+          (s: { result: string }) => s.result === "fail",
+        ) as Array<{ department: string; result: string; notes: string | null }>;
+        const pending = (signoffs ?? []).filter(
+          (s: { result: string }) => s.result === "pending",
+        ) as Array<{ department: string }>;
+        const failedSummary = failed.length
+          ? failed
+              .map((s) => `${s.department}${s.notes ? ` (${s.notes})` : ""}`)
+              .join("; ")
+          : "see Pipeline record above";
+        const pendingSummary = pending.length
+          ? ` Pending: ${pending.map((s) => s.department).join(", ")}.`
+          : "";
+        throw new AdsGateError(
+          "launch_review",
+          `Launch review status is “${review.status}” — not ready to create. Failed: ${failedSummary}.${pendingSummary} Re-run Launch review after approving creatives, then get CMO approval.`,
+        );
+      }
+      if (!review.cmo_approved_at) {
+        throw new AdsGateError(
+          "cmo_approval",
+          "CMO must approve the passed launch review before creating a PAUSED campaign. Use “CMO approve for paused create” in the Pipeline record above.",
+        );
+      }
+    }
 
-  let metadata: Record<string, unknown> = connection.metadata ?? {};
-  if (campaign.platform === "meta") {
-    const { data: social } = await supabase
-      .from("social_connections")
-      .select("metadata")
-      .eq("organization_id", active.organization_id)
-      .eq("brand_id", campaign.brand_id)
-      .eq("platform", "facebook")
-      .eq("status", "active")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    metadata = {
+    await authorizeAdWrite({
+      organizationId: active.organization_id,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "create_paused",
+      campaignId: campaign.id,
+      actorUserId: user.id,
+      proposedDailyBudgetPence: campaign.daily_budget_pence,
+    });
+
+    let metadata: Record<string, unknown> = connection.metadata ?? {};
+    if (campaign.platform === "meta") {
+      const { data: social } = await supabase
+        .from("social_connections")
+        .select("metadata")
+        .eq("organization_id", active.organization_id)
+        .eq("brand_id", campaign.brand_id)
+        .eq("platform", "facebook")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      metadata = {
+        ...metadata,
+        ...((social?.metadata as Record<string, unknown> | null) ?? {}),
+      };
+    }
+
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
+    const provider = getAdsProvider(campaign.platform);
+    const result = await provider.createCampaign({
+      accessToken,
+      accountId: fresh.account_id,
+      name: campaign.name,
+      objective: campaign.objective ?? undefined,
+      dailyBudgetPence: campaign.daily_budget_pence ?? undefined,
+      lifetimeBudgetPence: campaign.lifetime_budget_pence ?? undefined,
+      currency: campaign.currency,
+      startDate: campaign.start_date ?? undefined,
+      endDate: campaign.end_date ?? undefined,
+      targeting: {
+        ...(campaign.targeting ?? {}),
+        countries,
+        final_url: finalUrl,
+      },
+      finalUrl,
+      metadata,
+      creatives: creatives.map((creative) => ({
+        localCreativeId: creative.id,
+        headline: creative.headline,
+        primaryText: creative.primary_text,
+        description: creative.description,
+        cta: creative.cta,
+        mediaUrls: creative.media_urls ?? [],
+      })),
+    });
+
+    const now = new Date().toISOString();
+    const platformMetadata = {
       ...metadata,
-      ...((social?.metadata as Record<string, unknown> | null) ?? {}),
+      final_url: finalUrl,
+      countries,
+      approved_creative_ids: creatives.map((creative) => creative.id),
+      remote: result.raw ?? {},
+    };
+    const { error: updateError } = await supabase
+      .from("ad_campaigns")
+      .update({
+        connection_id: fresh.id,
+        platform_campaign_id: result.platformCampaignId,
+        platform_adset_id: result.platformAdSetId ?? null,
+        platform_ad_id: result.platformAdId ?? null,
+        platform_budget_id: result.platformBudgetId ?? null,
+        platform_metadata: platformMetadata,
+        targeting: {
+          ...(campaign.targeting ?? {}),
+          countries,
+          final_url: finalUrl,
+        },
+        status: "pending_approval",
+        remote_created_at: now,
+        last_error: null,
+      })
+      .eq("id", campaign.id)
+      .eq("organization_id", active.organization_id);
+    if (updateError) {
+      try {
+        await provider.setCampaignStatus({
+          accessToken,
+          accountId: fresh.account_id,
+          platformCampaignId: result.platformCampaignId,
+          status: "archived",
+          metadata: {
+            ...metadata,
+            platform_adset_id: result.platformAdSetId,
+            platform_ad_id: result.platformAdId,
+            platform_budget_id: result.platformBudgetId,
+          },
+        });
+      } catch {
+        // Remote hierarchy is PAUSED. Preserve original persistence error.
+      }
+      throw new AdsGateError("persist", updateError.message);
+    }
+
+    for (let index = 0; index < creatives.length; index++) {
+      const remoteId =
+        result.platformCreativeIds?.[index] ??
+        result.platformCreativeIds?.[0] ??
+        null;
+      if (remoteId) {
+        await supabase
+          .from("ad_creatives")
+          .update({ platform_creative_id: remoteId })
+          .eq("id", creatives[index].id);
+      }
+    }
+
+    await auditAdWrite({
+      organizationId: active.organization_id,
+      actorUserId: user.id,
+      campaign,
+      action: "ad_campaign_create_paused",
+      before: { status: campaign.status, platform_campaign_id: null },
+      after: {
+        status: "pending_approval",
+        platform_campaign_id: result.platformCampaignId,
+        platform_adset_id: result.platformAdSetId ?? null,
+        platform_ad_id: result.platformAdId ?? null,
+        daily_budget_pence: campaign.daily_budget_pence,
+      },
+    });
+
+    const { notifyApprovalsNeeded } = await import("@/lib/notifications/notify");
+    await notifyApprovalsNeeded({
+      organizationId: active.organization_id,
+      title: "Ad campaign ready for approval",
+      body: campaign.name,
+      link: "/ads/approvals",
+    });
+
+    revalidatePath(`/ads/campaigns/${campaign.id}`);
+    revalidatePath("/ads/campaigns");
+    revalidatePath("/ads/approvals");
+    return {
+      success: `Created PAUSED on ${campaign.platform}. Campaign is ready for “Approve & set live”.`,
+    };
+  } catch (error) {
+    unstable_rethrow(error);
+    const classified = classifyAdsError(error);
+    const fbtraceId = classified.fbtraceId;
+    if (organizationId && campaignId) {
+      await persistCampaignLastError(
+        organizationId,
+        campaignId,
+        classified.message,
+      );
+      revalidatePath(`/ads/campaigns/${campaignId}`);
+    }
+    return {
+      error: classified.message,
+      gate: classified.gate,
+      fbtraceId,
     };
   }
-
-  const { accessToken, connection: fresh } =
-    await ensureFreshAdAccessToken(connection);
-  const provider = getAdsProvider(campaign.platform);
-  const result = await provider.createCampaign({
-    accessToken,
-    accountId: fresh.account_id,
-    name: campaign.name,
-    objective: campaign.objective ?? undefined,
-    dailyBudgetPence: campaign.daily_budget_pence ?? undefined,
-    lifetimeBudgetPence: campaign.lifetime_budget_pence ?? undefined,
-    currency: campaign.currency,
-    startDate: campaign.start_date ?? undefined,
-    endDate: campaign.end_date ?? undefined,
-    targeting: { ...(campaign.targeting ?? {}), countries, final_url: finalUrl },
-    finalUrl,
-    metadata,
-    creatives: creatives.map((creative) => ({
-      localCreativeId: creative.id,
-      headline: creative.headline,
-      primaryText: creative.primary_text,
-      description: creative.description,
-      cta: creative.cta,
-      mediaUrls: creative.media_urls ?? [],
-    })),
-  });
-
-  const now = new Date().toISOString();
-  const platformMetadata = {
-    ...metadata,
-    final_url: finalUrl,
-    countries,
-    approved_creative_ids: creatives.map((creative) => creative.id),
-    remote: result.raw ?? {},
-  };
-  const { error: updateError } = await supabase
-    .from("ad_campaigns")
-    .update({
-      connection_id: fresh.id,
-      platform_campaign_id: result.platformCampaignId,
-      platform_adset_id: result.platformAdSetId ?? null,
-      platform_ad_id: result.platformAdId ?? null,
-      platform_budget_id: result.platformBudgetId ?? null,
-      platform_metadata: platformMetadata,
-      targeting: { ...(campaign.targeting ?? {}), countries, final_url: finalUrl },
-      status: "pending_approval",
-      remote_created_at: now,
-      last_error: null,
-    })
-    .eq("id", campaign.id)
-    .eq("organization_id", active.organization_id);
-  if (updateError) {
-    try {
-      await provider.setCampaignStatus({
-        accessToken,
-        accountId: fresh.account_id,
-        platformCampaignId: result.platformCampaignId,
-        status: "archived",
-        metadata: {
-          ...metadata,
-          platform_adset_id: result.platformAdSetId,
-          platform_ad_id: result.platformAdId,
-          platform_budget_id: result.platformBudgetId,
-        },
-      });
-    } catch {
-      // Remote hierarchy is PAUSED. Preserve original persistence error.
-    }
-    throw new Error(updateError.message);
-  }
-
-  for (let index = 0; index < creatives.length; index++) {
-    const remoteId =
-      result.platformCreativeIds?.[index] ??
-      result.platformCreativeIds?.[0] ??
-      null;
-    if (remoteId) {
-      await supabase
-        .from("ad_creatives")
-        .update({ platform_creative_id: remoteId })
-        .eq("id", creatives[index].id);
-    }
-  }
-
-  await auditAdWrite({
-    organizationId: active.organization_id,
-    actorUserId: user.id,
-    campaign,
-    action: "ad_campaign_create_paused",
-    before: { status: campaign.status, platform_campaign_id: null },
-    after: {
-      status: "pending_approval",
-      platform_campaign_id: result.platformCampaignId,
-      platform_adset_id: result.platformAdSetId ?? null,
-      platform_ad_id: result.platformAdId ?? null,
-      daily_budget_pence: campaign.daily_budget_pence,
-    },
-  });
-
-  const { notifyApprovalsNeeded } = await import("@/lib/notifications/notify");
-  await notifyApprovalsNeeded({
-    organizationId: active.organization_id,
-    title: "Ad campaign ready for approval",
-    body: campaign.name,
-    link: "/ads/approvals",
-  });
-
-  revalidatePath(`/ads/campaigns/${campaign.id}`);
-  revalidatePath("/ads/campaigns");
-  revalidatePath("/ads/approvals");
 }
 
 /** Build all still-local Meta/Google campaigns in an approved media plan. */
@@ -400,196 +569,278 @@ export async function createPlanCampaignsPaused(formData: FormData) {
         ? (campaign.targeting.countries as string[]).join(",")
         : "GB",
     );
-    await createCampaignsPaused(child);
+    const result = await createCampaignsPaused({}, child);
+    if (result.error) {
+      throw new Error(`${campaign.id}: ${result.error}`);
+    }
   }
   revalidatePath(`/ads/plans/${planId}`);
   revalidatePath("/ads/approvals");
 }
 
-export async function setCampaignLive(formData: FormData) {
-  const { user, active } = await assertCanManageAds();
-  const campaignId = String(formData.get("campaignId") ?? "");
-  const { supabase, campaign, connection } = await loadCampaignContext(
-    active.organization_id,
-    campaignId,
-  );
-  if (!campaign.platform_campaign_id) {
-    throw new Error("Create the campaign paused on the platform first");
+async function wrapCampaignMutate(
+  formData: FormData,
+  run: (ctx: {
+    user: Awaited<ReturnType<typeof assertCanManageAds>>["user"];
+    active: Awaited<ReturnType<typeof assertCanManageAds>>["active"];
+    campaignId: string;
+  }) => Promise<string>,
+): Promise<AdsMutateState> {
+  let campaignId = String(formData.get("campaignId") ?? "");
+  let organizationId: string | null = null;
+  try {
+    const { user, active } = await assertCanManageAds();
+    organizationId = active.organization_id;
+    campaignId = String(formData.get("campaignId") ?? "");
+    if (!campaignId) {
+      throw new AdsGateError("validation", "Missing campaign id.");
+    }
+    const success = await run({ user, active, campaignId });
+    revalidatePath(`/ads/campaigns/${campaignId}`);
+    return { success };
+  } catch (error) {
+    unstable_rethrow(error);
+    const classified = classifyAdsError(error);
+    if (organizationId && campaignId) {
+      await persistCampaignLastError(
+        organizationId,
+        campaignId,
+        classified.message,
+      );
+      revalidatePath(`/ads/campaigns/${campaignId}`);
+    }
+    return {
+      error: classified.message,
+      gate: classified.gate,
+      fbtraceId: classified.fbtraceId,
+    };
   }
-  if (campaign.status !== "pending_approval" && campaign.status !== "paused") {
-    throw new Error("Only pending or paused campaigns can be set live");
-  }
+}
 
-  await authorizeAdWrite({
-    organizationId: active.organization_id,
-    brandId: campaign.brand_id,
-    platform: campaign.platform,
-    action: "activate",
-    campaignId: campaign.id,
-    actorUserId: user.id,
-    proposedDailyBudgetPence: campaign.daily_budget_pence,
-  });
+export async function setCampaignLive(
+  _prev: AdsMutateState,
+  formData: FormData,
+): Promise<AdsMutateState> {
+  return wrapCampaignMutate(formData, async ({ user, active, campaignId }) => {
+    const { supabase, campaign, connection } = await loadCampaignContext(
+      active.organization_id,
+      campaignId,
+    );
+    if (!campaign.platform_campaign_id) {
+      throw new AdsGateError(
+        "validation",
+        "Create the campaign paused on the platform first.",
+      );
+    }
+    if (campaign.status !== "pending_approval" && campaign.status !== "paused") {
+      throw new AdsGateError(
+        "validation",
+        "Only pending or paused campaigns can be set live.",
+      );
+    }
 
-  const { accessToken, connection: fresh } =
-    await ensureFreshAdAccessToken(connection);
-  await getAdsProvider(campaign.platform).setCampaignStatus({
-    accessToken,
-    accountId: fresh.account_id,
-    platformCampaignId: campaign.platform_campaign_id,
-    status: "active",
-    metadata: platformWriteMetadata(campaign, fresh),
-  });
-  const now = new Date().toISOString();
-  await supabase
-    .from("ad_campaigns")
-    .update({
+    await authorizeAdWrite({
+      organizationId: active.organization_id,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "activate",
+      campaignId: campaign.id,
+      actorUserId: user.id,
+      proposedDailyBudgetPence: campaign.daily_budget_pence,
+    });
+
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
+    await getAdsProvider(campaign.platform).setCampaignStatus({
+      accessToken,
+      accountId: fresh.account_id,
+      platformCampaignId: campaign.platform_campaign_id,
       status: "active",
-      launch_approved_by: user.id,
-      launch_approved_at: now,
-      last_error: null,
-    })
-    .eq("id", campaign.id);
-  await auditAdWrite({
-    organizationId: active.organization_id,
-    actorUserId: user.id,
-    campaign,
-    action: "ad_campaign_activate",
-    before: { status: campaign.status },
-    after: {
-      status: "active",
-      daily_budget_pence: campaign.daily_budget_pence,
-      approved_at: now,
-    },
+      metadata: platformWriteMetadata(campaign, fresh),
+    });
+    const now = new Date().toISOString();
+    await supabase
+      .from("ad_campaigns")
+      .update({
+        status: "active",
+        launch_approved_by: user.id,
+        launch_approved_at: now,
+        last_error: null,
+      })
+      .eq("id", campaign.id);
+    await auditAdWrite({
+      organizationId: active.organization_id,
+      actorUserId: user.id,
+      campaign,
+      action: "ad_campaign_activate",
+      before: { status: campaign.status },
+      after: {
+        status: "active",
+        daily_budget_pence: campaign.daily_budget_pence,
+        approved_at: now,
+      },
+    });
+    revalidatePath("/ads/approvals");
+    return "Campaign set live.";
   });
-  revalidatePath(`/ads/campaigns/${campaign.id}`);
-  revalidatePath("/ads/approvals");
 }
 
-export async function pauseAdCampaign(formData: FormData) {
-  const { user, active } = await assertCanManageAds();
-  const campaignId = String(formData.get("campaignId") ?? "");
-  const { supabase, campaign, connection } = await loadCampaignContext(
-    active.organization_id,
-    campaignId,
-  );
-  if (!campaign.platform_campaign_id) throw new Error("Campaign is not remote");
-  await authorizeAdWrite({
-    organizationId: active.organization_id,
-    brandId: campaign.brand_id,
-    platform: campaign.platform,
-    action: "pause",
-    campaignId: campaign.id,
-    actorUserId: user.id,
-    currentDailyBudgetPence: campaign.daily_budget_pence,
+export async function pauseAdCampaign(
+  _prev: AdsMutateState,
+  formData: FormData,
+): Promise<AdsMutateState> {
+  return wrapCampaignMutate(formData, async ({ user, active, campaignId }) => {
+    const { supabase, campaign, connection } = await loadCampaignContext(
+      active.organization_id,
+      campaignId,
+    );
+    if (!campaign.platform_campaign_id) {
+      throw new AdsGateError("validation", "Campaign is not remote.");
+    }
+    await authorizeAdWrite({
+      organizationId: active.organization_id,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "pause",
+      campaignId: campaign.id,
+      actorUserId: user.id,
+      currentDailyBudgetPence: campaign.daily_budget_pence,
+    });
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
+    await getAdsProvider(campaign.platform).setCampaignStatus({
+      accessToken,
+      accountId: fresh.account_id,
+      platformCampaignId: campaign.platform_campaign_id,
+      status: "paused",
+      metadata: platformWriteMetadata(campaign, fresh),
+    });
+    await supabase
+      .from("ad_campaigns")
+      .update({ status: "paused", last_error: null })
+      .eq("id", campaign.id);
+    await auditAdWrite({
+      organizationId: active.organization_id,
+      actorUserId: user.id,
+      campaign,
+      action: "ad_campaign_pause",
+      before: { status: campaign.status },
+      after: { status: "paused" },
+    });
+    return "Campaign paused.";
   });
-  const { accessToken, connection: fresh } =
-    await ensureFreshAdAccessToken(connection);
-  await getAdsProvider(campaign.platform).setCampaignStatus({
-    accessToken,
-    accountId: fresh.account_id,
-    platformCampaignId: campaign.platform_campaign_id,
-    status: "paused",
-    metadata: platformWriteMetadata(campaign, fresh),
-  });
-  await supabase.from("ad_campaigns").update({ status: "paused" }).eq("id", campaign.id);
-  await auditAdWrite({
-    organizationId: active.organization_id,
-    actorUserId: user.id,
-    campaign,
-    action: "ad_campaign_pause",
-    before: { status: campaign.status },
-    after: { status: "paused" },
-  });
-  revalidatePath(`/ads/campaigns/${campaign.id}`);
 }
 
-export async function updateAdCampaignBudget(formData: FormData) {
-  const { user, active } = await assertCanManageAds();
-  const campaignId = String(formData.get("campaignId") ?? "");
-  const pounds = Number(formData.get("dailyBudgetMajor") ?? 0);
-  const proposed = Math.round(pounds * 100);
-  if (!Number.isFinite(proposed) || proposed <= 0) {
-    throw new Error("Daily budget must be greater than zero");
-  }
-  const { supabase, campaign, connection } = await loadCampaignContext(
-    active.organization_id,
-    campaignId,
-  );
-  if (!campaign.platform_campaign_id) throw new Error("Campaign is not remote");
-  await authorizeAdWrite({
-    organizationId: active.organization_id,
-    brandId: campaign.brand_id,
-    platform: campaign.platform,
-    action: "budget_update",
-    campaignId: campaign.id,
-    actorUserId: user.id,
-    currentDailyBudgetPence: campaign.daily_budget_pence,
-    proposedDailyBudgetPence: proposed,
+export async function updateAdCampaignBudget(
+  _prev: AdsMutateState,
+  formData: FormData,
+): Promise<AdsMutateState> {
+  return wrapCampaignMutate(formData, async ({ user, active, campaignId }) => {
+    const pounds = Number(formData.get("dailyBudgetMajor") ?? 0);
+    const proposed = Math.round(pounds * 100);
+    if (!Number.isFinite(proposed) || proposed <= 0) {
+      throw new AdsGateError(
+        "meta_budget",
+        "Daily budget must be greater than zero.",
+      );
+    }
+    const { supabase, campaign, connection } = await loadCampaignContext(
+      active.organization_id,
+      campaignId,
+    );
+    if (!campaign.platform_campaign_id) {
+      throw new AdsGateError("validation", "Campaign is not remote.");
+    }
+    if (campaign.platform === "meta") {
+      try {
+        assertMetaCreateDailyBudget(proposed);
+      } catch (error) {
+        throw new AdsGateError(
+          "meta_budget",
+          error instanceof Error ? error.message : "Meta daily budget too low.",
+        );
+      }
+    }
+    await authorizeAdWrite({
+      organizationId: active.organization_id,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "budget_update",
+      campaignId: campaign.id,
+      actorUserId: user.id,
+      currentDailyBudgetPence: campaign.daily_budget_pence,
+      proposedDailyBudgetPence: proposed,
+    });
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
+    await getAdsProvider(campaign.platform).updateBudget({
+      accessToken,
+      accountId: fresh.account_id,
+      platformCampaignId: campaign.platform_campaign_id,
+      dailyBudgetPence: proposed,
+      currency: campaign.currency,
+      metadata: platformWriteMetadata(campaign, fresh),
+    });
+    await supabase
+      .from("ad_campaigns")
+      .update({ daily_budget_pence: proposed, last_error: null })
+      .eq("id", campaign.id);
+    await auditAdWrite({
+      organizationId: active.organization_id,
+      actorUserId: user.id,
+      campaign,
+      action: "ad_campaign_budget_update",
+      before: { daily_budget_pence: campaign.daily_budget_pence },
+      after: { daily_budget_pence: proposed },
+    });
+    return `Daily budget updated to £${(proposed / 100).toFixed(2)}.`;
   });
-  const { accessToken, connection: fresh } =
-    await ensureFreshAdAccessToken(connection);
-  await getAdsProvider(campaign.platform).updateBudget({
-    accessToken,
-    accountId: fresh.account_id,
-    platformCampaignId: campaign.platform_campaign_id,
-    dailyBudgetPence: proposed,
-    currency: campaign.currency,
-    metadata: platformWriteMetadata(campaign, fresh),
-  });
-  await supabase
-    .from("ad_campaigns")
-    .update({ daily_budget_pence: proposed })
-    .eq("id", campaign.id);
-  await auditAdWrite({
-    organizationId: active.organization_id,
-    actorUserId: user.id,
-    campaign,
-    action: "ad_campaign_budget_update",
-    before: { daily_budget_pence: campaign.daily_budget_pence },
-    after: { daily_budget_pence: proposed },
-  });
-  revalidatePath(`/ads/campaigns/${campaign.id}`);
 }
 
-export async function archiveAdCampaign(formData: FormData) {
-  const { user, active } = await assertCanManageAds();
-  const campaignId = String(formData.get("campaignId") ?? "");
-  const { supabase, campaign, connection } = await loadCampaignContext(
-    active.organization_id,
-    campaignId,
-  );
-  if (!campaign.platform_campaign_id) throw new Error("Campaign is not remote");
-  await authorizeAdWrite({
-    organizationId: active.organization_id,
-    brandId: campaign.brand_id,
-    platform: campaign.platform,
-    action: "archive",
-    campaignId: campaign.id,
-    actorUserId: user.id,
-    currentDailyBudgetPence: campaign.daily_budget_pence,
+export async function archiveAdCampaign(
+  _prev: AdsMutateState,
+  formData: FormData,
+): Promise<AdsMutateState> {
+  return wrapCampaignMutate(formData, async ({ user, active, campaignId }) => {
+    const { supabase, campaign, connection } = await loadCampaignContext(
+      active.organization_id,
+      campaignId,
+    );
+    if (!campaign.platform_campaign_id) {
+      throw new AdsGateError("validation", "Campaign is not remote.");
+    }
+    await authorizeAdWrite({
+      organizationId: active.organization_id,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "archive",
+      campaignId: campaign.id,
+      actorUserId: user.id,
+      currentDailyBudgetPence: campaign.daily_budget_pence,
+    });
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
+    await getAdsProvider(campaign.platform).setCampaignStatus({
+      accessToken,
+      accountId: fresh.account_id,
+      platformCampaignId: campaign.platform_campaign_id,
+      status: "archived",
+      metadata: platformWriteMetadata(campaign, fresh),
+    });
+    await supabase
+      .from("ad_campaigns")
+      .update({ status: "archived", last_error: null })
+      .eq("id", campaign.id);
+    await auditAdWrite({
+      organizationId: active.organization_id,
+      actorUserId: user.id,
+      campaign,
+      action: "ad_campaign_archive",
+      before: { status: campaign.status },
+      after: { status: "archived" },
+    });
+    return "Campaign archived.";
   });
-  const { accessToken, connection: fresh } =
-    await ensureFreshAdAccessToken(connection);
-  await getAdsProvider(campaign.platform).setCampaignStatus({
-    accessToken,
-    accountId: fresh.account_id,
-    platformCampaignId: campaign.platform_campaign_id,
-    status: "archived",
-    metadata: platformWriteMetadata(campaign, fresh),
-  });
-  await supabase
-    .from("ad_campaigns")
-    .update({ status: "archived" })
-    .eq("id", campaign.id);
-  await auditAdWrite({
-    organizationId: active.organization_id,
-    actorUserId: user.id,
-    campaign,
-    action: "ad_campaign_archive",
-    before: { status: campaign.status },
-    after: { status: "archived" },
-  });
-  revalidatePath(`/ads/campaigns/${campaign.id}`);
 }
 
 export async function saveOrgAdLimits(
