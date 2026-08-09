@@ -9,9 +9,8 @@ import {
   setAdConnectionPaused,
   type AdsActionResult,
 } from "@/lib/ads/actions";
-import { AD_PLATFORMS } from "@/lib/ads/providers";
 import type { AdConnection, AdPlatform } from "@/lib/types/ads";
-import { AD_PLATFORM_LABELS } from "@/lib/types/ads";
+import { AD_PLATFORM_LABELS, AD_PLATFORMS } from "@/lib/types/ads";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";

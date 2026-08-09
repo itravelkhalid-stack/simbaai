@@ -46,6 +46,15 @@ export type AdRecommendationType =
   | "adjust_targeting"
   | "other";
 
+/** Client-safe platform list — do not import provider implementations from the UI. */
+export const AD_PLATFORMS: AdPlatform[] = [
+  "meta",
+  "tiktok",
+  "google",
+  "x",
+  "bing",
+];
+
 export const AD_PLATFORM_LABELS: Record<AdPlatform, string> = {
   meta: "Meta",
   tiktok: "TikTok",

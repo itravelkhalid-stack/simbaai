@@ -89,28 +89,14 @@ function metaCta(value?: string | null) {
   return normalized && allowed.has(normalized) ? normalized : "LEARN_MORE";
 }
 
+/** Lazy: sharp + supabase admin stay off any accidental client graph. */
 async function uploadMetaImage(params: {
   accountId: string;
   accessToken: string;
   imageUrl: string;
 }) {
-  const image = await fetch(params.imageUrl, {
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!image.ok) {
-    throw new Error(`Creative image returned HTTP ${image.status}`);
-  }
-  const contentType = image.headers.get("content-type") ?? "";
-  if (!contentType.startsWith("image/")) {
-    throw new Error(`Creative URL must serve an image, got ${contentType || "unknown"}`);
-  }
-  const bytes = Buffer.from(await image.arrayBuffer()).toString("base64");
-  const uploaded = await metaWrite<{
-    images?: Record<string, { hash?: string }>;
-  }>(`${metaActId(params.accountId)}/adimages`, params.accessToken, { bytes });
-  const hash = Object.values(uploaded.images ?? {})[0]?.hash;
-  if (!hash) throw new Error("Meta image upload did not return an image hash");
-  return hash;
+  const { uploadMetaAdImage } = await import("@/lib/ads/meta-upload");
+  return uploadMetaAdImage(params);
 }
 
 export const metaAdsProvider: AdsProvider = {
