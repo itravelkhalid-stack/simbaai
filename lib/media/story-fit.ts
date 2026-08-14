@@ -127,11 +127,12 @@ export async function probeAndUpdateAssetDimensions(assetId: string): Promise<{
   suitable_formats: string[];
 }> {
   const supabase = createAdminClient();
-  const { data: asset } = await supabase
+  const { data: asset, error: loadError } = await supabase
     .from("media_assets")
     .select("id, storage_path, organization_id, type, mime_type")
     .eq("id", assetId)
     .maybeSingle();
+  if (loadError) throw new Error(loadError.message);
   if (!asset?.storage_path) {
     return { width: null, height: null, suitable_formats: [] };
   }
@@ -143,19 +144,45 @@ export async function probeAndUpdateAssetDimensions(assetId: string): Promise<{
     return { width: null, height: null, suitable_formats: [] };
   }
 
-  const { data: file } = await supabase.storage
+  const { data: file, error: dlErr } = await supabase.storage
     .from(BRAND_MEDIA_BUCKET)
     .download(asset.storage_path);
-  if (!file) return { width: null, height: null, suitable_formats: [] };
+  if (dlErr || !file) {
+    throw new Error(
+      dlErr?.message ?? `Could not download ${asset.storage_path} for dimension probe`,
+    );
+  }
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const sharp = await loadSharp();
-  const meta = await sharp(buf).metadata();
-  const width = meta.width ?? null;
-  const height = meta.height ?? null;
-  const suitable_formats = suitableFormatsForDimensions(width, height);
+  const { rasterSizeFromBytes } = await import("@/lib/media/image-size");
+  const parsed = rasterSizeFromBytes(buf);
+  let width: number | null = parsed?.width ?? null;
+  let height: number | null = parsed?.height ?? null;
 
-  await supabase
+  if ((!width || !height) && buf.length) {
+    try {
+      const sharp = await loadSharp();
+      const meta = await sharp(buf, { failOn: "none" }).metadata();
+      width = meta.width ?? width;
+      height = meta.height ?? height;
+    } catch (error) {
+      if (!width || !height) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `Could not read image dimensions for ${assetId} (${detail})`,
+        );
+      }
+    }
+  }
+
+  if (!width || !height) {
+    throw new Error(
+      `Could not read image dimensions for ${assetId} (${asset.mime_type ?? "unknown type"})`,
+    );
+  }
+
+  const suitable_formats = suitableFormatsForDimensions(width, height);
+  const { error: updateError } = await supabase
     .from("media_assets")
     .update({
       width,
@@ -163,7 +190,13 @@ export async function probeAndUpdateAssetDimensions(assetId: string): Promise<{
       suitable_formats,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", assetId);
+    .eq("id", assetId)
+    .eq("organization_id", asset.organization_id);
+  if (updateError) {
+    throw new Error(
+      `Failed to persist dimensions for ${assetId}: ${updateError.message}`,
+    );
+  }
 
   return { width, height, suitable_formats };
 }
