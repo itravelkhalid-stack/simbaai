@@ -12,7 +12,10 @@ function metaActId(accountId: string) {
   return accountId.startsWith("act_") ? accountId : `act_${accountId}`;
 }
 
-async function loadCreativeImageBytes(imageUrl: string): Promise<Buffer> {
+async function loadCreativeImageBytes(imageUrl: string): Promise<{
+  bytes: Buffer;
+  known?: { width?: number | null; height?: number | null };
+}> {
   const storagePath = brandMediaStoragePathFromUrl(imageUrl);
   if (storagePath) {
     // Private brand-media bucket — public URLs 400 with Bucket not found / Forbidden.
@@ -20,7 +23,17 @@ async function loadCreativeImageBytes(imageUrl: string): Promise<Buffer> {
     const { downloadBrandMediaBytes } = await import("@/lib/media/storage");
     try {
       const downloaded = await downloadBrandMediaBytes(storagePath);
-      return downloaded.bytes;
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      const supabase = createAdminClient();
+      const { data: asset } = await supabase
+        .from("media_assets")
+        .select("width, height")
+        .eq("storage_path", storagePath)
+        .maybeSingle();
+      return {
+        bytes: downloaded.bytes,
+        known: { width: asset?.width, height: asset?.height },
+      };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new Error(
@@ -60,7 +73,7 @@ async function loadCreativeImageBytes(imageUrl: string): Promise<Buffer> {
       `Creative URL must serve an image, got ${contentType || "unknown"}`,
     );
   }
-  return buffer;
+  return { bytes: buffer };
 }
 
 /**
@@ -72,7 +85,7 @@ export async function uploadMetaAdImage(params: {
   imageUrl: string;
 }): Promise<string> {
   const raw = await loadCreativeImageBytes(params.imageUrl);
-  const validated = await validateMetaAdImage(raw);
+  const validated = validateMetaAdImage(raw.bytes, raw.known);
 
   const form = new FormData();
   form.append("access_token", params.accessToken);
