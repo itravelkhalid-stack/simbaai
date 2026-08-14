@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  // Keep sharp out of the Turbopack/webpack graph so Vercel can load
+  // platform-native @img/sharp-linux-x64 at runtime (story 9:16 derive).
+  serverExternalPackages: ["sharp"],
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/sharp/**/*", "./node_modules/@img/**/*"],
+  },
   images: {
     remotePatterns: [
       {

@@ -66,8 +66,8 @@ describe("Meta ad image helpers", () => {
     ).toBeNull();
   });
 
-  it("validates Meta image minimums", async () => {
-    const ok = await validateMetaAdImage(beachPng);
+  it("validates Meta image minimums without sharp", () => {
+    const ok = validateMetaAdImage(beachPng);
     expect(ok.width).toBe(700);
     expect(ok.height).toBe(700);
     expect(ok.mimeType).toBe("image/png");

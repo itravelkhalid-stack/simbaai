@@ -1,13 +1,25 @@
 import "server-only";
 
-import sharp from "sharp";
-
 import { createAdminClient } from "@/lib/supabase/admin";
 import { BRAND_MEDIA_BUCKET } from "@/lib/media/storage";
 import { suitableFormatsForDimensions } from "@/lib/media/format-fit";
 
 const STORY_W = 1080;
 const STORY_H = 1920;
+
+type SharpFn = typeof import("sharp").default;
+
+async function loadSharp(): Promise<SharpFn> {
+  try {
+    const mod = await import("sharp");
+    return mod.default;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Story image fitting needs sharp, which failed to load on this runtime (${detail}).`,
+    );
+  }
+}
 
 /**
  * Create a 9:16 story asset: blurred full-bleed background + centered contain.
@@ -26,6 +38,14 @@ export async function deriveStoryFittedAsset(params: {
     .eq("organization_id", params.organizationId)
     .maybeSingle();
   if (!source?.storage_path) return null;
+
+  let sharp: SharpFn;
+  try {
+    sharp = await loadSharp();
+  } catch (error) {
+    console.error("[story-fit] sharp unavailable", error);
+    throw error;
+  }
 
   const { data: file, error: dlErr } = await supabase.storage
     .from(BRAND_MEDIA_BUCKET)
@@ -129,6 +149,7 @@ export async function probeAndUpdateAssetDimensions(assetId: string): Promise<{
   if (!file) return { width: null, height: null, suitable_formats: [] };
 
   const buf = Buffer.from(await file.arrayBuffer());
+  const sharp = await loadSharp();
   const meta = await sharp(buf).metadata();
   const width = meta.width ?? null;
   const height = meta.height ?? null;

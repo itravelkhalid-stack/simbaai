@@ -1,5 +1,3 @@
-import sharp, { type Metadata } from "sharp";
-
 /** Meta link-ad image minimum (shortest side). */
 export const META_AD_IMAGE_MIN_PX = 600;
 /** Meta Marketing API hard max for ad images. */
@@ -12,8 +10,13 @@ export type ValidatedMetaAdImage = {
   uploadBytes: Buffer;
   mimeType: "image/jpeg" | "image/png";
   filename: string;
-  width: number;
-  height: number;
+  width: number | null;
+  height: number | null;
+};
+
+export type KnownMediaDimensions = {
+  width?: number | null;
+  height?: number | null;
 };
 
 /**
@@ -33,14 +36,74 @@ export function brandMediaStoragePathFromUrl(url: string): string | null {
   }
 }
 
+function isJpeg(bytes: Buffer): boolean {
+  return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+}
+
+function isPng(bytes: Buffer): boolean {
+  return (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  );
+}
+
+function isGif(bytes: Buffer): boolean {
+  return bytes.length >= 6 && bytes.subarray(0, 3).toString("ascii") === "GIF";
+}
+
+function isWebp(bytes: Buffer): boolean {
+  return (
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  );
+}
+
+function pngDimensions(bytes: Buffer): { width: number; height: number } | null {
+  if (!isPng(bytes) || bytes.length < 24) return null;
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  if (!width || !height) return null;
+  return { width, height };
+}
+
+function jpegDimensions(bytes: Buffer): { width: number; height: number } | null {
+  if (!isJpeg(bytes)) return null;
+  let offset = 2;
+  while (offset < bytes.length - 8) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+      const height = bytes.readUInt16BE(offset + 5);
+      const width = bytes.readUInt16BE(offset + 7);
+      if (!width || !height) return null;
+      return { width, height };
+    }
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
+      offset += 2;
+      continue;
+    }
+    const length = bytes.readUInt16BE(offset + 2);
+    if (length < 2) break;
+    offset += 2 + length;
+  }
+  return null;
+}
+
 /**
- * Validate / normalize image bytes for Meta adimages.
- * Rejects undersized, huge, or unsupported formats with a clear pre-flight message.
- * Converts webp/gif to PNG so Meta always receives jpg or png.
+ * Validate image bytes for Meta adimages without native deps (no sharp).
+ * Uploads the original JPG/PNG bytes. Rejects other formats instead of converting.
  */
-export async function validateMetaAdImage(
+export function validateMetaAdImage(
   bytes: Buffer,
-): Promise<ValidatedMetaAdImage> {
+  known?: KnownMediaDimensions,
+): ValidatedMetaAdImage {
   if (!bytes.length) {
     throw new Error("Creative image is empty.");
   }
@@ -50,71 +113,49 @@ export async function validateMetaAdImage(
     );
   }
 
-  let meta: Metadata;
-  try {
-    meta = await sharp(bytes, { failOn: "none" }).metadata();
-  } catch {
+  if (isGif(bytes) || isWebp(bytes)) {
     throw new Error(
-      "Creative image could not be decoded. Use a JPG or PNG (≥600px on each side).",
+      "Meta ad images must be JPG or PNG. Convert this WebP/GIF and re-attach it before Create PAUSED.",
     );
   }
 
-  const width = meta.width ?? 0;
-  const height = meta.height ?? 0;
-  if (width < META_AD_IMAGE_MIN_PX || height < META_AD_IMAGE_MIN_PX) {
+  let mimeType: "image/jpeg" | "image/png";
+  let filename: string;
+  let parsed: { width: number; height: number } | null = null;
+  if (isJpeg(bytes)) {
+    mimeType = "image/jpeg";
+    filename = "creative.jpg";
+    parsed = jpegDimensions(bytes);
+  } else if (isPng(bytes)) {
+    mimeType = "image/png";
+    filename = "creative.png";
+    parsed = pngDimensions(bytes);
+  } else {
     throw new Error(
-      `Creative image is ${width}×${height}px — Meta requires at least ${META_AD_IMAGE_MIN_PX}×${META_AD_IMAGE_MIN_PX}px.`,
+      "Creative image is not a JPG or PNG. Meta adimages only accept those formats.",
     );
   }
 
-  const aspect = width / height;
-  if (aspect < META_ASPECT_MIN || aspect > META_ASPECT_MAX) {
-    throw new Error(
-      `Creative image aspect ratio ${aspect.toFixed(2)} (${width}×${height}) is outside Meta’s usable range (~0.4–1.91). Crop closer to 1:1 or 1.91:1.`,
-    );
-  }
-
-  const format = (meta.format ?? "").toLowerCase();
-  if (format === "jpeg" || format === "jpg") {
-    return {
-      uploadBytes: bytes,
-      mimeType: "image/jpeg",
-      filename: "creative.jpg",
-      width,
-      height,
-    };
-  }
-  if (format === "png") {
-    return {
-      uploadBytes: bytes,
-      mimeType: "image/png",
-      filename: "creative.png",
-      width,
-      height,
-    };
-  }
-
-  // Meta adimages: JPG/PNG only — convert other raster formats.
-  const uploadBytes = await sharp(bytes).png().toBuffer();
-  if (uploadBytes.length > META_AD_IMAGE_MAX_BYTES) {
-    const jpeg = await sharp(bytes).jpeg({ quality: 90 }).toBuffer();
-    if (jpeg.length > META_AD_IMAGE_MAX_BYTES) {
+  const width = parsed?.width ?? known?.width ?? null;
+  const height = parsed?.height ?? known?.height ?? null;
+  if (width != null && height != null) {
+    if (width < META_AD_IMAGE_MIN_PX || height < META_AD_IMAGE_MIN_PX) {
       throw new Error(
-        "Converted creative still exceeds Meta’s 30MB limit. Use a smaller JPG or PNG.",
+        `Creative image is ${width}×${height}px — Meta requires at least ${META_AD_IMAGE_MIN_PX}×${META_AD_IMAGE_MIN_PX}px.`,
       );
     }
-    return {
-      uploadBytes: jpeg,
-      mimeType: "image/jpeg",
-      filename: "creative.jpg",
-      width,
-      height,
-    };
+    const aspect = width / height;
+    if (aspect < META_ASPECT_MIN || aspect > META_ASPECT_MAX) {
+      throw new Error(
+        `Creative image aspect ratio ${aspect.toFixed(2)} (${width}×${height}) is outside Meta’s usable range (~0.4–1.91). Crop closer to 1:1 or 1.91:1.`,
+      );
+    }
   }
+
   return {
-    uploadBytes,
-    mimeType: "image/png",
-    filename: "creative.png",
+    uploadBytes: bytes,
+    mimeType,
+    filename,
     width,
     height,
   };
