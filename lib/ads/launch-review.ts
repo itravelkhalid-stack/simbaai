@@ -305,7 +305,7 @@ export async function runDeterministicLaunchChecks(params: {
     agentName: "ads_launch_brand",
   });
 
-  // QA
+  // QA — build the exact Graph targeting payload and diff it against the brief
   const qaFindings: SignoffFinding[] = [];
   if (!finalUrl.startsWith("http")) {
     qaFindings.push({
@@ -352,6 +352,109 @@ export async function runDeterministicLaunchChecks(params: {
       });
     }
   }
+
+  if (campaign.platform === "meta") {
+    const { data: briefRow } = campaign.targeting_brief_id
+      ? await adsTable(supabase, "ad_targeting_briefs")
+          .select("summary, rationale, interests, geos, evidence")
+          .eq("id", campaign.targeting_brief_id)
+          .maybeSingle()
+      : { data: null };
+    const {
+      parseTargetingSpec,
+      buildQaGraphTargeting,
+      qaPayloadAgainstBrief,
+      targetingSetupBlockers,
+      mergeSetupBlockers,
+    } = await import("@/lib/ads/meta-targeting");
+    const spec = parseTargetingSpec({
+      targeting: targeting,
+      briefSummary: (briefRow as { summary?: string } | null)?.summary,
+      briefRationale: (briefRow as { rationale?: string } | null)?.rationale,
+      optimizationGoal: campaign.optimization_goal,
+    });
+    const prose = [
+      typeof targeting.notes === "string" ? targeting.notes : "",
+      typeof targeting.audience === "string" ? targeting.audience : "",
+      (briefRow as { summary?: string } | null)?.summary ?? "",
+      (briefRow as { rationale?: string } | null)?.rationale ?? "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const extraBlockers = targetingSetupBlockers(spec);
+    const blockers = mergeSetupBlockers(campaign.setup_blockers, extraBlockers);
+    await supabase
+      .from("ad_campaigns")
+      .update({
+        setup_blockers: blockers,
+        targeting: { ...targeting, spec },
+      })
+      .eq("id", campaign.id)
+      .eq("organization_id", params.organizationId);
+    if (extraBlockers.length) {
+      const { upsertAdsSetupBlocker } = await import("@/lib/ads/setup-blockers");
+      for (const blocker of extraBlockers) {
+        await upsertAdsSetupBlocker({
+          organizationId: params.organizationId,
+          brandId: params.brandId,
+          blocker,
+        });
+      }
+      if (campaign.targeting_brief_id) {
+        const existingEvidence = Array.isArray(
+          (briefRow as { evidence?: unknown } | null)?.evidence,
+        )
+          ? ((briefRow as { evidence: unknown[] }).evidence)
+          : [];
+        const extraCodes = new Set(extraBlockers.map((b) => b.code));
+        const without = existingEvidence.filter(
+          (row) =>
+            !(
+              row &&
+              typeof row === "object" &&
+              "code" in row &&
+              extraCodes.has(String((row as { code?: string }).code))
+            ),
+        );
+        await adsTable(supabase, "ad_targeting_briefs")
+          .update({
+            demographics: {
+              age_min: spec.age_min,
+              age_max: spec.age_max,
+            },
+            interests: spec.interest_names,
+            geos: spec.countries,
+            evidence: [
+              ...without,
+              ...extraBlockers.map((blocker) => ({
+                type: "setup_blocker",
+                code: blocker.code,
+                title: blocker.title,
+                body: blocker.body,
+                severity: blocker.severity,
+              })),
+            ],
+          })
+          .eq("id", campaign.targeting_brief_id)
+          .eq("organization_id", params.organizationId);
+      }
+    }
+    const payload = buildQaGraphTargeting(spec);
+    qaFindings.push(
+      ...qaPayloadAgainstBrief({
+        spec,
+        payload,
+        setupBlockers: blockers,
+        optimizationGoal: "LINK_CLICKS",
+        prose,
+      }),
+    );
+    qaFindings.push({
+      code: "payload_preview",
+      severity: "info",
+      message: `Graph targeting that will be sent: ${JSON.stringify(payload)}`,
+    });
+  }
   await recordLaunchSignoff({
     organizationId: params.organizationId,
     reviewId: params.reviewId,
@@ -359,7 +462,7 @@ export async function runDeterministicLaunchChecks(params: {
     result: qaFindings.some((f) => f.severity === "critical") ? "fail" : "pass",
     notes: qaFindings.length
       ? qaFindings.map((f) => f.message).join("; ")
-      : "URLs and copy QA passed",
+      : "URL, copy, and Graph targeting payload QA passed",
     findings: qaFindings,
     agentName: "ads_launch_qa",
   });

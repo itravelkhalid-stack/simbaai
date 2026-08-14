@@ -14,6 +14,7 @@ import {
   archiveAdCampaign,
   pauseAdCampaign,
   setCampaignLive,
+  syncMetaTargetingFromBrief,
   updateAdCampaignBudget,
 } from "@/lib/ads/launch-actions";
 import {
@@ -94,7 +95,16 @@ export default async function AdsCampaignDetailPage({
     ]);
 
   type DirectiveRow = { scope: string; title: string; focus_text: string };
-  type BriefRow = { summary: string; rationale: string };
+  type BriefRow = {
+    summary: string;
+    rationale: string;
+    evidence?: Array<{
+      type?: string;
+      code?: string;
+      title?: string;
+      body?: string;
+    }>;
+  };
 
   let directive: DirectiveRow | null = null;
   if (c.directive_id) {
@@ -110,7 +120,7 @@ export default async function AdsCampaignDetailPage({
   if (c.targeting_brief_id) {
     const { data } = await db
       .from("ad_targeting_briefs")
-      .select("summary, rationale")
+      .select("summary, rationale, evidence")
       .eq("id", c.targeting_brief_id)
       .maybeSingle();
     brief = data as BriefRow | null;
@@ -123,6 +133,24 @@ export default async function AdsCampaignDetailPage({
     (creative) => creative.status === "approved",
   );
   const canWrite = active.role !== "org_viewer";
+  const targetingVerification = (
+    c.targeting &&
+    typeof c.targeting === "object" &&
+    "verification" in c.targeting
+      ? (c.targeting.verification as {
+          checked_at?: string;
+          mismatches?: Array<{
+            field: string;
+            expected: string;
+            actual: string;
+          }>;
+        })
+      : null
+  );
+  const targetingMismatches = targetingVerification?.mismatches ?? [];
+  const briefBlockers = (brief?.evidence ?? []).filter(
+    (row) => row?.type === "setup_blocker",
+  );
   const finalUrl =
     (typeof c.targeting?.final_url === "string"
       ? c.targeting.final_url
@@ -191,6 +219,18 @@ export default async function AdsCampaignDetailPage({
               <p className="mt-1 text-xs text-muted-foreground">
                 {brief.rationale}
               </p>
+              {briefBlockers.length > 0 ? (
+                <div className="mt-2 rounded-lg bg-warning-soft px-3 py-2 text-ink ring-1 ring-warning/30">
+                  <p className="font-medium">Setup blockers on this brief</p>
+                  <ul className="mt-1 list-disc pl-5 text-sm">
+                    {briefBlockers.map((b, i) => (
+                      <li key={b.code ?? i}>
+                        {b.title ?? b.code}: {b.body}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
           {launchReview ? (
@@ -269,7 +309,7 @@ export default async function AdsCampaignDetailPage({
             </div>
           ) : null}
           {Array.isArray(c.setup_blockers) && c.setup_blockers.length > 0 ? (
-            <div className="text-sm text-amber-800 dark:text-amber-200">
+            <div className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-ink ring-1 ring-warning/30">
               <p className="font-medium">Setup blockers</p>
               <ul className="list-disc pl-5">
                 {(
@@ -359,6 +399,42 @@ export default async function AdsCampaignDetailPage({
               <div className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger ring-1 ring-danger/25">
                 {c.last_error}
               </div>
+            ) : null}
+            {c.platform === "meta" && targetingVerification ? (
+              <div
+                className={
+                  targetingMismatches.length
+                    ? "rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger ring-1 ring-danger/25"
+                    : "rounded-lg bg-success-soft px-3 py-2 text-sm text-ink ring-1 ring-success/30"
+                }
+              >
+                <p className="font-medium">
+                  Meta targeting vs brief
+                  {targetingVerification.checked_at
+                    ? ` · checked ${new Date(targetingVerification.checked_at).toLocaleString()}`
+                    : ""}
+                </p>
+                {targetingMismatches.length ? (
+                  <ul className="mt-1 list-disc pl-5">
+                    {targetingMismatches.map((row) => (
+                      <li key={row.field}>
+                        <code className="text-xs">{row.field}</code>: expected{" "}
+                        {row.expected}, got {row.actual}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>Live ad set matches the approved targeting payload.</p>
+                )}
+              </div>
+            ) : null}
+            {c.platform === "meta" && c.platform_adset_id ? (
+              <AdsMutateForm action={syncMetaTargetingFromBrief}>
+                <input type="hidden" name="campaignId" value={c.id} />
+                <Button type="submit" variant="outline" disabled={!canWrite}>
+                  Sync targeting from brief
+                </Button>
+              </AdsMutateForm>
             ) : null}
             {c.status === "pending_approval" || c.status === "paused" ? (
               <AdsMutateForm action={setCampaignLive}>

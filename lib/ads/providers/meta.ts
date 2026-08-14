@@ -1,3 +1,10 @@
+import {
+  buildGraphTargeting,
+  interestSearchQueries,
+  parseTargetingSpec,
+  pickAdInterest,
+  type GraphInterest,
+} from "@/lib/ads/meta-targeting";
 import { adsFetchJson } from "@/lib/ads/providers/http";
 import type {
   AdsAccount,
@@ -62,6 +69,89 @@ async function metaWrite<T>(
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
+}
+
+export async function resolveMetaAdInterests(
+  accessToken: string,
+  names: string[],
+): Promise<GraphInterest[]> {
+  const resolved: GraphInterest[] = [];
+  const seen = new Set<string>();
+  for (const name of names) {
+    let pick: GraphInterest | null = null;
+    const tried: string[] = [];
+    for (const query of interestSearchQueries(name)) {
+      tried.push(query);
+      const url = new URL(`${META_GRAPH}/search`);
+      url.searchParams.set("type", "adinterest");
+      url.searchParams.set("q", query);
+      url.searchParams.set("limit", "8");
+      url.searchParams.set("access_token", accessToken);
+      const data = await adsFetchJson<{
+        data?: Array<{ id?: string; name?: string }>;
+      }>(url.toString());
+      pick = pickAdInterest(query, data.data ?? []);
+      if (pick) break;
+    }
+    if (!pick?.id) {
+      throw new Error(
+        `Meta ad interest “${name}” could not be resolved (tried: ${tried.join(", ")}). Create PAUSED is blocked until targeting interests map to Graph IDs.`,
+      );
+    }
+    if (seen.has(pick.id)) continue;
+    seen.add(pick.id);
+    resolved.push(pick);
+  }
+  return resolved;
+}
+
+const ADSET_READ_FIELDS = [
+  "id",
+  "name",
+  "status",
+  "campaign_id",
+  "daily_budget",
+  "billing_event",
+  "optimization_goal",
+  "bid_strategy",
+  "targeting",
+  "targeting_optimization_types",
+].join(",");
+
+export async function fetchMetaAdSet(params: {
+  accessToken: string;
+  adSetId: string;
+}): Promise<Record<string, unknown>> {
+  return adsFetchJson(
+    `${META_GRAPH}/${params.adSetId}?fields=${ADSET_READ_FIELDS}&access_token=${encodeURIComponent(params.accessToken)}`,
+  );
+}
+
+export async function updateMetaAdSetTargeting(params: {
+  accessToken: string;
+  adSetId: string;
+  targeting: Record<string, unknown>;
+}): Promise<void> {
+  if (!adsWritesEnabled("meta")) throw new AdsWriteDisabledError("meta");
+  await metaWrite(params.adSetId, params.accessToken, {
+    targeting: JSON.stringify(params.targeting),
+  });
+}
+
+export async function buildResolvedMetaTargeting(
+  targetingInput: Record<string, unknown> | undefined,
+  accessToken: string,
+  extras?: { briefSummary?: string | null; briefRationale?: string | null },
+) {
+  const spec = parseTargetingSpec({
+    targeting: targetingInput,
+    briefSummary: extras?.briefSummary,
+    briefRationale: extras?.briefRationale,
+  });
+  const interests = spec.interest_names.length
+    ? await resolveMetaAdInterests(accessToken, spec.interest_names)
+    : [];
+  return { spec, interests, graph: buildGraphTargeting(spec, interests) };
 }
 
 function metaObjective(value?: string) {
@@ -196,11 +286,10 @@ export const metaAdsProvider: AdsProvider = {
       );
       campaignId = campaign.id;
 
-      const countries = Array.isArray(input.targeting?.countries)
-        ? (input.targeting.countries as unknown[])
-            .filter((value): value is string => typeof value === "string")
-            .map((value) => value.toUpperCase())
-        : ["GB"];
+      const resolved = await buildResolvedMetaTargeting(
+        input.targeting,
+        input.accessToken,
+      );
       const adSet = await metaWrite<{ id: string }>(
         `${actId}/adsets`,
         input.accessToken,
@@ -209,11 +298,9 @@ export const metaAdsProvider: AdsProvider = {
           campaign_id: campaign.id,
           daily_budget: input.dailyBudgetPence ?? 0,
           billing_event: "IMPRESSIONS",
-          optimization_goal: "LINK_CLICKS",
+          optimization_goal: resolved.spec.optimization_goal || "LINK_CLICKS",
           bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-          targeting: JSON.stringify({
-            geo_locations: { countries: countries.length ? countries : ["GB"] },
-          }),
+          targeting: JSON.stringify(resolved.graph),
           status: "PAUSED",
           ...(input.startDate ? { start_time: input.startDate } : {}),
           ...(input.endDate ? { end_time: input.endDate } : {}),
@@ -278,6 +365,9 @@ export const metaAdsProvider: AdsProvider = {
           creative: remoteCreative,
           ad,
           local_creative_id: creative.localCreativeId,
+          targeting_sent: resolved.graph,
+          targeting_spec: resolved.spec,
+          targeting_interests: resolved.interests,
         },
       };
     } catch (error) {

@@ -5,11 +5,28 @@ import { unstable_rethrow } from "next/navigation";
 
 import { ensureFreshAdAccessToken } from "@/lib/ads/connections";
 import { getAdsProvider } from "@/lib/ads/providers";
+import {
+  buildResolvedMetaTargeting,
+  fetchMetaAdSet,
+  updateMetaAdSetTargeting,
+} from "@/lib/ads/providers/meta";
 import { AdsWriteDisabledError } from "@/lib/ads/providers/types";
 import { auditAdWrite, authorizeAdWrite } from "@/lib/ads/write-safety";
 import { requireActiveOrg } from "@/lib/org/require";
 import { adsTable } from "@/lib/ads/db";
 import { assertMetaCreateDailyBudget } from "@/lib/ads/meta-budget";
+import {
+  diffGraphTargeting,
+  formatMismatchSummary,
+  mergeSetupBlockers,
+  parseTargetingSpec,
+  targetingSetupBlockers,
+  websiteExclusionBlocker,
+  type GraphTargeting,
+  type TargetingMismatch,
+  type TargetingSpec,
+} from "@/lib/ads/meta-targeting";
+import { upsertAdsSetupBlocker } from "@/lib/ads/setup-blockers";
 import { createClient } from "@/lib/supabase/server";
 import type {
   AdCampaign,
@@ -212,6 +229,141 @@ function platformWriteMetadata(campaign: AdCampaign, connection: AdConnection) {
   };
 }
 
+async function loadMetaTargetingFromCampaign(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  campaign: AdCampaign,
+) {
+  const targeting = { ...(campaign.targeting ?? {}) };
+  let briefSummary: string | null = null;
+  let briefRationale: string | null = null;
+  let briefEvidence: unknown[] = [];
+  if (campaign.targeting_brief_id) {
+    const { data: briefRow } = await adsTable(supabase, "ad_targeting_briefs")
+      .select("summary, rationale, evidence")
+      .eq("id", campaign.targeting_brief_id)
+      .maybeSingle();
+    briefSummary = (briefRow as { summary?: string } | null)?.summary ?? null;
+    briefRationale = (briefRow as { rationale?: string } | null)?.rationale ?? null;
+    briefEvidence = Array.isArray(
+      (briefRow as { evidence?: unknown } | null)?.evidence,
+    )
+      ? ((briefRow as { evidence: unknown[] }).evidence)
+      : [];
+  }
+  const spec = parseTargetingSpec({
+    targeting,
+    briefSummary,
+    briefRationale,
+    optimizationGoal: campaign.optimization_goal,
+  });
+  const extraBlockers = targetingSetupBlockers(spec);
+  const blockers = mergeSetupBlockers(campaign.setup_blockers, extraBlockers);
+  return {
+    targeting,
+    spec,
+    exclusion: websiteExclusionBlocker(spec),
+    extraBlockers,
+    blockers,
+    briefSummary,
+    briefRationale,
+    briefEvidence,
+  };
+}
+
+async function persistParsedTargeting(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  campaign: AdCampaign;
+  organizationId: string;
+  targeting: Record<string, unknown>;
+  spec: TargetingSpec;
+  blockers: ReturnType<typeof mergeSetupBlockers>;
+  extraBlockers: ReturnType<typeof targetingSetupBlockers>;
+  briefEvidence: unknown[];
+  extraTargeting?: Record<string, unknown>;
+}) {
+  await params.supabase
+    .from("ad_campaigns")
+    .update({
+      setup_blockers: params.blockers,
+      targeting: {
+        ...params.targeting,
+        spec: params.spec,
+        ...params.extraTargeting,
+      },
+    })
+    .eq("id", params.campaign.id)
+    .eq("organization_id", params.organizationId);
+  if (params.extraBlockers.length) {
+    for (const blocker of params.extraBlockers) {
+      await upsertAdsSetupBlocker({
+        organizationId: params.organizationId,
+        brandId: params.campaign.brand_id,
+        blocker,
+      });
+    }
+    if (params.campaign.targeting_brief_id) {
+      const extraCodes = new Set(params.extraBlockers.map((b) => b.code));
+      const without = params.briefEvidence.filter(
+        (row) =>
+          !(
+            row &&
+            typeof row === "object" &&
+            "code" in row &&
+            extraCodes.has(String((row as { code?: string }).code))
+          ),
+      );
+      await adsTable(params.supabase, "ad_targeting_briefs")
+        .update({
+          demographics: {
+            age_min: params.spec.age_min,
+            age_max: params.spec.age_max,
+          },
+          interests: params.spec.interest_names,
+          geos: params.spec.countries,
+          evidence: [
+            ...without,
+            ...params.extraBlockers.map((blocker) => ({
+              type: "setup_blocker",
+              code: blocker.code,
+              title: blocker.title,
+              body: blocker.body,
+              severity: blocker.severity,
+            })),
+          ],
+        })
+        .eq("id", params.campaign.targeting_brief_id)
+        .eq("organization_id", params.organizationId);
+    }
+  }
+}
+
+async function verifyLiveMetaAdSet(params: {
+  accessToken: string;
+  adSetId: string;
+  spec: TargetingSpec;
+  intended: GraphTargeting;
+  exclusionBlocked: boolean;
+}): Promise<{
+  live: Record<string, unknown>;
+  mismatches: TargetingMismatch[];
+}> {
+  const adSet = await fetchMetaAdSet({
+    accessToken: params.accessToken,
+    adSetId: params.adSetId,
+  });
+  const liveTargeting =
+    adSet.targeting && typeof adSet.targeting === "object"
+      ? (adSet.targeting as Record<string, unknown>)
+      : {};
+  const mismatches = diffGraphTargeting({
+    spec: params.spec,
+    intended: params.intended,
+    live: liveTargeting,
+    exclusionBlocked: params.exclusionBlocked,
+  });
+  return { live: liveTargeting, mismatches };
+}
+
 export async function createCampaignsPaused(
   _prev: CreateCampaignsState,
   formData: FormData,
@@ -378,6 +530,28 @@ export async function createCampaignsPaused(
 
     const { accessToken, connection: fresh } =
       await ensureFreshAdAccessToken(connection);
+
+    let metaTargeting:
+      | Awaited<ReturnType<typeof loadMetaTargetingFromCampaign>>
+      | null = null;
+    if (campaign.platform === "meta") {
+      metaTargeting = await loadMetaTargetingFromCampaign(supabase, campaign);
+      await persistParsedTargeting({
+        supabase,
+        campaign,
+        organizationId: active.organization_id,
+        targeting: {
+          ...metaTargeting.targeting,
+          countries,
+          final_url: finalUrl,
+        },
+        spec: metaTargeting.spec,
+        blockers: metaTargeting.blockers,
+        extraBlockers: metaTargeting.extraBlockers,
+        briefEvidence: metaTargeting.briefEvidence,
+      });
+    }
+
     const provider = getAdsProvider(campaign.platform);
     const result = await provider.createCampaign({
       accessToken,
@@ -391,6 +565,9 @@ export async function createCampaignsPaused(
       endDate: campaign.end_date ?? undefined,
       targeting: {
         ...(campaign.targeting ?? {}),
+        ...(metaTargeting
+          ? { spec: metaTargeting.spec, notes: metaTargeting.targeting.notes, audience: metaTargeting.targeting.audience }
+          : {}),
         countries,
         final_url: finalUrl,
       },
@@ -425,6 +602,7 @@ export async function createCampaignsPaused(
         platform_metadata: platformMetadata,
         targeting: {
           ...(campaign.targeting ?? {}),
+          ...(metaTargeting ? { spec: metaTargeting.spec } : {}),
           countries,
           final_url: finalUrl,
         },
@@ -452,6 +630,67 @@ export async function createCampaignsPaused(
         // Remote hierarchy is PAUSED. Preserve original persistence error.
       }
       throw new AdsGateError("persist", updateError.message);
+    }
+
+    if (
+      campaign.platform === "meta" &&
+      result.platformAdSetId &&
+      metaTargeting
+    ) {
+      const raw = (result.raw ?? {}) as {
+        targeting_sent?: GraphTargeting;
+      };
+      const intended =
+        raw.targeting_sent ??
+        (
+          await buildResolvedMetaTargeting(
+            {
+              ...(campaign.targeting ?? {}),
+              spec: metaTargeting.spec,
+              countries,
+              final_url: finalUrl,
+            },
+            accessToken,
+          )
+        ).graph;
+      const { live, mismatches } = await verifyLiveMetaAdSet({
+        accessToken,
+        adSetId: result.platformAdSetId,
+        spec: metaTargeting.spec,
+        intended,
+        exclusionBlocked: Boolean(metaTargeting.exclusion),
+      });
+      const verification = {
+        checked_at: new Date().toISOString(),
+        mismatches,
+        live,
+        intended,
+      };
+      await supabase
+        .from("ad_campaigns")
+        .update({
+          targeting: {
+            ...(campaign.targeting ?? {}),
+            spec: metaTargeting.spec,
+            countries,
+            final_url: finalUrl,
+            verification,
+          },
+          last_error: mismatches.length
+            ? `Targeting mismatch vs brief: ${formatMismatchSummary(mismatches)}`.slice(
+                0,
+                2000,
+              )
+            : null,
+        })
+        .eq("id", campaign.id)
+        .eq("organization_id", active.organization_id);
+      if (mismatches.length) {
+        throw new AdsGateError(
+          "targeting_mismatch",
+          `Created PAUSED but Meta targeting does not match the approved brief. ${formatMismatchSummary(mismatches)} Sync targeting before activating.`,
+        );
+      }
     }
 
     for (let index = 0; index < creatives.length; index++) {
@@ -651,6 +890,44 @@ export async function setCampaignLive(
 
     const { accessToken, connection: fresh } =
       await ensureFreshAdAccessToken(connection);
+
+    if (campaign.platform === "meta" && campaign.platform_adset_id) {
+      const loaded = await loadMetaTargetingFromCampaign(supabase, campaign);
+      const resolved = await buildResolvedMetaTargeting(
+        { ...loaded.targeting, spec: loaded.spec },
+        accessToken,
+      );
+      const { live, mismatches } = await verifyLiveMetaAdSet({
+        accessToken,
+        adSetId: campaign.platform_adset_id,
+        spec: loaded.spec,
+        intended: resolved.graph,
+        exclusionBlocked: Boolean(loaded.exclusion),
+      });
+      await supabase
+        .from("ad_campaigns")
+        .update({
+          targeting: {
+            ...loaded.targeting,
+            spec: loaded.spec,
+            verification: {
+              checked_at: new Date().toISOString(),
+              mismatches,
+              live,
+              intended: resolved.graph,
+            },
+          },
+        })
+        .eq("id", campaign.id)
+        .eq("organization_id", active.organization_id);
+      if (mismatches.length) {
+        throw new AdsGateError(
+          "targeting_mismatch",
+          `Activate blocked — Meta targeting does not match the approved brief. ${formatMismatchSummary(mismatches)}`,
+        );
+      }
+    }
+
     await getAdsProvider(campaign.platform).setCampaignStatus({
       accessToken,
       accountId: fresh.account_id,
@@ -682,6 +959,116 @@ export async function setCampaignLive(
     });
     revalidatePath("/ads/approvals");
     return "Campaign set live.";
+  });
+}
+
+export async function syncMetaTargetingFromBrief(
+  _prev: AdsMutateState,
+  formData: FormData,
+): Promise<AdsMutateState> {
+  return wrapCampaignMutate(formData, async ({ user, active, campaignId }) => {
+    const { supabase, campaign, connection } = await loadCampaignContext(
+      active.organization_id,
+      campaignId,
+    );
+    if (campaign.platform !== "meta") {
+      throw new AdsGateError(
+        "validation",
+        "Targeting sync is only available for Meta campaigns.",
+      );
+    }
+    if (!campaign.platform_adset_id) {
+      throw new AdsGateError(
+        "validation",
+        "Create the campaign paused on Meta first, then sync targeting.",
+      );
+    }
+
+    await authorizeAdWrite({
+      organizationId: active.organization_id,
+      brandId: campaign.brand_id,
+      platform: campaign.platform,
+      action: "targeting_update",
+      campaignId: campaign.id,
+      actorUserId: user.id,
+      proposedDailyBudgetPence: campaign.daily_budget_pence,
+    });
+
+    const loaded = await loadMetaTargetingFromCampaign(supabase, campaign);
+    await persistParsedTargeting({
+      supabase,
+      campaign,
+      organizationId: active.organization_id,
+      targeting: loaded.targeting,
+      spec: loaded.spec,
+      blockers: loaded.blockers,
+      extraBlockers: loaded.extraBlockers,
+      briefEvidence: loaded.briefEvidence,
+    });
+
+    const { accessToken, connection: fresh } =
+      await ensureFreshAdAccessToken(connection);
+    const resolved = await buildResolvedMetaTargeting(
+      { ...loaded.targeting, spec: loaded.spec },
+      accessToken,
+    );
+    await updateMetaAdSetTargeting({
+      accessToken,
+      adSetId: campaign.platform_adset_id,
+      targeting: resolved.graph,
+    });
+    const { live, mismatches } = await verifyLiveMetaAdSet({
+      accessToken,
+      adSetId: campaign.platform_adset_id,
+      spec: loaded.spec,
+      intended: resolved.graph,
+      exclusionBlocked: Boolean(loaded.exclusion),
+    });
+    const verification = {
+      checked_at: new Date().toISOString(),
+      mismatches,
+      live,
+      intended: resolved.graph,
+    };
+    await supabase
+      .from("ad_campaigns")
+      .update({
+        connection_id: fresh.id,
+        targeting: {
+          ...loaded.targeting,
+          spec: loaded.spec,
+          verification,
+        },
+        last_error: mismatches.length
+          ? `Targeting mismatch vs brief: ${formatMismatchSummary(mismatches)}`.slice(
+              0,
+              2000,
+            )
+          : null,
+      })
+      .eq("id", campaign.id)
+      .eq("organization_id", active.organization_id);
+    await auditAdWrite({
+      organizationId: active.organization_id,
+      actorUserId: user.id,
+      campaign,
+      action: "ad_campaign_targeting_update",
+      before: { platform_adset_id: campaign.platform_adset_id },
+      after: {
+        platform_adset_id: campaign.platform_adset_id,
+        mismatch_count: mismatches.length,
+      },
+    });
+    if (mismatches.length) {
+      throw new AdsGateError(
+        "targeting_mismatch",
+        `Updated ad set in place but Meta still does not match the brief. ${formatMismatchSummary(mismatches)}`,
+      );
+    }
+    const blocked = loaded.exclusion
+      ? ` Website visitor exclusion is a named setup blocker (${loaded.exclusion.code}) and was not sent.`
+      : "";
+    return `Meta ad set targeting updated in place and verified against the brief.${blocked}`;
   });
 }
 

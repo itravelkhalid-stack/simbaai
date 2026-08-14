@@ -265,6 +265,37 @@ export async function runAdsPlanningPipeline(params: {
       );
     }
 
+    const {
+      parseTargetingSpec,
+      targetingSetupBlockers,
+      mergeSetupBlockers,
+    } = await import("@/lib/ads/meta-targeting");
+    const targetingSpec = parseTargetingSpec({
+      targeting: {
+        audience: spec.audience,
+        notes: spec.targeting_notes,
+        countries: ["GB"],
+      },
+      briefSummary: spec.audience,
+      briefRationale: spec.targeting_notes,
+      optimizationGoal: "link_clicks_landing_views",
+    });
+    const extraBlockers = targetingSetupBlockers(targetingSpec);
+    const setupBlockers = mergeSetupBlockers(
+      [META_PIXEL_BLOCKER],
+      extraBlockers,
+    );
+    if (extraBlockers.length) {
+      const { upsertAdsSetupBlocker } = await import("@/lib/ads/setup-blockers");
+      for (const blocker of extraBlockers) {
+        await upsertAdsSetupBlocker({
+          organizationId: params.organizationId,
+          brandId: params.brandId,
+          blocker,
+        });
+      }
+    }
+
     const { data: brief } = await adsTable(supabase, "ad_targeting_briefs")
       .insert({
         organization_id: params.organizationId,
@@ -272,11 +303,25 @@ export async function runAdsPlanningPipeline(params: {
         directive_id: directive?.id ?? null,
         media_plan_id: mediaPlan.id,
         summary: spec.audience,
-        demographics: {},
-        interests: [],
-        geos: ["GB"],
+        demographics: {
+          age_min: targetingSpec.age_min,
+          age_max: targetingSpec.age_max,
+        },
+        interests: targetingSpec.interest_names,
+        geos: targetingSpec.countries.length ? targetingSpec.countries : ["GB"],
         rationale: spec.targeting_notes,
-        evidence: evidence.map((e) => ({ type: "pipeline", value: e })),
+        evidence: [
+          ...evidence.map((e) => ({ type: "pipeline", value: e })),
+          ...(extraBlockers.length
+            ? extraBlockers.map((blocker) => ({
+                type: "setup_blocker",
+                code: blocker.code,
+                title: blocker.title,
+                body: blocker.body,
+                severity: blocker.severity,
+              }))
+            : []),
+        ],
         seasonality_refs: admissible.slice(0, 5).map((a) => ({
           destination_slug: a.destination_slug,
           stay_month: a.stay_month,
@@ -307,14 +352,17 @@ export async function runAdsPlanningPipeline(params: {
           audience: spec.audience,
           notes: spec.targeting_notes,
           final_url: finalUrl,
-          countries: ["GB"],
+          countries: targetingSpec.countries.length
+            ? targetingSpec.countries
+            : ["GB"],
           evidence,
+          spec: targetingSpec,
         },
         funnel_stage: spec.funnel_stage,
         directive_id: directive?.id ?? null,
         targeting_brief_id: brief?.id ?? null,
         optimization_goal: "link_clicks_landing_views",
-        setup_blockers: [META_PIXEL_BLOCKER],
+        setup_blockers: setupBlockers,
         created_by: params.createdBy ?? null,
       })
       .select("id")

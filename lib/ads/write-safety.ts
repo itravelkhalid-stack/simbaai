@@ -21,7 +21,8 @@ export type AdWriteAction =
   | "pause"
   | "archive"
   | "budget_update"
-  | "creative_upload";
+  | "creative_upload"
+  | "targeting_update";
 
 type AuthorizationInput = {
   organizationId: string;
