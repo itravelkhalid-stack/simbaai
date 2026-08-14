@@ -151,6 +151,81 @@ describe("Meta Ads writes", () => {
     expect(adsetsBody.get("daily_budget")).toBe("100");
   });
 
+  it("posts the full targeting spec from the approved brief, not geo-only", async () => {
+    process.env.ADS_WRITES_ENABLED = "true";
+    const writes: Array<{ url: string; body: FormData | URLSearchParams }> = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "https://cdn.example.test/beach.jpg") {
+          return new Response(beachPng, {
+            status: 200,
+            headers: { "content-type": "image/png" },
+          });
+        }
+        if (url.includes("/search") && url.includes("type=adinterest")) {
+          const q = new URL(url).searchParams.get("q") ?? "interest";
+          return Response.json({ data: [{ id: `int_${q}`, name: q }] });
+        }
+        const body = init?.body as FormData | URLSearchParams;
+        writes.push({ url, body });
+        if (url.endsWith("/campaigns")) {
+          return Response.json({ id: "campaign_1" });
+        }
+        if (url.endsWith("/adsets")) return Response.json({ id: "adset_1" });
+        if (url.endsWith("/adimages")) {
+          return Response.json({ images: { upload: { hash: "hash_1" } } });
+        }
+        if (url.endsWith("/adcreatives")) {
+          return Response.json({ id: "creative_1" });
+        }
+        if (url.endsWith("/ads")) return Response.json({ id: "ad_1" });
+        throw new Error(`Unexpected request ${url}`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await metaAdsProvider.createCampaign({
+      accessToken: "token",
+      accountId: "123",
+      name: "Test campaign",
+      objective: "traffic",
+      dailyBudgetPence: 100,
+      currency: "GBP",
+      targeting: {
+        countries: ["GB"],
+        notes:
+          "Advantage+ Audience with interest guardrails. UK only. Placements Instagram Feed, Instagram Reels, Facebook Feed. Age 25–54.",
+        audience:
+          "UK 25–54; interests: luxury travel, Dubai, UAE travel, resort holidays, beach holidays, international travel, holiday deals",
+      },
+      finalUrl: "https://example.test/offer",
+      creatives: approvedCreatives,
+      metadata: { page_id: "page_1", ig_user_id: "ig_1" },
+    });
+
+    const adsetsBody = writes.find((row) => row.url.endsWith("/adsets"))
+      ?.body as URLSearchParams;
+    const targeting = JSON.parse(adsetsBody.get("targeting") ?? "{}") as {
+      age_min?: number;
+      age_max?: number;
+      geo_locations?: { countries?: string[] };
+      flexible_spec?: Array<{ interests: Array<{ name: string }> }>;
+      facebook_positions?: string[];
+      instagram_positions?: string[];
+    };
+    expect(targeting.geo_locations?.countries).toEqual(["GB"]);
+    expect(targeting.age_min).toBe(25);
+    expect(targeting.age_max).toBe(54);
+    expect(targeting.facebook_positions).toEqual(["feed"]);
+    expect(targeting.instagram_positions).toEqual(["stream", "reels"]);
+    expect(
+      targeting.flexible_spec?.[0]?.interests.map((row) => row.name),
+    ).toEqual(
+      expect.arrayContaining(["luxury travel", "Dubai", "holiday deals"]),
+    );
+  });
+
   it("surfaces full Meta adimages error payload", async () => {
     process.env.ADS_WRITES_ENABLED = "true";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
