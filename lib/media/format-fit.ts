@@ -91,3 +91,21 @@ export function canDeriveStoryFit(
 ): boolean {
   return Boolean(width && height && width >= 200 && height >= 200);
 }
+
+/**
+ * Format-aware gate: use stored suitable_formats when present, otherwise
+ * compute from width/height. Missing both → does not qualify (never pass-through).
+ */
+export function assetQualifiesForSlot(params: {
+  suitableFormats?: string[] | null;
+  width?: number | null;
+  height?: number | null;
+  slot: MediaFormatSlot;
+}): boolean {
+  const listed = params.suitableFormats ?? [];
+  if (listed.length > 0) return assetFitsSlot(listed, params.slot);
+  return assetFitsSlot(
+    suitableFormatsForDimensions(params.width, params.height),
+    params.slot,
+  );
+}

@@ -1,3 +1,11 @@
+import {
+  isGif,
+  isJpeg,
+  isPng,
+  isWebp,
+  rasterSizeFromBytes,
+} from "@/lib/media/image-size";
+
 /** Meta link-ad image minimum (shortest side). */
 export const META_AD_IMAGE_MIN_PX = 600;
 /** Meta Marketing API hard max for ad images. */
@@ -36,66 +44,6 @@ export function brandMediaStoragePathFromUrl(url: string): string | null {
   }
 }
 
-function isJpeg(bytes: Buffer): boolean {
-  return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-}
-
-function isPng(bytes: Buffer): boolean {
-  return (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47
-  );
-}
-
-function isGif(bytes: Buffer): boolean {
-  return bytes.length >= 6 && bytes.subarray(0, 3).toString("ascii") === "GIF";
-}
-
-function isWebp(bytes: Buffer): boolean {
-  return (
-    bytes.length >= 12 &&
-    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
-    bytes.subarray(8, 12).toString("ascii") === "WEBP"
-  );
-}
-
-function pngDimensions(bytes: Buffer): { width: number; height: number } | null {
-  if (!isPng(bytes) || bytes.length < 24) return null;
-  const width = bytes.readUInt32BE(16);
-  const height = bytes.readUInt32BE(20);
-  if (!width || !height) return null;
-  return { width, height };
-}
-
-function jpegDimensions(bytes: Buffer): { width: number; height: number } | null {
-  if (!isJpeg(bytes)) return null;
-  let offset = 2;
-  while (offset < bytes.length - 8) {
-    if (bytes[offset] !== 0xff) {
-      offset += 1;
-      continue;
-    }
-    const marker = bytes[offset + 1];
-    if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
-      const height = bytes.readUInt16BE(offset + 5);
-      const width = bytes.readUInt16BE(offset + 7);
-      if (!width || !height) return null;
-      return { width, height };
-    }
-    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
-      offset += 2;
-      continue;
-    }
-    const length = bytes.readUInt16BE(offset + 2);
-    if (length < 2) break;
-    offset += 2 + length;
-  }
-  return null;
-}
-
 /**
  * Validate image bytes for Meta adimages without native deps (no sharp).
  * Uploads the original JPG/PNG bytes. Rejects other formats instead of converting.
@@ -119,17 +67,15 @@ export function validateMetaAdImage(
     );
   }
 
+  const parsed = rasterSizeFromBytes(bytes);
   let mimeType: "image/jpeg" | "image/png";
   let filename: string;
-  let parsed: { width: number; height: number } | null = null;
   if (isJpeg(bytes)) {
     mimeType = "image/jpeg";
     filename = "creative.jpg";
-    parsed = jpegDimensions(bytes);
   } else if (isPng(bytes)) {
     mimeType = "image/png";
     filename = "creative.png";
-    parsed = pngDimensions(bytes);
   } else {
     throw new Error(
       "Creative image is not a JPG or PNG. Meta adimages only accept those formats.",

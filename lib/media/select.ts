@@ -3,7 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { attachAssetToContentItem } from "@/lib/media/sync";
 import {
-  assetFitsSlot,
+  assetQualifiesForSlot,
   canDeriveStoryFit,
   formatSlotForContent,
   isStoryMediaSlot,
@@ -138,8 +138,16 @@ export async function selectBestLibraryImage(params: {
     // Never reuse within the 14-day window
     if (recentlyUsedIds.has(asset.id)) continue;
     if (slot) {
-      const suitable = (asset.suitable_formats as string[]) ?? [];
-      if (!assetFitsSlot(suitable, slot)) continue;
+      if (
+        !assetQualifiesForSlot({
+          suitableFormats: (asset.suitable_formats as string[]) ?? [],
+          width: asset.width,
+          height: asset.height,
+          slot,
+        })
+      ) {
+        continue;
+      }
     }
     candidates.push(asset);
   }

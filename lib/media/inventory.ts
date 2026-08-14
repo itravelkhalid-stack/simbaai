@@ -3,7 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 import {
-  assetFitsSlot,
+  assetQualifiesForSlot,
   formatSlotForContent,
   type MediaFormatSlot,
   MEDIA_FORMAT_SLOT_LABELS,
@@ -90,7 +90,7 @@ export async function computeMediaInventoryHealth(params: {
   const [{ data: assets }, { data: recentUsages }] = await Promise.all([
     supabase
       .from("media_assets")
-      .select("id, suitable_formats, is_derived")
+      .select("id, suitable_formats, width, height, is_derived")
       .eq("organization_id", params.organizationId)
       .eq("brand_id", params.brandId)
       .in("type", ["image", "logo"])
@@ -117,7 +117,12 @@ export async function computeMediaInventoryHealth(params: {
 
   return slots.map((slot) => {
     const suitable = (assets ?? []).filter((a) =>
-      assetFitsSlot((a.suitable_formats as string[]) ?? [], slot),
+      assetQualifiesForSlot({
+        suitableFormats: (a.suitable_formats as string[]) ?? [],
+        width: a.width as number | null,
+        height: a.height as number | null,
+        slot,
+      }),
     );
     const unused = suitable.filter((a) => !recentlyUsed.has(a.id));
     const perDay = targets

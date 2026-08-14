@@ -166,13 +166,15 @@ export async function registerUploadedMediaAsset(
       return { error: error?.message ?? "Failed to save asset" };
     }
 
-    try {
+    if (assetType === "image" || assetType === "logo") {
       const { probeAndUpdateAssetDimensions } = await import(
         "@/lib/media/story-fit"
       );
-      await probeAndUpdateAssetDimensions(asset.id);
-    } catch {
-      // dimensions optional at register
+      try {
+        await probeAndUpdateAssetDimensions(asset.id);
+      } catch (error) {
+        console.error("[media] dimension probe failed", asset.id, error);
+      }
     }
 
     if (reserved === BRAND_ASSET_TAGS.logoPrimary) {
