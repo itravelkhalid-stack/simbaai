@@ -19,6 +19,7 @@ import {
 import {
   findRecentNearDuplicate,
   loadRecentTopicsForDedupe,
+  wouldNearDuplicateBeforeGeneration,
 } from "@/lib/content/topic-dedupe";
 import { isNearDuplicateTopic } from "@/lib/content/topic-similarity";
 import { autoAttachLibraryImage } from "@/lib/media/select";
@@ -208,8 +209,56 @@ export async function fillBrandContentCadence(params: {
       ? pillars[pillarIdx % pillars.length]!
       : null;
     pillarIdx += 1;
-    const angle = DIVERSITY_ANGLES[angleIdx % DIVERSITY_ANGLES.length]!;
+
+    let angle = DIVERSITY_ANGLES[angleIdx % DIVERSITY_ANGLES.length]!;
+    let topic = topicForGap({
+      brandName: brandRow.name,
+      platform: gap.platform,
+      kind: gap.kind,
+      pillarName: pillar?.name ?? null,
+      date: gap.date,
+      feedCopyHint:
+        gap.kind === "story" ? (feedHints.get(gap.date) ?? null) : null,
+      angle,
+      avoidTopics: sessionTitles,
+    });
+
+    let preDupe = wouldNearDuplicateBeforeGeneration({
+      candidate: topic,
+      sessionTitles,
+      recentTopics,
+    });
+    let angleAttempts = 0;
+    while (preDupe && angleAttempts < DIVERSITY_ANGLES.length - 1) {
+      angleAttempts += 1;
+      angleIdx += 1;
+      angle = DIVERSITY_ANGLES[angleIdx % DIVERSITY_ANGLES.length]!;
+      topic = topicForGap({
+        brandName: brandRow.name,
+        platform: gap.platform,
+        kind: gap.kind,
+        pillarName: pillar?.name ?? null,
+        date: gap.date,
+        feedCopyHint:
+          gap.kind === "story" ? (feedHints.get(gap.date) ?? null) : null,
+        angle,
+        avoidTopics: sessionTitles,
+      });
+      preDupe = wouldNearDuplicateBeforeGeneration({
+        candidate: topic,
+        sessionTitles,
+        recentTopics,
+      });
+    }
     angleIdx += 1;
+
+    if (preDupe) {
+      skipped += 1;
+      errors.push(
+        `${gap.date} ${gap.platform}/${gap.kind}: pre-check near-duplicate (${preDupe.source}) — skipped without Claude`,
+      );
+      continue;
+    }
 
     try {
       const { data: agentRun, error: runErr } = await supabase
@@ -232,18 +281,6 @@ export async function fillBrandContentCadence(params: {
       if (runErr || !agentRun) {
         throw new Error(runErr?.message ?? "agent_run insert failed");
       }
-
-      const topic = topicForGap({
-        brandName: brandRow.name,
-        platform: gap.platform,
-        kind: gap.kind,
-        pillarName: pillar?.name ?? null,
-        date: gap.date,
-        feedCopyHint:
-          gap.kind === "story" ? (feedHints.get(gap.date) ?? null) : null,
-        angle,
-        avoidTopics: sessionTitles,
-      });
 
       const generated = await generateSinglePostVariants({
         brandContext,
@@ -272,6 +309,10 @@ export async function fillBrandContentCadence(params: {
             status: "complete",
             progress: 100,
             error: null,
+            model: generated.model,
+            tokens_in: generated.tokensIn,
+            tokens_out: generated.tokensOut,
+            cost_pence: generated.costPence,
             output: {
               skipped: "near_duplicate",
               reason: `Near-duplicate topic skipped: similar to "${dupInSession.slice(0, 80)}"`,
@@ -299,6 +340,10 @@ export async function fillBrandContentCadence(params: {
             status: "complete",
             progress: 100,
             error: null,
+            model: generated.model,
+            tokens_in: generated.tokensIn,
+            tokens_out: generated.tokensOut,
+            cost_pence: generated.costPence,
             output: {
               skipped: "near_duplicate",
               reason: `Near-duplicate of recent item ${dupRecent.id}`,

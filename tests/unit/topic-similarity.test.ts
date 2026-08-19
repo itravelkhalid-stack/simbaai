@@ -5,6 +5,7 @@ import {
   normalizeTopicText,
   topicTokenSimilarity,
 } from "@/lib/content/topic-similarity";
+import { wouldNearDuplicateBeforeGeneration } from "@/lib/content/topic-dedupe";
 
 describe("topic similarity", () => {
   it("normalizes punctuation", () => {
@@ -47,5 +48,25 @@ describe("topic similarity", () => {
       { id: "2", title: "Why Pay More? Travel tips" },
     ]);
     expect(hit?.id).toBe("2");
+  });
+});
+
+describe("wouldNearDuplicateBeforeGeneration", () => {
+  it("blocks prompts matching recent calendar", () => {
+    const hit = wouldNearDuplicateBeforeGeneration({
+      candidate: "Why Pay More for luxury hotels?",
+      sessionTitles: [],
+      recentTopics: [{ id: "x", title: "Why Pay More? Travel tips" }],
+    });
+    expect(hit?.source).toBe("recent");
+  });
+
+  it("returns null for distinct prompts", () => {
+    const hit = wouldNearDuplicateBeforeGeneration({
+      candidate: "Chefchaouen blue city photo diary",
+      sessionTitles: ["Why Pay More? Travel tips"],
+      recentTopics: [{ id: "x", title: "Deposit myths debunked" }],
+    });
+    expect(hit).toBeNull();
   });
 });
