@@ -84,6 +84,8 @@ export async function generateWeeklySummariesForAll() {
     .select("*")
     .limit(50);
 
+  const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+
   const end = new Date();
   const start = new Date();
   start.setDate(start.getDate() - 7);
@@ -93,6 +95,15 @@ export async function generateWeeklySummariesForAll() {
   const results = [];
   for (const project of (projects ?? []) as SeoProject[]) {
     try {
+      const halt = await skipIfBrandAgentHalted({
+        organizationId: project.organization_id,
+        brandId: project.brand_id,
+      });
+      if (halt) {
+        results.push({ id: project.id, ok: false, skipped: true, reason: halt.reason });
+        continue;
+      }
+
       const brandContext = await getBrandContext(
         project.organization_id,
         project.brand_id,

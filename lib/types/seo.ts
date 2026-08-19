@@ -68,6 +68,7 @@ export type SeoProject = {
   keyword_map: SeoKeywordMap;
   last_audit_at: string | null;
   last_gsc_sync_at: string | null;
+  gsc_last_error: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

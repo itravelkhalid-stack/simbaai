@@ -61,6 +61,23 @@ export async function runReport(reportId: string) {
   const r = report as Report;
   if (r.status === "complete") return { reportId, skipped: true as const };
 
+  const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+  const halt = await skipIfBrandAgentHalted({
+    organizationId: r.organization_id,
+    brandId: r.brand_id,
+  });
+  if (halt) {
+    await supabase
+      .from("reports")
+      .update({
+        status: "cancelled",
+        error: halt.message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", reportId);
+    return { reportId, ...halt };
+  }
+
   await supabase
     .from("reports")
     .update({

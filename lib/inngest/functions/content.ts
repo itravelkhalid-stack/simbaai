@@ -19,6 +19,27 @@ import type {
   ContentPlatform,
 } from "@/lib/types/content";
 
+async function skipContentIfBrandHalted(params: {
+  organizationId: string;
+  brandId: string;
+  agentRunId?: string;
+}) {
+  const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+  const halt = await skipIfBrandAgentHalted(params);
+  if (!halt || !params.agentRunId) return halt;
+  const supabase = createAdminClient();
+  await supabase
+    .from("agent_runs")
+    .update({
+      status: "complete",
+      progress: 100,
+      output: halt,
+      error: null,
+    })
+    .eq("id", params.agentRunId);
+  return halt;
+}
+
 async function applyComplianceToItem(params: {
   organizationId: string;
   brandId: string;
@@ -106,6 +127,13 @@ export const runContentSingleGenerate = inngest.createFunction(
       createdBy: string;
       sourceItemId?: string;
     };
+
+    const halt = await skipContentIfBrandHalted({
+      organizationId,
+      brandId,
+      agentRunId,
+    });
+    if (halt) return halt;
 
     const supabase = createAdminClient();
     const started = Date.now();
@@ -336,6 +364,13 @@ export const runContentBatchPropose = inngest.createFunction(
       model?: string;
     };
 
+    const halt = await skipContentIfBrandHalted({
+      organizationId,
+      brandId,
+      agentRunId,
+    });
+    if (halt) return halt;
+
     const supabase = createAdminClient();
 
     try {
@@ -470,6 +505,13 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
         createdBy: string;
         model?: string;
       };
+
+    const halt = await skipContentIfBrandHalted({
+      organizationId,
+      brandId,
+      agentRunId,
+    });
+    if (halt) return halt;
 
     const supabase = createAdminClient();
 
@@ -679,6 +721,13 @@ export const runContentRepurpose = inngest.createFunction(
       createdBy: string;
       model?: string;
     };
+
+    const halt = await skipContentIfBrandHalted({
+      organizationId,
+      brandId,
+      agentRunId,
+    });
+    if (halt) return halt;
 
     const supabase = createAdminClient();
 

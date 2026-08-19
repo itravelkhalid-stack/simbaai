@@ -271,9 +271,22 @@ export async function publishContentItem(itemId: string) {
     });
 
     if (!connection) {
-      throw new Error(
-        `No active ${typed.platform} connection for this brand. Connect it in Social.`,
-      );
+      const message = `No active ${typed.platform} connection for this brand. Connect it in Social → Meta.`;
+      await supabase
+        .from("content_items")
+        .update({
+          publish_error: message,
+          status: "scheduled",
+        })
+        .eq("id", itemId);
+      await notifyPublishFailure({
+        organizationId: typed.organization_id,
+        contentItemId: itemId,
+        platform: typed.platform,
+        message,
+        tokenError: true,
+      });
+      return { skipped: true as const, reason: message };
     }
 
     if (connection.paused) {

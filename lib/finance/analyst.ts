@@ -38,7 +38,10 @@ export async function runWeeklyFinanceAnalyst() {
   const weekStart = mondayOf();
   const month = monthBounds();
   const prior = priorMonthBounds();
-  const { data: brands } = await supabase.from("brands").select("id, organization_id");
+  const { data: brands } = await supabase
+    .from("brands")
+    .select("id, organization_id")
+    .eq("agent_activity_paused", false);
   const results: Array<{ brandId: string; summaryId: string }> = [];
 
   for (const brand of brands ?? []) {

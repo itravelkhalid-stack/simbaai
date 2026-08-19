@@ -142,6 +142,24 @@ export default async function DataSettingsPage({
         </p>
       ) : null}
 
+      {ga4?.status === "error" && ga4.last_error ? (
+        <div
+          className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm"
+          role="alert"
+        >
+          <p className="font-medium text-destructive">GA4 sync stopped</p>
+          <p className="mt-2 text-muted-foreground">{ga4.last_error}</p>
+          {oauthReady ? (
+            <form action={startGa4OAuth} className="mt-3">
+              <input type="hidden" name="brandId" value={brandId} />
+              <Button type="submit" size="sm" variant="destructive">
+                Reconnect Google Analytics
+              </Button>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
+
       <section className="space-y-3 rounded-xl border p-4">
         <h2 className="text-sm font-medium">Google Analytics 4</h2>
         {ga4 ? (

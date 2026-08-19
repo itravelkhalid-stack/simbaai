@@ -18,6 +18,34 @@ export const jobsRetryAgentRun = inngest.createFunction(
 
     await step.run("reset-status", async () => {
       const supabase = createAdminClient();
+      const { data: run } = await supabase
+        .from("agent_runs")
+        .select("organization_id, agent_name, input, research_project_id")
+        .eq("id", agentRunId)
+        .maybeSingle();
+      if (run) {
+        const { isBrandAgentHalted, resolveBrandIdForAgentRun } = await import(
+          "@/lib/brand/agent-halt"
+        );
+        const brandId = await resolveBrandIdForAgentRun({
+          organizationId: run.organization_id,
+          agentName: run.agent_name ?? "",
+          input: (run.input ?? {}) as Record<string, unknown>,
+          researchProjectId: run.research_project_id,
+        });
+        if (
+          brandId &&
+          (await isBrandAgentHalted({
+            organizationId: run.organization_id,
+            brandId,
+          }))
+        ) {
+          throw new Error(
+            "Brand agent activity is paused — retries blocked to prevent Claude spend",
+          );
+        }
+      }
+
       await supabase
         .from("agent_runs")
         .update({ status: "queued", error: null, progress: 0 })

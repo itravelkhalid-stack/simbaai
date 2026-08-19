@@ -74,3 +74,29 @@ export async function findRecentNearDuplicate(params: {
 }
 
 export { isNearDuplicateTopic, findSimilarTopic };
+
+/** Pre-generation gate: skip Claude when topic prompt already matches recent calendar. */
+export function wouldNearDuplicateBeforeGeneration(params: {
+  candidate: string;
+  sessionTitles: string[];
+  recentTopics: Array<{ id: string; title: string }>;
+}): { match: string; source: "session" | "recent"; itemId?: string } | null {
+  const candidate = params.candidate.trim();
+  if (candidate.length < 8) return null;
+
+  for (const title of params.sessionTitles) {
+    if (isNearDuplicateTopic(candidate, title)) {
+      return { match: title, source: "session" };
+    }
+  }
+
+  const hit = findSimilarTopic(candidate, params.recentTopics);
+  if (hit) {
+    return {
+      match: hit.title,
+      source: "recent",
+      itemId: hit.id,
+    };
+  }
+  return null;
+}
