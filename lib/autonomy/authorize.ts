@@ -74,8 +74,8 @@ function maxAllowedBudgetIncrease(current: number) {
 /**
  * Shared authorization for every agent outbound path.
  *
- * - Kill switch (`agent_activity_paused`) blocks all agent execution and
- *   scheduled publishing.
+ * - Kill switch (`agent_activity_paused`) blocks all brand-scoped agent work,
+ *   scheduled Claude jobs, retries, and autonomous publishing.
  * - Approval mode queues outbound actions for humans.
  * - Autonomous mode may execute within Phase C ad limits + organic compliance.
  * - Ads budget increases are capped at +20%/day relative to the current budget.

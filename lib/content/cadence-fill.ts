@@ -269,10 +269,14 @@ export async function fillBrandContentCadence(params: {
         await supabase
           .from("agent_runs")
           .update({
-            status: "failed",
+            status: "complete",
             progress: 100,
-            error: `Near-duplicate topic skipped: similar to "${dupInSession.slice(0, 80)}"`,
-            output: { skipped: "near_duplicate", title },
+            error: null,
+            output: {
+              skipped: "near_duplicate",
+              reason: `Near-duplicate topic skipped: similar to "${dupInSession.slice(0, 80)}"`,
+              title,
+            },
           })
           .eq("id", agentRun.id);
         skipped += 1;
@@ -292,10 +296,14 @@ export async function fillBrandContentCadence(params: {
         await supabase
           .from("agent_runs")
           .update({
-            status: "failed",
+            status: "complete",
             progress: 100,
-            error: `Near-duplicate of recent item ${dupRecent.id}`,
-            output: { skipped: "near_duplicate", match: dupRecent },
+            error: null,
+            output: {
+              skipped: "near_duplicate",
+              reason: `Near-duplicate of recent item ${dupRecent.id}`,
+              match: dupRecent,
+            },
           })
           .eq("id", agentRun.id);
         skipped += 1;

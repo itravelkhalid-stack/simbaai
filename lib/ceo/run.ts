@@ -85,6 +85,15 @@ export async function runCeoCheckForBrand(params: {
     .single();
   if (!brand) throw new Error("Brand not found");
 
+  const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+  const halt = await skipIfBrandAgentHalted({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+  });
+  if (halt) {
+    throw new Error(halt.message);
+  }
+
   const { data: last } = await supabase
     .from("ceo_checks")
     .select("checked_at")

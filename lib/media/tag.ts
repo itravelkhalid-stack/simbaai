@@ -61,6 +61,24 @@ export async function tagMediaAssetWithVision(params: {
       .single();
     if (error || !asset) throw new Error(error?.message ?? "Asset not found");
 
+    const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+    const halt = await skipIfBrandAgentHalted({
+      organizationId: params.organizationId,
+      brandId: asset.brand_id,
+    });
+    if (halt) {
+      await supabase
+        .from("agent_runs")
+        .update({
+          status: "complete",
+          progress: 100,
+          output: halt,
+          duration_ms: Date.now() - started,
+        })
+        .eq("id", params.agentRunId);
+      return { ok: true };
+    }
+
     if (asset.type !== "image" && asset.type !== "logo") {
       await supabase
         .from("agent_runs")

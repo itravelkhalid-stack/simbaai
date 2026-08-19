@@ -180,8 +180,10 @@ export function BrandAutonomyForm({
             Pause all agent activity
           </span>
           <span className="mt-1 block text-muted-foreground">
-            Immediate kill switch for this brand. Blocks autonomous execution and
-            scheduled organic publishing.
+            Immediate kill switch for this brand. Halts all scheduled AI work
+            (CEO checks, meetings, reports, cadence fill, CMO, planning tasks,
+            research, retries) and blocks autonomous publishing until you turn
+            this off.
           </span>
         </span>
       </label>

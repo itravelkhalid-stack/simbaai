@@ -105,6 +105,22 @@ export async function executeAiTask(taskId: string) {
     .single();
   if (!campaign) throw new Error("Campaign not found");
 
+  const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+  const halt = await skipIfBrandAgentHalted({
+    organizationId: t.organization_id,
+    brandId: campaign.brand_id,
+  });
+  if (halt) {
+    await supabase
+      .from("campaign_tasks")
+      .update({
+        status: "blocked",
+        last_error: halt.message,
+      })
+      .eq("id", t.id);
+    return { taskId: t.id, ...halt };
+  }
+
   await supabase
     .from("campaign_tasks")
     .update({

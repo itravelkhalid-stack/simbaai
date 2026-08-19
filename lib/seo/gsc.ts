@@ -204,69 +204,85 @@ export async function syncGscDailyForProject(project: SeoProject, days = 7) {
   if (!project.gsc_connected || !project.gsc_site_url) {
     return { synced: 0, reason: "not_connected" as const };
   }
-  const accessToken = await getValidGscAccessToken(project);
-  const end = new Date();
-  end.setDate(end.getDate() - 2); // GSC lag
-  const start = new Date(end);
-  start.setDate(start.getDate() - (days - 1));
-  const startDate = start.toISOString().slice(0, 10);
-  const endDate = end.toISOString().slice(0, 10);
-
-  const rows = await fetchGscSearchAnalytics({
-    accessToken,
-    siteUrl: project.gsc_site_url,
-    startDate,
-    endDate,
-  });
-
   const supabase = createAdminClient();
-  let synced = 0;
-  for (const row of rows) {
-    const [metricDate, query, page] = row.keys;
-    const { error } = await supabase.from("seo_gsc_daily").upsert(
-      {
-        organization_id: project.organization_id,
-        project_id: project.id,
-        metric_date: metricDate,
-        query: query ?? "",
-        page: page ?? "",
-        impressions: Math.round(row.impressions ?? 0),
-        clicks: Math.round(row.clicks ?? 0),
-        ctr: row.ctr ?? 0,
-        position: row.position ?? 0,
-      },
-      { onConflict: "project_id,metric_date,query,page" },
-    );
-    if (!error) synced += 1;
-  }
+  try {
+    const accessToken = await getValidGscAccessToken(project);
+    const end = new Date();
+    end.setDate(end.getDate() - 2); // GSC lag
+    const start = new Date(end);
+    start.setDate(start.getDate() - (days - 1));
+    const startDate = start.toISOString().slice(0, 10);
+    const endDate = end.toISOString().slice(0, 10);
 
-  // Update tracked keyword positions from latest GSC averages
-  const { data: keywords } = await supabase
-    .from("seo_keywords")
-    .select("id, keyword, current_position")
-    .eq("project_id", project.id)
-    .eq("tracked", true);
+    const rows = await fetchGscSearchAnalytics({
+      accessToken,
+      siteUrl: project.gsc_site_url,
+      startDate,
+      endDate,
+    });
 
-  for (const kw of keywords ?? []) {
-    const matching = rows.filter(
-      (r) => (r.keys[1] ?? "").toLowerCase() === kw.keyword.toLowerCase(),
-    );
-    if (matching.length === 0) continue;
-    const avg =
-      matching.reduce((s, r) => s + r.position, 0) / matching.length;
-    await supabase
+    let synced = 0;
+    for (const row of rows) {
+      const [metricDate, query, page] = row.keys;
+      const { error } = await supabase.from("seo_gsc_daily").upsert(
+        {
+          organization_id: project.organization_id,
+          project_id: project.id,
+          metric_date: metricDate,
+          query: query ?? "",
+          page: page ?? "",
+          impressions: Math.round(row.impressions ?? 0),
+          clicks: Math.round(row.clicks ?? 0),
+          ctr: row.ctr ?? 0,
+          position: row.position ?? 0,
+        },
+        { onConflict: "project_id,metric_date,query,page" },
+      );
+      if (!error) synced += 1;
+    }
+
+    // Update tracked keyword positions from latest GSC averages
+    const { data: keywords } = await supabase
       .from("seo_keywords")
+      .select("id, keyword, current_position")
+      .eq("project_id", project.id)
+      .eq("tracked", true);
+
+    for (const kw of keywords ?? []) {
+      const matching = rows.filter(
+        (r) => (r.keys[1] ?? "").toLowerCase() === kw.keyword.toLowerCase(),
+      );
+      if (matching.length === 0) continue;
+      const avg =
+        matching.reduce((s, r) => s + r.position, 0) / matching.length;
+      await supabase
+        .from("seo_keywords")
+        .update({
+          previous_position: kw.current_position,
+          current_position: Math.round(avg * 100) / 100,
+        })
+        .eq("id", kw.id);
+    }
+
+    await supabase
+      .from("seo_projects")
       .update({
-        previous_position: kw.current_position,
-        current_position: Math.round(avg * 100) / 100,
+        last_gsc_sync_at: new Date().toISOString(),
+        gsc_last_error: null,
       })
-      .eq("id", kw.id);
+      .eq("id", project.id);
+
+    return { synced, reason: "ok" as const };
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : "GSC sync failed";
+    const { humanizeGoogleOAuthError } = await import(
+      "@/lib/integrations/google-oauth-errors"
+    );
+    const message = humanizeGoogleOAuthError(raw);
+    await supabase
+      .from("seo_projects")
+      .update({ gsc_last_error: message })
+      .eq("id", project.id);
+    throw new Error(message);
   }
-
-  await supabase
-    .from("seo_projects")
-    .update({ last_gsc_sync_at: new Date().toISOString() })
-    .eq("id", project.id);
-
-  return { synced, reason: "ok" as const };
 }

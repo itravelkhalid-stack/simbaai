@@ -104,6 +104,23 @@ export default async function SeoProjectPage({
 
       <div className="space-y-4 rounded-xl border p-4">
         <p className="text-sm font-medium">Google Search Console</p>
+        {p.gsc_connected && p.gsc_last_error ? (
+          <div
+            className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"
+            role="alert"
+          >
+            <p className="font-medium text-destructive">GSC sync stopped</p>
+            <p className="mt-1 text-muted-foreground">{p.gsc_last_error}</p>
+            {oauthReady ? (
+              <form action={startGscOAuth} className="mt-3">
+                <input type="hidden" name="projectId" value={projectId} />
+                <Button type="submit" size="sm" variant="destructive">
+                  Reconnect Google Search Console
+                </Button>
+              </form>
+            ) : null}
+          </div>
+        ) : null}
         {!p.gsc_connected ? (
           oauthReady ? (
             <form action={startGscOAuth}>

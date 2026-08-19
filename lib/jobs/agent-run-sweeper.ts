@@ -53,6 +53,31 @@ async function drainQueued(
     const input = (run.input ?? {}) as Record<string, unknown>;
 
     try {
+      const { isBrandAgentHalted, resolveBrandIdForAgentRun } = await import(
+        "@/lib/brand/agent-halt"
+      );
+      const brandId = await resolveBrandIdForAgentRun({
+        organizationId: run.organization_id,
+        agentName: run.agent_name,
+        input,
+        researchProjectId: run.research_project_id,
+      });
+      if (
+        brandId &&
+        (await isBrandAgentHalted({
+          organizationId: run.organization_id,
+          brandId,
+        }))
+      ) {
+        await markFailed(
+          supabase,
+          run.id,
+          "Brand agent activity paused — drain skipped to prevent Claude spend",
+        );
+        results.push({ id: run.id, action: "skipped_brand_halted" });
+        continue;
+      }
+
       if (run.agent_name === "media_vision_tag") {
         const mediaAssetId = String(input.mediaAssetId ?? "");
         const brandId = String(input.brandId ?? "");

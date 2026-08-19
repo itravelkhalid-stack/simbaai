@@ -33,7 +33,39 @@ export const planningExecuteTaskNow = inngest.createFunction(
   },
 );
 
+export const planningGenerateMarketingPlan = inngest.createFunction(
+  {
+    id: "planning/generate-marketing-plan",
+    retries: 1,
+    triggers: [{ event: "planning/generate" }],
+  },
+  async ({ event, step }) => {
+    const data = event.data as {
+      organizationId: string;
+      brandId: string;
+      userId: string;
+      planId: string;
+      agentRunId: string;
+      goalBrief: string;
+      periodType: string;
+      periodStart: string;
+      periodEnd: string;
+      budgetPence: number | null;
+    };
+    return step.run("generate-plan", async () => {
+      const { runMarketingPlanGeneration } = await import(
+        "@/lib/planning/generate-plan-job"
+      );
+      return runMarketingPlanGeneration({
+        ...data,
+        periodType: data.periodType as import("@/lib/types/planning").MarketingPlanPeriod,
+      });
+    });
+  },
+);
+
 export const planningFunctions = [
   planningDailyExecution,
   planningExecuteTaskNow,
+  planningGenerateMarketingPlan,
 ];

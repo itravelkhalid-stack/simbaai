@@ -128,7 +128,7 @@ export default async function DataDashboardPage({
       .limit(40),
     supabase
       .from("ga4_connections")
-      .select("id, property_name, property_id, last_sync_at, status")
+      .select("id, property_name, property_id, last_sync_at, status, last_error")
       .eq("organization_id", active.organization_id)
       .eq("brand_id", brandId)
       .maybeSingle(),
@@ -216,6 +216,24 @@ export default async function DataDashboardPage({
           </Button>
         </form>
       </div>
+
+      {ga4?.status === "error" ? (
+        <div
+          className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"
+          role="alert"
+        >
+          <p className="font-medium text-destructive">
+            GA4 data may be stale — sync stopped
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            Rollups below may show zeros.{" "}
+            <a href="/data/settings" className="underline">
+              Reconnect GA4 in settings
+            </a>
+            .
+          </p>
+        </div>
+      ) : null}
 
       {ga4 ? (
         <p className="text-xs text-muted-foreground">

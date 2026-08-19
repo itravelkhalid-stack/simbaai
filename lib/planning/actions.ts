@@ -3,8 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { generateMarketingPlan } from "@/lib/agents/planning/generate";
-import { getBrandContext } from "@/lib/brand/context";
 import { inngest } from "@/lib/inngest/client";
 import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -83,126 +81,66 @@ export async function createPlanWithAi(
     const periodEnd = String(formData.get("periodEnd") ?? "") || bounds.end;
 
     const brandId = await primaryBrandId(active.organization_id);
-    const brandContext = await getBrandContext(active.organization_id, brandId);
     const supabase = await createClient();
 
-    const [{ data: research }, { data: adMetrics }, { data: emailStats }] =
-      await Promise.all([
-        supabase
-          .from("research_documents")
-          .select("section, content")
-          .eq("organization_id", active.organization_id)
-          .order("created_at", { ascending: false })
-          .limit(5),
-        supabase
-          .from("ad_metrics_daily")
-          .select("spend_pence, revenue_pence, conversions")
-          .eq("organization_id", active.organization_id)
-          .limit(100),
-        supabase
-          .from("email_campaigns")
-          .select("stats, name")
-          .eq("organization_id", active.organization_id)
-          .limit(10),
-      ]);
-
-    const spend = (adMetrics ?? []).reduce((s, r) => s + (r.spend_pence ?? 0), 0);
-    const revenue = (adMetrics ?? []).reduce(
-      (s, r) => s + (r.revenue_pence ?? 0),
-      0,
-    );
-    const performanceMarkdown = `
-Ad spend (sample): £${(spend / 100).toFixed(0)}
-Ad revenue (sample): £${(revenue / 100).toFixed(0)}
-Email campaigns: ${(emailStats ?? []).length}
-`.trim();
-
-    const { data: run } = await supabase
+    const { data: run, error: runErr } = await supabase
       .from("agent_runs")
       .insert({
         organization_id: active.organization_id,
         module: "planning",
         agent_name: "marketing_planner",
-        status: "running",
-        input: { goalBrief, periodType, periodStart, periodEnd },
-        logs: [{ at: new Date().toISOString(), message: "Generating marketing plan" }],
-        progress: 10,
+        status: "queued",
+        input: { goalBrief, periodType, periodStart, periodEnd, budgetPence },
+        logs: [{ at: new Date().toISOString(), message: "Queued marketing plan generation" }],
+        progress: 0,
       })
       .select("id")
       .single();
+    if (runErr || !run) {
+      return { error: runErr?.message ?? "Failed to queue planner run" };
+    }
 
-    let generated;
-    try {
-      generated = await generateMarketingPlan({
-        brandContext,
+    const { data: plan, error: planErr } = await supabase
+      .from("marketing_plans")
+      .insert({
+        organization_id: active.organization_id,
+        brand_id: brandId,
+        title: `Generating: ${goalBrief.slice(0, 60)}`,
+        goal_brief: goalBrief,
+        period_type: periodType,
+        period_start: periodStart,
+        period_end: periodEnd,
+        objectives: [],
+        document: { summary: "Generating…", objectives: [], strategies: [], campaigns: [], channel_tactics: [], budget_split: [], kpi_targets: [], task_breakdown: [] },
+        section_approvals: defaultSectionApprovals(),
+        status: "draft",
+        budget_pence: budgetPence,
+        currency: "GBP",
+        agent_run_id: run.id,
+        created_by: user.id,
+      })
+      .select("id")
+      .single();
+    if (planErr || !plan) {
+      return { error: planErr?.message ?? "Failed to create plan shell" };
+    }
+
+    await inngest.send({
+      name: "planning/generate",
+      data: {
+        organizationId: active.organization_id,
+        brandId,
+        userId: user.id,
+        planId: plan.id,
+        agentRunId: run.id,
         goalBrief,
         periodType,
         periodStart,
         periodEnd,
         budgetPence,
-        currency: "GBP",
-        performanceMarkdown,
-        researchMarkdown: (research ?? [])
-          .map((d) => `### ${d.section}\n${String(d.content ?? "").slice(0, 1500)}`)
-          .join("\n\n"),
-      });
-    } catch (err) {
-      if (run) {
-        await supabase
-          .from("agent_runs")
-          .update({
-            status: "failed",
-            progress: 100,
-            error: err instanceof Error ? err.message : String(err),
-          })
-          .eq("id", run.id);
-      }
-      throw err;
-    }
+      },
+    });
 
-    if (run) {
-      await supabase
-        .from("agent_runs")
-        .update({
-          status: "complete",
-          output: generated.data,
-          model: generated.model,
-          tokens_in: generated.tokensIn,
-          tokens_out: generated.tokensOut,
-          cost_pence: generated.costPence,
-          progress: 100,
-        })
-        .eq("id", run.id);
-    }
-
-    const doc = generated.data as PlanDocument;
-    const totalBudget =
-      budgetPence ??
-      doc.budget_split.reduce((s, b) => s + b.amount_pence, 0);
-
-    const { data: plan, error } = await supabase
-      .from("marketing_plans")
-      .insert({
-        organization_id: active.organization_id,
-        brand_id: brandId,
-        title: `Plan: ${goalBrief.slice(0, 60)}`,
-        goal_brief: goalBrief,
-        period_type: periodType,
-        period_start: periodStart,
-        period_end: periodEnd,
-        objectives: doc.objectives,
-        document: doc,
-        section_approvals: defaultSectionApprovals(),
-        status: "pending_approval",
-        budget_pence: totalBudget,
-        currency: "GBP",
-        agent_run_id: run?.id ?? null,
-        created_by: user.id,
-      })
-      .select("id")
-      .single();
-
-    if (error || !plan) return { error: error?.message ?? "Failed to save plan" };
     redirect(`/planning/plans/${plan.id}`);
   } catch (error) {
     if (error && typeof error === "object" && "digest" in error) throw error;

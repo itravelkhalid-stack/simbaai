@@ -22,7 +22,8 @@ export async function scheduleDueReports(now = new Date()) {
 
   const { data: brands } = await supabase
     .from("brands")
-    .select("id, organization_id");
+    .select("id, organization_id")
+    .eq("agent_activity_paused", false);
 
   const created: Array<{ reportId: string; type: ReportType; brandId: string }> =
     [];

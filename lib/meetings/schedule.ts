@@ -126,7 +126,8 @@ export async function scheduleDueMeetings(now = new Date()) {
     const { data: brands } = await supabase
       .from("brands")
       .select("id, name")
-      .eq("organization_id", org.id);
+      .eq("organization_id", org.id)
+      .eq("agent_activity_paused", false);
 
     for (const brand of brands ?? []) {
       for (const type of dueTypes) {

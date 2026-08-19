@@ -18,6 +18,12 @@ export async function extractGuidelinesFromPdfAsset(params: {
   userId?: string | null;
   agentRunId?: string;
 }) {
+  const { assertBrandAgentsActive } = await import("@/lib/brand/agent-halt");
+  await assertBrandAgentsActive({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+  });
+
   const supabase = createAdminClient();
 
   const { data: asset, error: assetError } = await supabase

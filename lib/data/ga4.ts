@@ -520,12 +520,16 @@ export async function syncGa4Connection(
       discoveredEvents: discovered.length,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "GA4 sync failed";
+    const raw = err instanceof Error ? err.message : "GA4 sync failed";
+    const { humanizeGoogleOAuthError } = await import(
+      "@/lib/integrations/google-oauth-errors"
+    );
+    const message = humanizeGoogleOAuthError(raw);
     await supabase
       .from("ga4_connections")
       .update({ last_error: message, status: "error" })
       .eq("id", connection.id);
-    throw err;
+    throw new Error(message);
   }
 }
 

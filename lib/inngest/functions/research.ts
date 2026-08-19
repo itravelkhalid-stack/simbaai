@@ -46,6 +46,28 @@ export const runResearchProject = inngest.createFunction(
           throw new Error(brandError?.message ?? "Brand not found");
         }
 
+        const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+        const halt = await skipIfBrandAgentHalted({
+          organizationId: project.organization_id,
+          brandId: project.brand_id,
+        });
+        if (halt) {
+          await supabase
+            .from("agent_runs")
+            .update({
+              status: "complete",
+              progress: 100,
+              output: halt,
+              error: null,
+            })
+            .eq("id", agentRunId);
+          await supabase
+            .from("research_projects")
+            .update({ status: "failed" })
+            .eq("id", projectId);
+          throw new Error(halt.message);
+        }
+
         const { data: org, error: orgError } = await supabase
           .from("organizations")
           .select("name")

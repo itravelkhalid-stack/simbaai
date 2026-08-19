@@ -209,6 +209,23 @@ export async function runMeeting(meetingId: string): Promise<{
 
   if (m.status === "complete") return { meetingId, skipped: true as const };
 
+  const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+  const halt = await skipIfBrandAgentHalted({
+    organizationId: m.organization_id,
+    brandId: m.brand_id,
+  });
+  if (halt) {
+    await supabase
+      .from("meetings")
+      .update({
+        status: "cancelled",
+        error: halt.message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", meetingId);
+    return { meetingId, ...halt };
+  }
+
   const priorAttempts = m.generation_attempts ?? 0;
 
   await supabase

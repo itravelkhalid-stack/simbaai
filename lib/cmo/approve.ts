@@ -334,6 +334,19 @@ export async function reviewContentItemAsCmo(params: {
   brandId: string;
   itemId: string;
 }): Promise<CmoReviewResult> {
+  const { skipIfBrandAgentHalted } = await import("@/lib/brand/agent-halt");
+  const halt = await skipIfBrandAgentHalted({
+    organizationId: params.organizationId,
+    brandId: params.brandId,
+  });
+  if (halt) {
+    return {
+      itemId: params.itemId,
+      outcome: "skipped",
+      detail: halt.message,
+    };
+  }
+
   const supabase = createAdminClient();
   const { data: itemRow, error } = await supabase
     .from("content_items")
