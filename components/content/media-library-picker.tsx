@@ -8,9 +8,14 @@ import {
   attachMediaToContentItem,
   type MediaActionResult,
 } from "@/lib/media/actions";
+import {
+  regenerateCaptionForImage,
+  type ContentActionResult,
+} from "@/lib/content/actions";
 import type { MediaAsset } from "@/lib/types/media";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -53,7 +58,10 @@ export function MediaLibraryPicker({
   const [open, setOpen] = useState(false);
   const [tagQuery, setTagQuery] = useState("");
   const [message, setMessage] = useState<MediaActionResult>({});
+  const [regenOffer, setRegenOffer] = useState<string | null>(null);
+  const [regenState, setRegenState] = useState<ContentActionResult>({});
   const [pending, startTransition] = useTransition();
+  const [regenPending, startRegen] = useTransition();
 
   const attachable = useMemo(
     () =>
@@ -80,6 +88,8 @@ export function MediaLibraryPicker({
 
   function selectAsset(assetId: string) {
     setMessage({});
+    setRegenOffer(null);
+    setRegenState({});
     startTransition(async () => {
       const fd = new FormData();
       fd.set("itemId", itemId);
@@ -88,10 +98,37 @@ export function MediaLibraryPicker({
       const result = await attachMediaToContentItem({}, fd);
       setMessage(result);
       if (!result.error) {
+        if (replace) {
+          setRegenOffer(assetId);
+        } else {
+          setOpen(false);
+          router.refresh();
+        }
+      }
+    });
+  }
+
+  function regenerateCaption() {
+    if (!regenOffer) return;
+    setRegenState({});
+    startRegen(async () => {
+      const fd = new FormData();
+      fd.set("itemId", itemId);
+      fd.set("assetId", regenOffer);
+      const result = await regenerateCaptionForImage({}, fd);
+      setRegenState(result);
+      if (!result.error) {
         setOpen(false);
+        setRegenOffer(null);
         router.refresh();
       }
     });
+  }
+
+  function dismissRegen() {
+    setRegenOffer(null);
+    setOpen(false);
+    router.refresh();
   }
 
   return (
@@ -156,16 +193,52 @@ export function MediaLibraryPicker({
             </Alert>
           ) : null}
 
+          {regenOffer ? (
+            <div className="space-y-2 rounded-lg border border-accent-soft bg-accent-soft/30 p-3">
+              <p className="text-sm font-medium">
+                Image swapped — regenerate caption to match?
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Simba will rewrite the copy using this image&apos;s subject,
+                setting, mood, and colours.
+              </p>
+              {regenState.error ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{regenState.error}</AlertDescription>
+                </Alert>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={regenPending}
+                  onClick={regenerateCaption}
+                >
+                  {regenPending ? "Regenerating…" : "Regenerate caption"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={regenPending}
+                  onClick={dismissRegen}
+                >
+                  Keep current caption
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {pending ? (
             <p className="text-sm text-muted-foreground">Attaching…</p>
           ) : null}
 
-          {filtered.length === 0 ? (
+          {!regenOffer && filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No matching library images. Upload one above or add assets in Brand
               → Media.
             </p>
-          ) : (
+          ) : !regenOffer ? (
             <ul className="grid max-h-80 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
               {filtered.map((asset) => (
                 <li key={asset.id}>
@@ -203,7 +276,7 @@ export function MediaLibraryPicker({
                 </li>
               ))}
             </ul>
-          )}
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

@@ -13,7 +13,8 @@ import {
 } from "@/lib/content/cadence";
 import {
   assignScheduleSlotUnderCadence,
-  CADENCE_COVERAGE_STATUSES,
+  cadenceCountKey,
+  CADENCE_OCCUPYING_STATUSES,
   loadCadenceOccupancyCounts,
 } from "@/lib/content/schedule-slots";
 import {
@@ -22,7 +23,11 @@ import {
   wouldNearDuplicateBeforeGeneration,
 } from "@/lib/content/topic-dedupe";
 import { isNearDuplicateTopic } from "@/lib/content/topic-similarity";
-import { autoAttachLibraryImage } from "@/lib/media/select";
+import {
+  attachSelectedLibraryImage,
+  platformRequiresLibraryImage,
+  selectBestLibraryImageForContent,
+} from "@/lib/media/select";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 import type { Brand } from "@/lib/types/research";
@@ -133,13 +138,13 @@ export async function fillBrandContentCadence(params: {
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + HORIZON_DAYS);
 
-  // Only committed calendar items count toward the 7-day target.
+  // Pending backlog occupies slots — include it so fill does not stack on the same day.
   const counts = await loadCadenceOccupancyCounts({
     organizationId: params.organizationId,
     brandId: params.brandId,
     fromDate: from,
     horizonDays: HORIZON_DAYS,
-    statuses: CADENCE_COVERAGE_STATUSES,
+    statuses: CADENCE_OCCUPYING_STATUSES,
   });
 
   // Feed hints + avoid list may include pending (for copy context / diversity).
@@ -148,10 +153,7 @@ export async function fillBrandContentCadence(params: {
     .select("id, platform, format, scheduled_at, status, copy, title")
     .eq("organization_id", params.organizationId)
     .eq("brand_id", params.brandId)
-    .in("status", [
-      ...CADENCE_COVERAGE_STATUSES,
-      "pending_approval",
-    ])
+    .in("status", [...CADENCE_OCCUPYING_STATUSES])
     .gte("scheduled_at", start.toISOString())
     .lt("scheduled_at", end.toISOString())
     .limit(2000);
@@ -203,6 +205,8 @@ export async function fillBrandContentCadence(params: {
   const errors: string[] = [];
   const createdIds: string[] = [];
   const sessionTitles: string[] = [...avoidTopics];
+
+  const sessionCounts = new Map(counts);
 
   for (const gap of toFill) {
     const pillar = pillars.length
@@ -261,6 +265,38 @@ export async function fillBrandContentCadence(params: {
     }
 
     try {
+      const slotKey = cadenceCountKey(gap.date, gap.platform, gap.kind);
+      const cap =
+        targets.find(
+          (t) => t.platform === gap.platform && t.kind === gap.kind,
+        )?.perDay ?? 1;
+      if ((sessionCounts.get(slotKey) ?? 0) >= cap) {
+        skipped += 1;
+        errors.push(
+          `${gap.date} ${gap.platform}/${gap.kind}: session cap reached — skipped`,
+        );
+        continue;
+      }
+
+      const imagePick = await selectBestLibraryImageForContent({
+        organizationId: params.organizationId,
+        brandId: params.brandId,
+        topic,
+        pillarName: pillar?.name ?? null,
+        hardExcludeRecentDays: 14,
+        platform: gap.platform,
+        format: gap.format,
+      });
+
+      // Image-first: never burn Claude on caption-only for visual platforms.
+      if (platformRequiresLibraryImage(gap.platform) && !imagePick) {
+        skipped += 1;
+        errors.push(
+          `${gap.date} ${gap.platform}/${gap.kind}: no suitable library image — held without generating`,
+        );
+        continue;
+      }
+
       const { data: agentRun, error: runErr } = await supabase
         .from("agent_runs")
         .insert({
@@ -274,6 +310,7 @@ export async function fillBrandContentCadence(params: {
             gap,
             pillarId: pillar?.id ?? null,
             angle,
+            imageAssetId: imagePick?.assetId ?? null,
           },
         })
         .select("id")
@@ -288,6 +325,7 @@ export async function fillBrandContentCadence(params: {
         format: gap.format,
         pillarName: pillar?.name,
         topic,
+        imageContext: imagePick?.context ?? null,
       });
 
       const variant = generated.data.variants[0];
@@ -425,21 +463,18 @@ export async function fillBrandContentCadence(params: {
       });
 
       try {
-        await autoAttachLibraryImage({
-          organizationId: params.organizationId,
-          brandId: params.brandId,
-          contentItemId: item.id,
-          topic,
-          title,
-          copy: variant.copy,
-          hardExcludeRecentDays: 14,
-          platform: gap.platform,
-          format: gap.format,
-        });
+        if (imagePick) {
+          await attachSelectedLibraryImage({
+            organizationId: params.organizationId,
+            contentItemId: item.id,
+            assetId: imagePick.assetId,
+          });
+        }
       } catch {
         // media optional for feed; IG story without image will fail at publish
       }
 
+      sessionCounts.set(slotKey, (sessionCounts.get(slotKey) ?? 0) + 1);
       createdIds.push(item.id);
       sessionTitles.push(title);
 
