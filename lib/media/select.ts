@@ -324,7 +324,7 @@ export async function selectBestLibraryImageForContent(
   const loaded = await loadImageCandidates(params);
   if (!loaded) return null;
 
-  let picked = pickBestFromPool(
+  const picked = pickBestFromPool(
     loaded.pool,
     loaded.topicTokens,
     loaded.pillarTokens,
