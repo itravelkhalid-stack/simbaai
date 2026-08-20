@@ -817,6 +817,68 @@ export async function rescheduleContentItem(formData: FormData) {
   revalidatePath("/content/calendar");
 }
 
+export async function clearUnpublishedContentQueue(
+  formData: FormData,
+): Promise<ContentActionResult> {
+  try {
+    const { active } = await assertCanWrite();
+    if (active.role !== "org_owner" && active.role !== "org_admin") {
+      return { error: "Only org owners and admins can clear the unpublished queue" };
+    }
+
+    const brandId = String(formData.get("brandId") ?? "");
+    const confirm = String(formData.get("confirm") ?? "");
+    if (!brandId) return { error: "Brand required" };
+    if (confirm !== "CLEAR") {
+      return { error: 'Type CLEAR to confirm deleting all unpublished items' };
+    }
+
+    const supabase = await createClient();
+    const { data: brand } = await supabase
+      .from("brands")
+      .select("id, name")
+      .eq("id", brandId)
+      .eq("organization_id", active.organization_id)
+      .maybeSingle();
+    if (!brand) return { error: "Brand not found" };
+
+    const { data: rows, error: listErr } = await supabase
+      .from("content_items")
+      .select("id, status")
+      .eq("organization_id", active.organization_id)
+      .eq("brand_id", brandId)
+      .neq("status", "published");
+    if (listErr) return { error: listErr.message };
+
+    const ids = (rows ?? []).map((r) => r.id);
+    if (ids.length === 0) {
+      return { success: `No unpublished items for ${brand.name}` };
+    }
+
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const { error: delErr, count } = await supabase
+        .from("content_items")
+        .delete({ count: "exact" })
+        .eq("organization_id", active.organization_id)
+        .eq("brand_id", brandId)
+        .in("id", chunk)
+        .neq("status", "published");
+      if (delErr) return { error: delErr.message };
+      deleted += count ?? chunk.length;
+    }
+
+    revalidatePath("/content/calendar");
+    revalidatePath("/content/queue");
+    return {
+      success: `Deleted ${deleted} unpublished item${deleted === 1 ? "" : "s"} for ${brand.name}. Published items kept.`,
+    };
+  } catch (error) {
+    return actionErrorFromUnknown(error, "Failed to clear unpublished queue");
+  }
+}
+
 export async function saveContentCadence(
   formData: FormData,
 ): Promise<ContentActionResult> {
