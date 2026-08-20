@@ -12,7 +12,14 @@ import { runEntityComplianceCheck } from "@/lib/compliance/check";
 import { fillAllBrandsContentCadence } from "@/lib/content/cadence-fill";
 import { inngest } from "@/lib/inngest/client";
 import { recordJobFailure } from "@/lib/inngest/functions/jobs";
-import { autoAttachLibraryImage } from "@/lib/media/select";
+import {
+  attachSelectedLibraryImage,
+  autoAttachLibraryImage,
+  platformRequiresLibraryImage,
+  selectBestLibraryImageForContent,
+  type ImageVisionContext,
+} from "@/lib/media/select";
+import { assignScheduleSlotUnderCadence } from "@/lib/content/schedule-slots";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   ContentFormat,
@@ -68,17 +75,27 @@ async function applyComplianceToItem(params: {
   });
 }
 
-async function maybeAutoAttachMedia(params: {
+async function attachImageForGeneratedItem(params: {
   organizationId: string;
   brandId: string;
   itemId: string;
   topic: string;
   title?: string | null;
   copy?: string | null;
+  pillarName?: string | null;
   platform?: import("@/lib/types/content").ContentPlatform;
   format?: import("@/lib/types/content").ContentFormat;
+  preselected?: { assetId: string; context: ImageVisionContext } | null;
 }) {
   try {
+    if (params.preselected) {
+      await attachSelectedLibraryImage({
+        organizationId: params.organizationId,
+        contentItemId: params.itemId,
+        assetId: params.preselected.assetId,
+      });
+      return;
+    }
     await autoAttachLibraryImage({
       organizationId: params.organizationId,
       brandId: params.brandId,
@@ -86,6 +103,7 @@ async function maybeAutoAttachMedia(params: {
       topic: params.topic,
       title: params.title,
       copy: params.copy,
+      pillarName: params.pillarName,
       platform: params.platform,
       format: params.format,
       hardExcludeRecentDays: 14,
@@ -156,6 +174,28 @@ export const runContentSingleGenerate = inngest.createFunction(
         : null;
 
       const generated = await step.run("generate", async () => {
+        await appendAgentRunLog(agentRunId, "Selecting library image", 20);
+        const imagePick = await selectBestLibraryImageForContent({
+          organizationId,
+          brandId,
+          topic,
+          pillarName,
+          hardExcludeRecentDays: 14,
+          platform,
+          format,
+        });
+        if (platformRequiresLibraryImage(platform) && !imagePick) {
+          await appendAgentRunLog(
+            agentRunId,
+            "No suitable library image — holding without caption generation",
+            40,
+            "warn",
+          );
+          return {
+            kind: "held_no_image" as const,
+            imagePick: null,
+          };
+        }
         await appendAgentRunLog(agentRunId, "Generating content with Claude", 30);
         if (isScriptFormat(format)) {
           const result = await generateScriptContent({
@@ -170,6 +210,7 @@ export const runContentSingleGenerate = inngest.createFunction(
           return {
             kind: "script" as const,
             result,
+            imagePick,
           };
         }
         const result = await generateSinglePostVariants({
@@ -179,10 +220,29 @@ export const runContentSingleGenerate = inngest.createFunction(
           pillarName,
           topic,
           rejectionReason,
+          imageContext: imagePick?.context ?? null,
           model,
         });
-        return { kind: "variants" as const, result };
+        return { kind: "variants" as const, result, imagePick };
       });
+
+      if (generated.kind === "held_no_image") {
+        await step.run("finalize-held", async () => {
+          await supabase
+            .from("agent_runs")
+            .update({
+              status: "complete",
+              progress: 100,
+              output: {
+                held: true,
+                reason: "no_suitable_library_image",
+              },
+              duration_ms: Date.now() - started,
+            })
+            .eq("id", agentRunId);
+        });
+        return { ok: true, held: true, reason: "no_suitable_library_image" };
+      }
 
       const itemIds = await step.run("persist-items", async () => {
         await appendAgentRunLog(agentRunId, "Saving drafts + compliance checks", 70);
@@ -223,15 +283,17 @@ export const runContentSingleGenerate = inngest.createFunction(
             hashtags: generated.result.data.hashtags,
             structured: generated.result.data.structured,
           });
-          await maybeAutoAttachMedia({
+          await attachImageForGeneratedItem({
             organizationId,
             brandId,
             itemId: item.id,
             topic,
             title: generated.result.data.title ?? topic.slice(0, 80),
             copy: generated.result.data.caption,
+            pillarName,
             platform,
             format,
+            preselected: generated.imagePick,
           });
         } else {
           for (const variant of generated.result.data.variants) {
@@ -272,15 +334,17 @@ export const runContentSingleGenerate = inngest.createFunction(
               hashtags: variant.hashtags,
               structured: variant.structured,
             });
-            await maybeAutoAttachMedia({
+            await attachImageForGeneratedItem({
               organizationId,
               brandId,
               itemId: item.id,
               topic,
               title: variant.title ?? topic,
               copy: variant.copy,
+              pillarName,
               platform,
               format,
+              preselected: generated.imagePick,
             });
           }
         }
@@ -559,8 +623,37 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
           let hashtags: string[] = [];
           let structured: Record<string, unknown> = {};
           let title = slot.topic.slice(0, 80);
+          let imagePick: Awaited<
+            ReturnType<typeof selectBestLibraryImageForContent>
+          > = null;
 
           if (isScriptFormat(slot.format)) {
+            imagePick = await selectBestLibraryImageForContent({
+              organizationId,
+              brandId,
+              topic: slot.topic,
+              pillarName,
+              hardExcludeRecentDays: 14,
+              platform: slot.platform as ContentPlatform,
+              format: slot.format as ContentFormat,
+            });
+            if (
+              platformRequiresLibraryImage(slot.platform as ContentPlatform) &&
+              !imagePick
+            ) {
+              await supabase
+                .from("content_plan_slots")
+                .update({ status: "failed" })
+                .eq("id", slot.id);
+              await appendAgentRunLog(
+                agentRunId,
+                `Held ${slot.topic}: no suitable library image`,
+                Math.round((done / Math.max(slots.length, 1)) * 80) + 10,
+                "warn",
+              );
+              done += 1;
+              continue;
+            }
             const result = await generateScriptContent({
               brandContext,
               platform: slot.platform,
@@ -574,12 +667,39 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
             structured = result.data.structured;
             title = result.data.title ?? title;
           } else {
+            imagePick = await selectBestLibraryImageForContent({
+              organizationId,
+              brandId,
+              topic: slot.topic,
+              pillarName,
+              hardExcludeRecentDays: 14,
+              platform: slot.platform as ContentPlatform,
+              format: slot.format as ContentFormat,
+            });
+            if (
+              platformRequiresLibraryImage(slot.platform as ContentPlatform) &&
+              !imagePick
+            ) {
+              await supabase
+                .from("content_plan_slots")
+                .update({ status: "failed" })
+                .eq("id", slot.id);
+              await appendAgentRunLog(
+                agentRunId,
+                `Held ${slot.topic}: no suitable library image`,
+                Math.round((done / Math.max(slots.length, 1)) * 80) + 10,
+                "warn",
+              );
+              done += 1;
+              continue;
+            }
             const result = await generateSinglePostVariants({
               brandContext,
               platform: slot.platform,
               format: slot.format,
               pillarName,
               topic: slot.topic,
+              imageContext: imagePick?.context ?? null,
               model,
             });
             const best = result.data.variants[0];
@@ -619,6 +739,24 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
             continue;
           }
 
+          const placed = await assignScheduleSlotUnderCadence({
+            organizationId,
+            brandId,
+            itemId: item.id,
+            platform: slot.platform as ContentPlatform,
+            format: slot.format as ContentFormat,
+            preferredAt: slot.scheduled_at,
+            forceWrite: true,
+          });
+          if (!placed.ok) {
+            await supabase.from("content_items").delete().eq("id", item.id);
+            await supabase
+              .from("content_plan_slots")
+              .update({ status: "failed" })
+              .eq("id", slot.id);
+            continue;
+          }
+
           await applyComplianceToItem({
             organizationId,
             brandId,
@@ -630,15 +768,17 @@ export const runContentBatchGenerateSlots = inngest.createFunction(
             structured,
           });
 
-          await maybeAutoAttachMedia({
+          await attachImageForGeneratedItem({
             organizationId,
             brandId,
             itemId: item.id,
             topic: slot.topic,
             title,
             copy,
-            platform: slot.platform,
-            format: slot.format,
+            pillarName,
+            platform: slot.platform as ContentPlatform,
+            format: slot.format as ContentFormat,
+            preselected: imagePick,
           });
 
           await supabase
@@ -820,7 +960,7 @@ export const runContentRepurpose = inngest.createFunction(
             hashtags: adaptation.hashtags,
             structured: adaptation.structured,
           });
-          await maybeAutoAttachMedia({
+          await attachImageForGeneratedItem({
             organizationId,
             brandId,
             itemId: item.id,

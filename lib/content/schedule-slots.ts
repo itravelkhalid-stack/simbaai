@@ -245,7 +245,7 @@ export async function findNextFreeScheduleSlot(params: {
   const target = targets.find(
     (t) => t.platform === params.platform && t.kind === kind,
   );
-  const dailyCap = target && target.perDay > 0 ? target.perDay : 10;
+  const dailyCap = target && target.perDay > 0 ? target.perDay : 1;
 
   const now = new Date();
   const preferred = params.preferredAt ? new Date(params.preferredAt) : null;
@@ -323,6 +323,7 @@ export async function assignScheduleSlotUnderCadence(params: {
   preferredAt?: string | null;
   /** When true, always write scheduled_at even if preferred fits. */
   forceWrite?: boolean;
+  maxDaysAhead?: number;
 }): Promise<
   | { ok: true; scheduledAt: string; moved: boolean; reason: string }
   | { ok: false; reason: string }
@@ -334,6 +335,7 @@ export async function assignScheduleSlotUnderCadence(params: {
     format: params.format,
     preferredAt: params.preferredAt,
     excludeItemId: params.itemId,
+    maxDaysAhead: params.maxDaysAhead,
   });
 
   if (!slot) {
@@ -343,8 +345,24 @@ export async function assignScheduleSlotUnderCadence(params: {
     };
   }
 
-  if (slot.moved || params.forceWrite || !params.preferredAt) {
-    const supabase = createAdminClient();
+  const supabase = createAdminClient();
+  const { data: current } = await supabase
+    .from("content_items")
+    .select("scheduled_at")
+    .eq("id", params.itemId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+
+  const currentAt = current?.scheduled_at ?? null;
+  const mustWrite =
+    params.forceWrite ||
+    !params.preferredAt ||
+    slot.moved ||
+    !currentAt ||
+    Math.abs(new Date(currentAt).getTime() - new Date(slot.scheduledAt).getTime()) >
+      60_000;
+
+  if (mustWrite) {
     const { error } = await supabase
       .from("content_items")
       .update({ scheduled_at: slot.scheduledAt })

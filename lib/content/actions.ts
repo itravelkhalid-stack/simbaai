@@ -17,7 +17,7 @@ import {
   rescheduleSchema,
   updateItemSchema,
 } from "@/lib/validations/content";
-import type { ContentPlatform } from "@/lib/types/content";
+import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 
 export type ContentActionResult = {
   error?: string;
@@ -506,6 +506,32 @@ export async function updateContentItem(
       }
     }
 
+    const { data: existing } = await supabase
+      .from("content_items")
+      .select("brand_id, platform, format, scheduled_at")
+      .eq("id", parsed.data.itemId)
+      .eq("organization_id", active.organization_id)
+      .single();
+    if (!existing) return { error: "Item not found" };
+
+    let scheduledAt = parsed.data.scheduledAt;
+    if (scheduledAt) {
+      const { assignScheduleSlotUnderCadence } = await import(
+        "@/lib/content/schedule-slots"
+      );
+      const placed = await assignScheduleSlotUnderCadence({
+        organizationId: active.organization_id,
+        brandId: existing.brand_id,
+        itemId: parsed.data.itemId,
+        platform: existing.platform,
+        format: existing.format,
+        preferredAt: new Date(scheduledAt).toISOString(),
+        forceWrite: true,
+      });
+      if (!placed.ok) return { error: placed.reason };
+      scheduledAt = placed.scheduledAt;
+    }
+
     const { error } = await supabase
       .from("content_items")
       .update({
@@ -514,10 +540,8 @@ export async function updateContentItem(
         ...(hashtags ? { hashtags } : {}),
         ...(parsed.data.scheduledAt !== undefined
           ? {
-              scheduled_at: parsed.data.scheduledAt
-                ? new Date(parsed.data.scheduledAt).toISOString()
-                : null,
-              status: parsed.data.scheduledAt ? "scheduled" : undefined,
+              scheduled_at: scheduledAt ? scheduledAt : null,
+              status: scheduledAt ? "scheduled" : undefined,
             }
           : {}),
       })
@@ -833,6 +857,128 @@ export async function saveContentCadence(
     return { success: "Cadence saved" };
   } catch (error) {
     return actionErrorFromUnknown(error, "Failed to save cadence");
+  }
+}
+
+export async function redistributeBrandSchedule(formData: FormData) {
+  try {
+    const { active } = await assertCanWrite();
+    const brandId = String(formData.get("brandId") ?? "");
+    if (!brandId) return { error: "Brand required" };
+
+    const fromDate =
+      String(formData.get("fromDate") ?? "").trim() ||
+      new Date().toISOString().slice(0, 10);
+
+    const { redistributeBrandScheduleToCadence } = await import(
+      "@/lib/content/redistribute-schedule"
+    );
+    const result = await redistributeBrandScheduleToCadence({
+      organizationId: active.organization_id,
+      brandId,
+      fromDate,
+      saveCadence1111: formData.get("saveCadence1111") === "1",
+    });
+
+    revalidatePath("/content/calendar");
+    revalidatePath("/content/queue");
+
+    const summary = [
+      result.moved.length
+        ? `Moved ${result.moved.length} item${result.moved.length === 1 ? "" : "s"}`
+        : null,
+      result.parkedDuplicates.length
+        ? `Parked ${result.parkedDuplicates.length} near-duplicate${result.parkedDuplicates.length === 1 ? "" : "s"}`
+        : null,
+      result.errors.length ? result.errors.join("; ") : null,
+    ]
+      .filter(Boolean)
+      .join(". ");
+
+    return {
+      success: summary || "Schedule already matches cadence",
+    };
+  } catch (error) {
+    return actionErrorFromUnknown(error, "Failed to redistribute schedule");
+  }
+}
+
+export async function regenerateCaptionForImage(
+  _prev: ContentActionResult,
+  formData: FormData,
+): Promise<ContentActionResult> {
+  const itemId = String(formData.get("itemId") ?? "");
+  const assetId = String(formData.get("assetId") ?? "");
+  if (!itemId || !assetId) return { error: "Missing item or image" };
+
+  try {
+    const { active } = await assertCanWrite();
+    await assertPlanAllows(active.organization_id, "ai_runs_month");
+
+    const supabase = await createClient();
+    const { data: item } = await supabase
+      .from("content_items")
+      .select("id, brand_id, platform, format, title, copy, pillar_id")
+      .eq("id", itemId)
+      .eq("organization_id", active.organization_id)
+      .single();
+    if (!item) return { error: "Item not found" };
+
+    const { getBrandContext } = await import("@/lib/brand/context");
+    const { generateSinglePostVariants } = await import(
+      "@/lib/agents/content/generate"
+    );
+    const { loadImageVisionContextForAsset } = await import("@/lib/media/select");
+
+    const brandContext = await getBrandContext(
+      active.organization_id,
+      item.brand_id,
+    );
+    const pillarName = item.pillar_id
+      ? brandContext.pillars.find((p) => p.id === item.pillar_id)?.name
+      : null;
+    const imageContext = await loadImageVisionContextForAsset({
+      organizationId: active.organization_id,
+      assetId,
+    });
+    if (!imageContext) {
+      return { error: "Could not load image metadata for caption generation" };
+    }
+
+    const topic =
+      item.title || item.copy.slice(0, 200) || "Social post for this image";
+    const generated = await generateSinglePostVariants({
+      brandContext,
+      platform: item.platform as ContentPlatform,
+      format: item.format as ContentFormat,
+      pillarName,
+      topic,
+      imageContext,
+    });
+    const variant = generated.data.variants[0];
+    if (!variant) return { error: "No caption generated" };
+
+    const { error } = await supabase
+      .from("content_items")
+      .update({
+        title: variant.title ?? item.title,
+        copy: variant.copy,
+        hashtags: variant.hashtags,
+        structured: {
+          ...variant.structured,
+          rationale: variant.rationale,
+          image_first_regen: true,
+        },
+      })
+      .eq("id", itemId)
+      .eq("organization_id", active.organization_id);
+    if (error) return { error: error.message };
+
+    revalidatePath(`/content/${itemId}`);
+    revalidatePath("/content/queue");
+    return { success: "Caption regenerated for the selected image" };
+  } catch (error) {
+    return actionErrorFromUnknown(error, "Failed to regenerate caption");
   }
 }
 

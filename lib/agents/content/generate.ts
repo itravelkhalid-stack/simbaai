@@ -9,6 +9,7 @@ import {
   scriptResultSchema,
   singlePostResultSchema,
 } from "@/lib/validations/content";
+import type { ImageVisionContext } from "@/lib/media/select";
 import type { BrandContext } from "@/lib/brand/context";
 import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 
@@ -19,6 +20,7 @@ export async function generateSinglePostVariants(input: {
   pillarName?: string | null;
   topic: string;
   rejectionReason?: string | null;
+  imageContext?: ImageVisionContext | null;
   model?: string;
 }) {
   return runClaudeJson({
@@ -30,6 +32,7 @@ export async function generateSinglePostVariants(input: {
       pillarName: input.pillarName,
       topic: input.topic,
       rejectionReason: input.rejectionReason,
+      imageContext: input.imageContext,
     }),
     schema: singlePostResultSchema,
     model: input.model,

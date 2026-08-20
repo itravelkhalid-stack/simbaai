@@ -14,6 +14,34 @@ import type { ContentFormat, ContentPlatform } from "@/lib/types/content";
 
 const RECENT_DAYS = 14;
 
+export type ImageVisionContext = {
+  assetId: string;
+  subject: string;
+  setting: string;
+  mood: string;
+  colours: string[];
+  description: string;
+};
+
+const SETTING_TAGS = new Set([
+  "beach",
+  "pool",
+  "hotel",
+  "resort",
+  "airport",
+  "city",
+  "restaurant",
+  "spa",
+  "room",
+  "balcony",
+  "destination",
+  "outdoor",
+  "indoor",
+  "sunset",
+  "mountain",
+  "coast",
+]);
+
 function tokenize(text: string): Set<string> {
   return new Set(
     text
@@ -21,6 +49,47 @@ function tokenize(text: string): Set<string> {
       .split(/[^a-z0-9]+/)
       .filter((t) => t.length >= 3),
   );
+}
+
+function inferSetting(
+  asset: Pick<
+    MediaAsset,
+    "description" | "tags" | "ai_subject" | "suitable_for"
+  >,
+): string {
+  for (const tag of asset.tags ?? []) {
+    const t = tag.toLowerCase();
+    if (SETTING_TAGS.has(t)) return tag;
+  }
+  for (const tag of asset.suitable_for ?? []) {
+    const t = tag.toLowerCase();
+    if (SETTING_TAGS.has(t)) return tag;
+  }
+  const desc = asset.description ?? asset.ai_subject ?? "";
+  const first = desc.split(/[.!?]/)[0]?.trim();
+  return first && first.length <= 120 ? first : "unspecified";
+}
+
+export function buildImageVisionContext(
+  asset: Pick<
+    MediaAsset,
+    | "id"
+    | "ai_subject"
+    | "ai_style"
+    | "ai_colors"
+    | "description"
+    | "tags"
+    | "suitable_for"
+  >,
+): ImageVisionContext {
+  return {
+    assetId: asset.id,
+    subject: asset.ai_subject?.trim() || "unspecified",
+    setting: inferSetting(asset),
+    mood: asset.ai_style?.trim() || "neutral",
+    colours: asset.ai_colors ?? [],
+    description: asset.description?.trim() || "",
+  };
 }
 
 function scoreAsset(
@@ -35,6 +104,7 @@ function scoreAsset(
     | "filename"
   >,
   topicTokens: Set<string>,
+  pillarTokens: Set<string>,
   recentlyUsed: boolean,
 ): number {
   const haystack = [
@@ -53,15 +123,21 @@ function scoreAsset(
   for (const token of topicTokens) {
     if (haystack.includes(token)) score += 3;
   }
+  for (const token of pillarTokens) {
+    if (haystack.includes(token)) score += 6;
+  }
   for (const tag of asset.tags ?? []) {
     if (topicTokens.has(tag.toLowerCase())) score += 4;
+    if (pillarTokens.has(tag.toLowerCase())) score += 5;
   }
   for (const tag of asset.suitable_for ?? []) {
     if (topicTokens.has(tag.toLowerCase())) score += 5;
+    if (pillarTokens.has(tag.toLowerCase())) score += 6;
   }
   if (asset.ai_subject) {
     for (const token of tokenize(asset.ai_subject)) {
       if (topicTokens.has(token)) score += 4;
+      if (pillarTokens.has(token)) score += 5;
     }
   }
   if (recentlyUsed) score -= 12;
@@ -69,24 +145,29 @@ function scoreAsset(
   return score;
 }
 
-export async function selectBestLibraryImage(params: {
+type SelectParams = {
   organizationId: string;
   brandId: string;
   topic: string;
   title?: string | null;
   copy?: string | null;
+  pillarName?: string | null;
   hardExcludeRecentDays?: number;
   platform?: ContentPlatform;
   format?: ContentFormat;
-  /** Prefer never-used; allow used-over-avg only when no unused fits (Phase 5b simplified: prefer unused). */
   preferUnused?: boolean;
-}): Promise<string | null> {
+};
+
+async function loadImageCandidates(params: SelectParams) {
   const supabase = createAdminClient();
   const topicTokens = tokenize(
     [params.topic, params.title ?? "", params.copy?.slice(0, 400) ?? ""].join(
       " ",
     ),
   );
+  const pillarTokens = params.pillarName
+    ? tokenize(params.pillarName)
+    : new Set<string>();
 
   const recentDays = params.hardExcludeRecentDays ?? RECENT_DAYS;
   const since = new Date();
@@ -135,7 +216,6 @@ export async function selectBestLibraryImage(params: {
   const candidates: Row[] = [];
   for (const asset of assets) {
     if (asset.is_derived && !isStoryMediaSlot(slot)) continue;
-    // Never reuse within the 14-day window
     if (recentlyUsedIds.has(asset.id)) continue;
     if (slot) {
       if (
@@ -152,31 +232,131 @@ export async function selectBestLibraryImage(params: {
     candidates.push(asset);
   }
 
-  // Prefer never-used; allow previously-used (outside 14d window) only if none unused
   const neverUsed = candidates.filter((a) => !everUsedIds.has(a.id));
   const pool = neverUsed.length > 0 ? neverUsed : candidates;
 
-  if (!pool.length && isStoryMediaSlot(slot)) {
-    return null;
-  }
-  const searchPool = pool;
+  return {
+    supabase,
+    slot,
+    topicTokens,
+    pillarTokens,
+    recentlyUsedIds,
+    pool,
+    assets,
+  };
+}
+
+function pickBestFromPool(
+  pool: Array<{
+    id: string;
+    tags: string[] | null;
+    description: string | null;
+    ai_subject: string | null;
+    ai_style: string | null;
+    ai_colors: string[] | null;
+    suitable_for: string[] | null;
+    filename: string;
+  }>,
+  topicTokens: Set<string>,
+  pillarTokens: Set<string>,
+  recentlyUsedIds: Set<string>,
+  slot: ReturnType<typeof formatSlotForContent> | null,
+): { assetId: string; row: (typeof pool)[number] } | null {
+  if (!pool.length && isStoryMediaSlot(slot)) return null;
 
   let bestId: string | null = null;
+  let bestRow: (typeof pool)[number] | null = null;
   let bestScore = Number.NEGATIVE_INFINITY;
 
-  for (const asset of searchPool) {
+  for (const asset of pool) {
     const recentlyUsed = recentlyUsedIds.has(asset.id);
-    const score = scoreAsset(asset as MediaAsset, topicTokens, recentlyUsed);
-    // When topic tokens empty, still allow format-fit only picks
-    const effective = topicTokens.size === 0 ? score + 3 : score;
+    const score = scoreAsset(
+      asset as MediaAsset,
+      topicTokens,
+      pillarTokens,
+      recentlyUsed,
+    );
+    const effective =
+      topicTokens.size === 0 && pillarTokens.size === 0 ? score + 3 : score;
     if (effective > bestScore) {
       bestScore = effective;
       bestId = asset.id;
+      bestRow = asset;
     }
   }
 
   if (topicTokens.size > 0 && bestScore < 3 && slot == null) return null;
-  return bestId;
+  if (!bestId || !bestRow) return null;
+  return { assetId: bestId, row: bestRow };
+}
+
+/** Organic platforms that must not generate caption-only posts. */
+export function platformRequiresLibraryImage(
+  platform?: ContentPlatform | null,
+): boolean {
+  return (
+    platform === "instagram" ||
+    platform === "facebook" ||
+    platform === "linkedin"
+  );
+}
+
+export async function selectBestLibraryImageForContent(
+  params: SelectParams,
+): Promise<{ assetId: string; context: ImageVisionContext } | null> {
+  const loaded = await loadImageCandidates(params);
+  if (!loaded) return null;
+
+  const picked = pickBestFromPool(
+    loaded.pool,
+    loaded.topicTokens,
+    loaded.pillarTokens,
+    loaded.recentlyUsedIds,
+    loaded.slot,
+  );
+  if (!picked) return null;
+
+  return {
+    assetId: picked.assetId,
+    context: buildImageVisionContext(picked.row as MediaAsset),
+  };
+}
+
+export async function selectBestLibraryImage(
+  params: SelectParams,
+): Promise<string | null> {
+  const pick = await selectBestLibraryImageForContent(params);
+  return pick?.assetId ?? null;
+}
+
+export async function attachSelectedLibraryImage(params: {
+  organizationId: string;
+  contentItemId: string;
+  assetId: string;
+}) {
+  await attachAssetToContentItem({
+    organizationId: params.organizationId,
+    contentItemId: params.contentItemId,
+    mediaAssetId: params.assetId,
+    replace: true,
+  });
+}
+
+export async function loadImageVisionContextForAsset(params: {
+  organizationId: string;
+  assetId: string;
+}): Promise<ImageVisionContext | null> {
+  const supabase = createAdminClient();
+  const { data: asset } = await supabase
+    .from("media_assets")
+    .select(
+      "id, ai_subject, ai_style, ai_colors, description, tags, suitable_for",
+    )
+    .eq("id", params.assetId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+  if (!asset) return null;
+  return buildImageVisionContext(asset as MediaAsset);
 }
 
 /**
@@ -190,6 +370,7 @@ export async function autoAttachLibraryImage(params: {
   topic: string;
   title?: string | null;
   copy?: string | null;
+  pillarName?: string | null;
   hardExcludeRecentDays?: number;
   platform?: ContentPlatform;
   format?: ContentFormat;
@@ -210,7 +391,6 @@ export async function autoAttachLibraryImage(params: {
   });
 
   if (!assetId && isStoryMediaSlot(slot)) {
-    // Pick any recent image we can derive from
     const { data: sources } = await supabase
       .from("media_assets")
       .select("id, width, height")
@@ -261,11 +441,10 @@ export async function autoAttachLibraryImage(params: {
     return { attached: false, assetId: null, awaitingNote: null };
   }
 
-  await attachAssetToContentItem({
+  await attachSelectedLibraryImage({
     organizationId: params.organizationId,
     contentItemId: params.contentItemId,
-    mediaAssetId: assetId,
-    replace: true,
+    assetId,
   });
 
   return { attached: true, assetId, awaitingNote: null };

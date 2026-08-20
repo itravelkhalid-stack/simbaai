@@ -25,7 +25,7 @@ export async function enforcePublishCadenceOrReschedule(params: {
     platform: params.platform,
     format: params.format,
     preferredAt: params.scheduledAt,
-    forceWrite: false,
+    forceWrite: true,
   });
 
   if (!placed.ok) {

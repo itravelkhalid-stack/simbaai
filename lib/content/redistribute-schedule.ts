@@ -21,7 +21,7 @@ export type RedistributeResult = {
 
 const ONE_ONE_ONE_ONE = {
   instagram: { feed_per_day: 1, stories_per_day: 1 },
-  facebook: { feed_per_day: 1 },
+  facebook: { feed_per_day: 1, stories_per_day: 1 },
   linkedin: { feed_per_day: 1 },
 };
 
@@ -34,7 +34,6 @@ export async function redistributeBrandScheduleToCadence(params: {
   brandId: string;
   /** Inclusive UTC date YYYY-MM-DD to start scanning from. */
   fromDate: string;
-  /** How many days ahead to consider when placing overflow. */
   horizonDays?: number;
   /** Persist the 1/1/1/1 cadence config on the brand. */
   saveCadence1111?: boolean;
@@ -49,7 +48,8 @@ export async function redistributeBrandScheduleToCadence(params: {
     errors: [],
   };
 
-  if (params.saveCadence1111 !== false) {
+  // Opt-in only — never overwrite a brand's saved cadence by default.
+  if (params.saveCadence1111 === true) {
     const { error } = await supabase
       .from("brands")
       .update({ content_cadence: ONE_ONE_ONE_ONE })
@@ -81,7 +81,7 @@ export async function redistributeBrandScheduleToCadence(params: {
 
   const start = new Date(`${params.fromDate}T00:00:00.000Z`);
   const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + (params.horizonDays ?? 21));
+  end.setUTCDate(end.getUTCDate() + (params.horizonDays ?? 90));
 
   const { data: items, error: itemsErr } = await supabase
     .from("content_items")
@@ -168,10 +168,25 @@ export async function redistributeBrandScheduleToCadence(params: {
       format: item.format as ContentFormat,
       preferredAt: nextDay.toISOString(),
       forceWrite: true,
+      maxDaysAhead: params.horizonDays ?? 90,
     });
 
     if (!placed.ok) {
-      result.errors.push(`${item.id}: ${placed.reason}`);
+      const note = `Cadence overflow — ${placed.reason}. Reassign from the queue.`;
+      const { error: parkErr } = await supabase
+        .from("content_items")
+        .update({
+          scheduled_at: null,
+          status: "pending_approval",
+          cmo_note: note,
+        })
+        .eq("id", item.id)
+        .eq("organization_id", params.organizationId);
+      if (parkErr) {
+        result.errors.push(`${item.id}: park overflow ${parkErr.message}`);
+      } else {
+        result.errors.push(`${item.id}: parked — ${placed.reason}`);
+      }
       continue;
     }
 
