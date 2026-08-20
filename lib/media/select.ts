@@ -178,7 +178,7 @@ async function loadImageCandidates(params: SelectParams) {
       ? formatSlotForContent(params.platform, params.format)
       : null;
 
-  const [{ data: assets }, { data: recentUsages }, { data: allUsages }] =
+  const [{ data: assets }, { data: recentUsages }, { data: allUsages }, { data: linked }] =
     await Promise.all([
       supabase
         .from("media_assets")
@@ -201,6 +201,20 @@ async function loadImageCandidates(params: SelectParams) {
         .eq("organization_id", params.organizationId)
         .eq("brand_id", params.brandId)
         .limit(2000),
+      // Also treat assets already attached to upcoming/unpublished items as used
+      // so image-first fill does not reuse the same banner across the week.
+      supabase
+        .from("content_item_media")
+        .select("media_asset_id, content_items!inner(brand_id, status, scheduled_at, created_at)")
+        .eq("organization_id", params.organizationId)
+        .eq("content_items.brand_id", params.brandId)
+        .in("content_items.status", [
+          "pending_approval",
+          "approved",
+          "scheduled",
+          "published",
+        ])
+        .limit(2000),
     ]);
 
   if (!assets?.length) return null;
@@ -208,6 +222,9 @@ async function loadImageCandidates(params: SelectParams) {
   const recentlyUsedIds = new Set(
     (recentUsages ?? []).map((r) => r.media_asset_id as string),
   );
+  for (const row of linked ?? []) {
+    recentlyUsedIds.add(row.media_asset_id as string);
+  }
   const everUsedIds = new Set(
     (allUsages ?? []).map((r) => r.media_asset_id as string),
   );
@@ -307,13 +324,81 @@ export async function selectBestLibraryImageForContent(
   const loaded = await loadImageCandidates(params);
   if (!loaded) return null;
 
-  const picked = pickBestFromPool(
+  let picked = pickBestFromPool(
     loaded.pool,
     loaded.topicTokens,
     loaded.pillarTokens,
     loaded.recentlyUsedIds,
     loaded.slot,
   );
+
+  // Stories: derive 9:16 from a landscape source when no ready story asset exists.
+  if (!picked && isStoryMediaSlot(loaded.slot)) {
+    const { data: sources } = await loaded.supabase
+      .from("media_assets")
+      .select(
+        "id, width, height, tags, description, ai_subject, ai_style, ai_colors, suitable_for, filename",
+      )
+      .eq("organization_id", params.organizationId)
+      .eq("brand_id", params.brandId)
+      .in("type", ["image", "logo"])
+      .eq("is_derived", false)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    const eligible = (sources ?? []).filter(
+      (s) =>
+        !loaded.recentlyUsedIds.has(s.id) &&
+        canDeriveStoryFit(s.width, s.height),
+    );
+    const sourcePick = pickBestFromPool(
+      eligible,
+      loaded.topicTokens,
+      loaded.pillarTokens,
+      loaded.recentlyUsedIds,
+      null,
+    );
+    if (sourcePick) {
+      const derived = await deriveStoryFittedAsset({
+        organizationId: params.organizationId,
+        brandId: params.brandId,
+        sourceAssetId: sourcePick.assetId,
+      });
+      if (derived?.assetId) {
+        const { data: derivedAsset } = await loaded.supabase
+          .from("media_assets")
+          .select(
+            "id, tags, description, ai_subject, ai_style, ai_colors, suitable_for, filename",
+          )
+          .eq("id", derived.assetId)
+          .maybeSingle();
+        if (derivedAsset) {
+          // Prefer source vision tags when derived row has none yet.
+          const context = buildImageVisionContext({
+            ...derivedAsset,
+            ai_subject:
+              derivedAsset.ai_subject || sourcePick.row.ai_subject,
+            ai_style: derivedAsset.ai_style || sourcePick.row.ai_style,
+            ai_colors:
+              (derivedAsset.ai_colors?.length
+                ? derivedAsset.ai_colors
+                : sourcePick.row.ai_colors) ?? [],
+            description:
+              derivedAsset.description || sourcePick.row.description,
+            tags:
+              (derivedAsset.tags?.length
+                ? derivedAsset.tags
+                : sourcePick.row.tags) ?? [],
+            suitable_for:
+              (derivedAsset.suitable_for?.length
+                ? derivedAsset.suitable_for
+                : sourcePick.row.suitable_for) ?? [],
+          } as MediaAsset);
+          return { assetId: derived.assetId, context };
+        }
+      }
+    }
+  }
+
   if (!picked) return null;
 
   return {
@@ -331,8 +416,11 @@ export async function selectBestLibraryImage(
 
 export async function attachSelectedLibraryImage(params: {
   organizationId: string;
+  brandId?: string;
   contentItemId: string;
   assetId: string;
+  platform?: ContentPlatform;
+  format?: ContentFormat;
 }) {
   await attachAssetToContentItem({
     organizationId: params.organizationId,
@@ -340,6 +428,17 @@ export async function attachSelectedLibraryImage(params: {
     mediaAssetId: params.assetId,
     replace: true,
   });
+  if (params.brandId && params.platform && params.format) {
+    const { recordMediaAssetUsage } = await import("@/lib/media/inventory");
+    await recordMediaAssetUsage({
+      organizationId: params.organizationId,
+      brandId: params.brandId,
+      mediaAssetId: params.assetId,
+      contentItemId: params.contentItemId,
+      platform: params.platform,
+      format: params.format,
+    }).catch(() => undefined);
+  }
 }
 
 export async function loadImageVisionContextForAsset(params: {

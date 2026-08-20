@@ -52,7 +52,27 @@ const DIVERSITY_ANGLES = [
   "social proof / traveler story angle",
 ];
 
-function topicForGap(params: {
+function topicBriefForGap(params: {
+  brandName: string;
+  platform: ContentPlatform;
+  kind: CadenceSlotKind;
+  pillarName: string | null;
+  date: string;
+  feedCopyHint?: string | null;
+  angle: string;
+}) {
+  if (params.kind === "story") {
+    const platformLabel =
+      params.platform === "facebook" ? "Facebook Story" : "Instagram Story";
+    if (params.feedCopyHint) {
+      return `Light ${platformLabel} visual — different angle (${params.angle}) teasing: ${params.feedCopyHint.slice(0, 140)}. Keep caption under 80 chars.`;
+    }
+    return `Light ${platformLabel} moment for ${params.brandName}${params.pillarName ? ` (${params.pillarName} pillar)` : ""} on ${params.date}. Angle: ${params.angle}. Short hook, visual-first, under 80 chars.`;
+  }
+  return `${params.platform} feed post for ${params.brandName}${params.pillarName ? ` — pillar: ${params.pillarName}` : ""} scheduled ${params.date}. Fresh angle: ${params.angle}. Distinct title/topic from recent calendar.`;
+}
+
+function topicPromptForGap(params: {
   brandName: string;
   platform: ContentPlatform;
   kind: CadenceSlotKind;
@@ -62,23 +82,13 @@ function topicForGap(params: {
   angle: string;
   avoidTopics: string[];
 }) {
-  const avoid =
-    params.avoidTopics.length > 0
-      ? ` Do NOT reuse these recent topics/titles (or close paraphrases): ${params.avoidTopics
-          .slice(0, 12)
-          .map((t) => `"${t.slice(0, 80)}"`)
-          .join("; ")}.`
-      : "";
-
-  if (params.kind === "story") {
-    const platformLabel =
-      params.platform === "facebook" ? "Facebook Story" : "Instagram Story";
-    if (params.feedCopyHint) {
-      return `Light ${platformLabel} visual — different angle (${params.angle}) teasing: ${params.feedCopyHint.slice(0, 140)}. Keep caption under 80 chars.${avoid}`;
-    }
-    return `Light ${platformLabel} moment for ${params.brandName}${params.pillarName ? ` (${params.pillarName} pillar)` : ""} on ${params.date}. Angle: ${params.angle}. Short hook, visual-first, under 80 chars.${avoid}`;
-  }
-  return `${params.platform} feed post for ${params.brandName}${params.pillarName ? ` — pillar: ${params.pillarName}` : ""} scheduled ${params.date}. Fresh angle: ${params.angle}. Distinct title/topic from recent calendar.${avoid}`;
+  const brief = topicBriefForGap(params);
+  if (params.avoidTopics.length === 0) return brief;
+  const avoid = ` Do NOT reuse these recent topics/titles (or close paraphrases): ${params.avoidTopics
+    .slice(0, 12)
+    .map((t) => `"${t.slice(0, 80)}"`)
+    .join("; ")}.`;
+  return `${brief}${avoid}`;
 }
 
 export async function fillBrandContentCadence(params: {
@@ -86,6 +96,11 @@ export async function fillBrandContentCadence(params: {
   brandId: string;
   /** Override max gaps for tests / manual runs. */
   maxGaps?: number;
+  /**
+   * Admin/ops only: run fill while agent_activity_paused remains true.
+   * Does not unpause the brand.
+   */
+  ignoreAgentHalt?: boolean;
 }): Promise<{
   brandId: string;
   gapsFound: number;
@@ -105,7 +120,7 @@ export async function fillBrandContentCadence(params: {
   }
 
   const brandRow = brand as Brand & { content_cadence?: unknown };
-  if (brandRow.agent_activity_paused) {
+  if (brandRow.agent_activity_paused && !params.ignoreAgentHalt) {
     return {
       brandId: params.brandId,
       gapsFound: 0,
@@ -215,7 +230,7 @@ export async function fillBrandContentCadence(params: {
     pillarIdx += 1;
 
     let angle = DIVERSITY_ANGLES[angleIdx % DIVERSITY_ANGLES.length]!;
-    let topic = topicForGap({
+    const gapTopicBase = {
       brandName: brandRow.name,
       platform: gap.platform,
       kind: gap.kind,
@@ -224,12 +239,16 @@ export async function fillBrandContentCadence(params: {
       feedCopyHint:
         gap.kind === "story" ? (feedHints.get(gap.date) ?? null) : null,
       angle,
+    };
+    let topic = topicPromptForGap({
+      ...gapTopicBase,
       avoidTopics: sessionTitles,
     });
-
+    // Pre-check only against real calendar titles — not the template brief, which
+    // reuses angle phrases Claude often echoes into titles (false session dups).
     let preDupe = wouldNearDuplicateBeforeGeneration({
-      candidate: topic,
-      sessionTitles,
+      candidate: `${gap.platform} ${gap.kind} ${gap.date} ${angle}`,
+      sessionTitles: [],
       recentTopics,
     });
     let angleAttempts = 0;
@@ -237,20 +256,14 @@ export async function fillBrandContentCadence(params: {
       angleAttempts += 1;
       angleIdx += 1;
       angle = DIVERSITY_ANGLES[angleIdx % DIVERSITY_ANGLES.length]!;
-      topic = topicForGap({
-        brandName: brandRow.name,
-        platform: gap.platform,
-        kind: gap.kind,
-        pillarName: pillar?.name ?? null,
-        date: gap.date,
-        feedCopyHint:
-          gap.kind === "story" ? (feedHints.get(gap.date) ?? null) : null,
-        angle,
+      const nextBase = { ...gapTopicBase, angle };
+      topic = topicPromptForGap({
+        ...nextBase,
         avoidTopics: sessionTitles,
       });
       preDupe = wouldNearDuplicateBeforeGeneration({
-        candidate: topic,
-        sessionTitles,
+        candidate: `${gap.platform} ${gap.kind} ${gap.date} ${angle}`,
+        sessionTitles: [],
         recentTopics,
       });
     }
@@ -466,8 +479,11 @@ export async function fillBrandContentCadence(params: {
         if (imagePick) {
           await attachSelectedLibraryImage({
             organizationId: params.organizationId,
+            brandId: params.brandId,
             contentItemId: item.id,
             assetId: imagePick.assetId,
+            platform: gap.platform,
+            format: gap.format,
           });
         }
       } catch {

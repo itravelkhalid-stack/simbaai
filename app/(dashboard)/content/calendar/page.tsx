@@ -1,3 +1,4 @@
+import { ClearUnpublishedQueueForm } from "@/components/content/clear-unpublished-queue-form";
 import { ContentCadenceForm } from "@/components/content/content-cadence-form";
 import { ContentCalendar } from "@/components/content/content-calendar";
 import { ContentNav } from "@/components/content/content-nav";
@@ -75,6 +76,14 @@ export default async function ContentCalendarPage({
           brandId={brand.id}
           brandName={brand.name}
           initial={parseContentCadence(brand.content_cadence)}
+        />
+      ) : null}
+
+      {brand &&
+      (active.role === "org_owner" || active.role === "org_admin") ? (
+        <ClearUnpublishedQueueForm
+          brandId={brand.id}
+          brandName={brand.name}
         />
       ) : null}
 
