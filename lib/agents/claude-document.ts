@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
+import { createAnthropicClient } from "@/lib/agents/anthropic";
 import { zodSchemaToToolInputSchema } from "@/lib/agents/claude-json";
 
 const DEFAULT_MODEL = "claude-sonnet-4-6";
@@ -32,7 +32,7 @@ export async function runClaudeJsonWithDocument<T>(params: {
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
   const model = params.model || process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
-  const anthropic = new Anthropic({ apiKey });
+  const anthropic = createAnthropicClient({ apiKey });
 
   const response = await anthropic.messages.create({
     model,

@@ -1,7 +1,8 @@
 import "server-only";
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 
+import { createAnthropicClient } from "@/lib/agents/anthropic";
 import {
   zodSchemaToToolInputSchema,
 } from "@/lib/agents/claude-json";
@@ -57,7 +58,7 @@ export async function runTeamAsk(params: {
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
-  const anthropic = new Anthropic({ apiKey });
+  const anthropic = createAnthropicClient({ apiKey });
   const ctx: AskToolContext = {
     organizationId: params.organizationId,
     brandId: params.brandId,

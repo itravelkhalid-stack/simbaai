@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import Anthropic from "@anthropic-ai/sdk";
 
+import { createAnthropicClient } from "@/lib/agents/anthropic";
 import { inngest } from "@/lib/inngest/client";
 import { assertPlanAllows } from "@/lib/billing/plans";
 import { requireActiveOrg } from "@/lib/org/require";
@@ -267,7 +267,7 @@ export async function askAboutMeeting(
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return { error: "ANTHROPIC_API_KEY is not configured" };
 
-    const anthropic = new Anthropic({ apiKey });
+    const anthropic = createAnthropicClient({ apiKey });
     const model =
       process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
