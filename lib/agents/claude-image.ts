@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { createAnthropicClient } from "@/lib/agents/anthropic";
 import { zodSchemaToToolInputSchema } from "@/lib/agents/claude-json";
 
