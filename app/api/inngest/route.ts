@@ -1,5 +1,6 @@
 import { serve } from "inngest/next";
 
+import { isInngestFunctionsDisabled } from "@/lib/agents/anthropic";
 import { inngest } from "@/lib/inngest/client";
 import { brandFunctions } from "@/lib/inngest/functions/brand";
 import { contentFunctions } from "@/lib/inngest/functions/content";
@@ -22,28 +23,34 @@ import { growthFunctions } from "@/lib/inngest/functions/growth";
 import { ceoFunctions } from "@/lib/inngest/functions/ceo";
 import { cmoFunctions } from "@/lib/cmo/inngest";
 
+const allFunctions = [
+  ...researchFunctions,
+  ...brandFunctions,
+  ...contentFunctions,
+  ...socialFunctions,
+  ...emailFunctions,
+  ...adsFunctions,
+  ...seoFunctions,
+  ...planningFunctions,
+  ...meetingsFunctions,
+  ...reviewsFunctions,
+  ...crmFunctions,
+  ...financeFunctions,
+  ...analyticsFunctions,
+  ...complianceFunctions,
+  ...automationsFunctions,
+  ...notificationsFunctions,
+  ...jobsFunctions,
+  ...growthFunctions,
+  ...ceoFunctions,
+  ...cmoFunctions,
+];
+
+/**
+ * Emergency freeze: INNGEST_FUNCTIONS_DISABLED=true or ANTHROPIC_SPEND_KILL_SWITCH=true
+ * unregisters every function (including all crons) so Inngest cannot schedule or run them.
+ */
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [
-    ...researchFunctions,
-    ...brandFunctions,
-    ...contentFunctions,
-    ...socialFunctions,
-    ...emailFunctions,
-    ...adsFunctions,
-    ...seoFunctions,
-    ...planningFunctions,
-    ...meetingsFunctions,
-    ...reviewsFunctions,
-    ...crmFunctions,
-    ...financeFunctions,
-    ...analyticsFunctions,
-    ...complianceFunctions,
-    ...automationsFunctions,
-    ...notificationsFunctions,
-    ...jobsFunctions,
-    ...growthFunctions,
-    ...ceoFunctions,
-    ...cmoFunctions,
-  ],
+  functions: isInngestFunctionsDisabled() ? [] : allFunctions,
 });

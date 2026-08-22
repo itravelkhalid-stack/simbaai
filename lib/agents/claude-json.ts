@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
+import { createAnthropicClient } from "@/lib/agents/anthropic";
+
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const STRUCTURED_TOOL_NAME = "emit_structured_result";
 
@@ -129,7 +131,7 @@ export async function runClaudeJson<T>(params: {
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
   const model = params.model || process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
-  const anthropic = new Anthropic({ apiKey });
+  const anthropic = createAnthropicClient({ apiKey });
   const emitTool = structuredResultTool(params.schema);
 
   const tools: Anthropic.Messages.ToolUnion[] = params.webSearch
